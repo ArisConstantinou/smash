@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101b1b">
+  <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
+  <title>IRONFALL — Hammer the Horde</title>
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="i-hammer" viewBox="0 0 24 24"><path d="m3 5 4-3 10 10-3 4L3 5Zm10 8L5 21l-2-2 8-8m3-8 7 7-3 3-7-7 3-3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+      <symbol id="i-skull" viewBox="0 0 24 24"><path d="M5 5 8 2h8l3 3 2 6-3 5v5h-4v-3h-4v3H6v-5l-3-5 2-6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 9h3v3H7zm7 0h3v3h-3zm-3 5h2v2h-2z" fill="currentColor"/></symbol>
+      <symbol id="i-gem" viewBox="0 0 24 24"><path d="m4 4 16 0 3 6-11 12L1 10l3-6Z M1 10h22M8 4 6 10l6 12 6-12-2-6M6 10h12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3V9Zm13-2a7 7 0 0 1 0 10m3-13a11 11 0 0 1 0 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="square" stroke-linejoin="round"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z" fill="currentColor"/></symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24"><path d="m10 2-1 3-3 2-3-1-2 4 2 2v3l-1 2 4 3 3-1 3 1 1 2 4-1 1-3 3-2 2-4-2-2-1-3-3-1-2-3-5-1Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+      <symbol id="i-boot" viewBox="0 0 24 24"><path d="M7 2h9v10l5 5v4H3v-6l4-3V2Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 17h18M7 6h5m-5 4h5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <symbol id="i-range" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 1v6m0 10v6M1 12h6m10 0h6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m3 3 9-2 9 2v9l-9 10-9-10V3Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 5v11m-5-6h10" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 1 4 14h7l-1 9 10-14h-7l0-8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M3 12h17m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter"/></symbol>
+      <symbol id="i-cross" viewBox="0 0 24 24"><path d="m5 5 14 14M19 5 5 19" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M3 9V3h6m6 0h6v6M3 15v6h6m6 0h6v-6M3 3l6 6m6 6 6 6M21 3l-6 6m-6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    </defs>
+  </svg>
+
+  <canvas id="gameCanvas" aria-label="Τρισδιάστατος κόσμος του IRONFALL"></canvas>
+  <canvas id="fxCanvas" aria-hidden="true"></canvas>
+  <div class="world-vignette" aria-hidden="true"></div>
+
+  <section id="menu" class="landing" aria-label="Κεντρικό μενού">
+    <div class="landing-grain" aria-hidden="true"></div>
+    <header class="landing-header">
+      <div class="wordmark"><svg><use href="#i-hammer"/></svg><span>IRONFALL</span></div>
+      <div class="edition"><i></i> RETRO ARCADE SURVIVAL <span>VOL. 01</span></div>
+    </header>
+
+    <div class="hero-content">
+      <div class="eyebrow"><span class="tiny-cross">✚</span> HAMMER THE HORDE</div>
+      <h1>IRON<span>FALL</span><sup>01</sup></h1>
+      <div class="hero-rule"><span></span><b>ΚΑΝΕ ΘΟΡΥΒΟ. ΑΦΗΣΕ ΕΡΕΙΠΙΑ.</b></div>
+      <h2>Ο κόσμος είναι<br>για σπάσιμο.</h2>
+      <p class="hero-description">Σπάσε την πόλη. Δυνάμωσε το σφυρί.<br>Αντιμετώπισε την ορδή.</p>
+
+      <button id="startButton" class="primary-button start-button" type="button" disabled>
+        <svg><use href="#i-hammer"/></svg>
+        <span>ΞΕΚΙΝΑ ΤΗΝ ΚΑΤΑΣΤΡΟΦΗ</span>
+        <svg class="button-arrow"><use href="#i-arrow"/></svg>
+      </button>
+      <div id="loadingStatus" class="loading-status" role="status">Το σφυρί ετοιμάζεται…</div>
+
+      <div class="landing-controls">
+        <div class="legend-movement"><span class="key-set"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Ελεύθερη κίνηση</span></div>
+        <div><kbd class="wide-key">SPACE</kbd><span>Πάτησε: χτύπημα<br><em>Κράτα & άφησε: σύνθλιψη</em></span></div>
+      </div>
+      <p class="direction-note">Χτυπάς προς την κατεύθυνση που κινείσαι.</p>
+    </div>
+
+    <aside class="world-label" aria-hidden="true">
+      <span class="coordinate-lines">SECTOR 07 / 34.9° N</span>
+      <div class="label-line"></div>
+      <strong>Η ΠΟΛΗ<br>ΔΕΝ ΘΑ ΑΝΤΕΞΕΙ.</strong>
+      <span class="world-label-bottom"><i></i> LIVE WORLD · FULL DESTRUCTION</span>
+    </aside>
+
+    <footer class="landing-footer">
+      <div class="landing-step"><span>01</span><div><b>ΣΠΑΣΕ ΤΑ ΠΑΝΤΑ</b><small>Σπίτια, αμάξια, τοίχους & ορδές</small></div></div>
+      <div class="landing-step"><span>02</span><div><b>ΒΡΕΣ ΘΗΣΑΥΡΟΥΣ</b><small>Περισσότερη δύναμη σε κάθε εύρημα</small></div></div>
+      <div class="landing-step"><span>03</span><div><b>ΞΥΠΝΑ ΤΟΝ BOSS</b><small>Φτάσε στο 60% καταστροφής</small></div></div>
+      <div class="footer-stamp">BUILT TO<br><b>BREAK.</b></div>
+    </footer>
+  </section>
+
+  <section id="hud" class="hud" aria-label="Στοιχεία παιχνιδιού" hidden>
+    <header class="hud-top">
+      <section class="hero-status" aria-label="Ζωή πολεμιστή">
+        <div class="hud-brand"><svg><use href="#i-hammer"/></svg><b>IRONFALL</b><span id="districtName">ΣΤΑΧΤΟΠΟΛΗ</span></div>
+        <div class="health-heading"><span><svg><use href="#i-shield"/></svg> ΠΟΛΕΜΙΣΤΗΣ</span><strong id="healthValue">100 / 100</strong></div>
+        <div class="health-track"><div id="healthFill" style="width:100%"></div><div class="health-ticks"></div></div>
+      </section>
+
+      <section class="goal-panel" aria-label="Στόχος καταστροφής">
+        <div class="goal-heading"><span>ΚΑΤΑΣΤΡΟΦΗ ΠΕΡΙΟΧΗΣ</span><div><strong id="goalValue">0%</strong><span class="goal-target"> / 60%</span></div></div>
+        <div class="goal-track"><div id="goalFill" style="width:0%"></div><span class="goal-notch"></span></div>
+        <p id="objectiveText">Φτάσε στο 60% για να καλέσεις τον Κολοσσό.</p>
+      </section>
+
+      <section class="run-status" aria-label="Στατιστικά γύρου">
+        <div class="run-status-top"><span>ΓΥΡΟΣ <b id="roundValue">01</b></span><time id="timeValue">00:00</time></div>
+        <div class="run-counters"><div><svg><use href="#i-skull"/></svg><strong id="killsValue">0</strong><small>ΕΧΘΡΟΙ</small></div><div><svg><use href="#i-gem"/></svg><strong id="relicValue">0</strong><small>ΕΥΡΗΜΑΤΑ</small></div></div>
+        <div class="hud-buttons">
+          <button id="soundButton" class="icon-button" type="button" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Ήχος"><svg><use href="#i-sound"/></svg></button>
+          <button id="settingsButton" class="icon-button" type="button" aria-label="Ρυθμίσεις" title="Ρυθμίσεις"><svg><use href="#i-settings"/></svg></button>
+          <button id="pauseButton" class="icon-button" type="button" aria-label="Παύση παιχνιδιού" title="Παύση · Esc"><svg><use href="#i-pause"/></svg></button>
+        </div>
+      </section>
+    </header>
+
+    <div id="bossHud" class="boss-panel" hidden>
+      <div class="boss-heading"><svg><use href="#i-skull"/></svg><span>THE IRON COLOSSUS</span><strong id="bossValue">100%</strong></div>
+      <div class="boss-track"><div id="bossFill" style="width:100%"></div></div>
+      <span class="boss-subtitle">Ο ΦΥΛΑΚΑΣ ΤΟΥ ΧΥΤΗΡΙΟΥ</span>
+    </div>
+
+    <aside class="minimap-panel" aria-label="Χάρτης περιοχής">
+      <div class="map-heading"><span>ΤΟΜΕΑΣ <b>07</b></span><span class="north-mark">N ↑</span></div>
+      <canvas id="minimap" width="140" height="140" aria-label="Χάρτης με τον παίκτη και τους εχθρούς"></canvas>
+      <div class="map-legend"><span><i class="player-dot"></i> ΕΣΥ</span><span><i class="enemy-dot"></i> ΟΡΔΗ</span></div>
+    </aside>
+
+    <aside class="loadout-panel" aria-label="Δύναμη και αναβαθμίσεις">
+      <div class="loadout-heading"><span>ΤΟ ΣΦΥΡΙ ΣΟΥ</span><b>LV. <span id="levelValue">1</span></b></div>
+      <div class="loadout-stats">
+        <div><svg><use href="#i-bolt"/></svg><strong id="powerValue">1.0×</strong><small>ΔΥΝΑΜΗ</small></div>
+        <div><svg><use href="#i-expand"/></svg><strong id="sizeValue">1.0×</strong><small>ΜΕΓΕΘΟΣ</small></div>
+        <div><svg><use href="#i-range"/></svg><strong id="rangeValue">1.0×</strong><small>ΕΜΒΕΛΕΙΑ</small></div>
+        <div><svg><use href="#i-boot"/></svg><strong id="speedValue">1.0×</strong><small>ΤΑΧΥΤΗΤΑ</small></div>
+      </div>
+      <div id="relicSlots" class="relic-slots" aria-label="Ενεργά ευρήματα"></div>
+    </aside>
+
+    <div class="combat-controls" aria-label="Χειρισμός">
+      <div class="movement-controls">
+        <div class="movement-keys"><kbd data-key="KeyW">W</kbd><kbd data-key="KeyA">A</kbd><kbd data-key="KeyS">S</kbd><kbd data-key="KeyD">D</kbd></div>
+        <span>ΚΙΝΗΣΗ & ΣΤΟΧΕΥΣΗ</span>
+      </div>
+      <div class="control-divider"></div>
+      <div class="hammer-controls">
+        <div class="hammer-key"><kbd data-key="Space" class="space-key">SPACE</kbd><span id="chargeText">ΚΡΑΤΑ ΓΙΑ ΙΣΧΥ</span></div>
+        <div id="chargeWrap" class="charge-track"><div id="chargeFill" style="width:0%"></div><i></i><i></i><i></i></div>
+        <span class="charge-caption">ΠΑΤΗΣΕ: ΧΤΥΠΑ · ΑΦΗΣΕ: ΣΥΝΘΛΙΨΕ</span>
+      </div>
+      <div class="control-divider"></div>
+      <div class="dodge-controls"><kbd data-key="ShiftLeft">SHIFT</kbd><span>ΑΠΟΦΥΓΗ</span></div>
+    </div>
+    <span class="hud-corner-note">ΣΠΑΣΕ. ΜΑΖΕΨΕ. ΕΠΑΝΑΛΑΒΕ.</span>
+  </section>
+
+  <div id="touchControls" class="touch-controls" aria-label="Χειρισμός αφής" hidden>
+    <div id="joystick" class="joystick" role="group" aria-label="Μοχλός κίνησης"><div class="joystick-cross"></div><div id="joystickKnob" class="joystick-knob"></div></div>
+    <div class="touch-actions"><button id="dashButton" type="button" aria-label="Αποφυγή"><svg><use href="#i-boot"/></svg></button><button id="attackButton" type="button" aria-label="Χτύπημα σφυριού. Κράτα πατημένο για φόρτιση."><svg><use href="#i-hammer"/></svg><span>ΚΡΑΤΑ</span></button></div>
+  </div>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+  <div id="announcement" class="announcement" role="status" hidden><span class="announcement-rule"></span><h2 id="announcementTitle"></h2><p id="announcementText"></p><span class="announcement-rule"></span></div>
+
+  <section id="pauseMenu" class="modal-overlay" aria-label="Παύση" hidden>
+    <div class="modal-panel pause-panel">
+      <div class="modal-eyebrow"><span class="status-dot"></span> Η ΠΟΛΗ ΠΕΡΙΜΕΝΕΙ</div>
+      <h2>ΠΑΥΣΗ<span>.</span></h2>
+      <p>Πάρε μια ανάσα.<br>Η επόμενη σφυριά είναι δική σου.</p>
+      <button id="resumeButton" class="primary-button" type="button"><span>ΣΥΝΕΧΕΙΑ</span><svg><use href="#i-arrow"/></svg></button>
+      <button id="restartButton" class="secondary-button" type="button">ΝΕΟΣ ΓΥΡΟΣ</button>
+      <div class="modal-footnote"><kbd>ESC</kbd> επιστροφή στο παιχνίδι</div>
+    </div>
+  </section>
+
+  <section id="settingsMenu" class="modal-overlay" aria-label="Ρυθμίσεις παιχνιδιού" hidden>
+    <div class="modal-panel settings-panel">
+      <div class="modal-eyebrow">ΠΡΟΣΑΡΜΟΣΕ ΤΗΝ ΕΜΠΕΙΡΙΑ</div>
+      <h2>ΡΥΘΜΙΣΕΙΣ<span>.</span></h2>
+      <label class="setting-row" for="qualitySelect"><span><b>Γραφικά</b><small>Ποιότητα εικόνας & εφέ</small></span><select id="qualitySelect"><option value="high" selected>Υψηλά</option><option value="medium">Μεσαία</option><option value="low">Χαμηλά</option></select></label>
+      <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
+      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="60" aria-label="Ένταση ήχου"></label>
+      <button id="closeSettingsButton" class="primary-button" type="button"><span>ΕΠΙΣΤΡΟΦΗ</span><svg><use href="#i-arrow"/></svg></button>
+    </div>
+  </section>
+
+  <section id="endMenu" class="modal-overlay" aria-label="Αποτέλεσμα γύρου" hidden>
+    <div class="modal-panel end-panel">
+      <div class="modal-eyebrow">IRONFALL · ΑΠΟΛΟΓΙΣΜΟΣ</div>
+      <svg class="end-emblem"><use href="#i-hammer"/></svg>
+      <h2 id="endTitle">ΕΠΕΣΕΣ.</h2>
+      <p id="endText">Η ορδή δεν συγχωρεί. Το σφυρί σου περιμένει.</p>
+      <div id="endStats" class="end-stats"></div>
+      <button id="continueButton" class="primary-button" type="button" hidden><span>ΕΠΟΜΕΝΗ ΠΕΡΙΟΧΗ</span><svg><use href="#i-arrow"/></svg></button>
+      <button id="retryButton" class="primary-button" type="button"><span>ΠΑΙΞΕ ΞΑΝΑ</span><svg><use href="#i-arrow"/></svg></button>
+    </div>
+  </section>
+
+  <section id="upgradeMenu" class="modal-overlay upgrade-overlay" aria-label="Επιλογή αναβάθμισης" hidden>
+    <div class="upgrade-panel">
+      <div class="modal-eyebrow"><svg><use href="#i-gem"/></svg> Ο ΘΗΣΑΥΡΟΣ ΕΙΝΑΙ ΔΙΚΟΣ ΣΟΥ</div>
+      <h2>ΠΕΡΙΣΣΟΤΕΡΗ <span>ΔΥΝΑΜΗ.</span></h2>
+      <p>Διάλεξε την επόμενη αναβάθμιση του πολεμιστή σου.</p>
+      <div id="upgradeChoices" class="upgrade-choices"></div>
+      <div class="upgrade-footnote">Η μάχη συνεχίζεται μόλις επιλέξεις.</div>
+    </div>
+  </section>
+
+  <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
+    <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
+  </section>
+  <script type="module" src="./game.js"></script>
+</body>
+</html>
