@@ -303,8 +303,8 @@ kbd.cooldown{opacity:.42;border-color:#6f8170;box-shadow:none}
 
 /* Wave progress stays visible beside the destruction objective. */
 .wave-progress { display:flex; align-items:center; gap:6px; margin-top:9px; min-height:18px; color:#a7c6b5; }
-.wave-progress>span { font:700 9px/1.2 var(--body); letter-spacing:.6px; }
-.wave-progress>strong { margin-left:auto; color:#f4d5a0; font:800 17px/1 var(--body); }
+.wave-progress>span { flex:1; min-width:0; white-space:normal; font:700 9px/1.2 var(--body); letter-spacing:.6px; }
+.wave-progress>strong { flex-shrink:0; white-space:nowrap; margin-left:auto; color:#f4d5a0; font:800 17px/1 var(--body); }
 .wave-progress>svg { width:13px; height:13px; color:#dcac6c; }
 .run-counters { margin-top:9px; gap:21px; }
 .minimap-panel { top:199px; }
