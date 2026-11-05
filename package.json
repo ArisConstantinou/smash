@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.mjs && node --experimental-vm-modules --test tests/game.integration.mjs"
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs tests/game.integration.mjs"
   },
   "description": "IRONFALL \u2014 retro 3D hammer horde survival"
 }

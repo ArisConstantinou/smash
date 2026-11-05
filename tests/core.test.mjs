@@ -198,22 +198,24 @@ test('both articulated arms stay attached to the hammer through charge and slam 
   warrior.position.set(7, .3, -8);
   warrior.rotation.y = 1.7;
   const u = warrior.userData;
+  u.setStance(1);
   for (const pose of [[.55, 0, -.72], [-1.6, -.8, -.2], [1.1, 1.6, .6], [-.8, -1.7, -1.1]]) {
     u.weaponRig.rotation.set(...pose);
     u.hammerHead.scale.setScalar(1.72);
     u.updateGrip();
     warrior.updateMatrixWorld(true);
-    for (const [arm, hand] of [[u.leftArm, u.leftGrip], [u.rightArm, u.rightGrip]]) {
+    for (const [arm, hand, anchor] of [[u.leftArm, u.leftGrip, u.leftGripAnchor], [u.rightArm, u.rightGrip, u.rightGripAnchor]]) {
       const forearmTip = arm.userData.fore.localToWorld(new THREE.Vector3(0, .5, 0));
       const handCenter = hand.getWorldPosition(new THREE.Vector3());
       close(forearmTip.distanceTo(handCenter), 0, 1e-7);
+      close(handCenter.distanceTo(anchor.getWorldPosition(new THREE.Vector3())), 0, 1e-7);
       const upperStart = arm.userData.upper.localToWorld(new THREE.Vector3(0, -.5, 0));
       close(upperStart.distanceTo(arm.getWorldPosition(new THREE.Vector3())), 0, 1e-7);
     }
   }
-  close(u.leftGrip.position.x, 0); close(u.rightGrip.position.x, 0);
-  close(u.leftGrip.position.z, 0); close(u.rightGrip.position.z, 0);
-  assert.ok(u.leftGrip.position.distanceTo(u.rightGrip.position) > .25);
+  close(u.leftGripAnchor.position.x, 0); close(u.rightGripAnchor.position.x, 0);
+  close(u.leftGripAnchor.position.z, 0); close(u.rightGripAnchor.position.z, 0);
+  assert.ok(u.leftGripAnchor.position.distanceTo(u.rightGripAnchor.position) > .25);
 });
 
 test('health loot uses the healing model when gameplay requests a heart', () => {

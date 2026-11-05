@@ -36,7 +36,7 @@
     <div class="landing-grain" aria-hidden="true"></div>
     <header class="landing-header">
       <div class="wordmark"><svg><use href="#i-hammer"/></svg><span>IRONFALL</span></div>
-      <div class="edition"><i></i> RETRO ARCADE SURVIVAL <span>VOL. 01</span></div>
+      <div class="edition"><i></i> RETRO ARCADE SURVIVAL <span>COMBAT UPDATE</span></div>
     </header>
 
     <div class="hero-content">
@@ -44,7 +44,7 @@
       <h1>IRON<span>FALL</span><sup>01</sup></h1>
       <div class="hero-rule"><span></span><b>ΚΑΝΕ ΘΟΡΥΒΟ. ΑΦΗΣΕ ΕΡΕΙΠΙΑ.</b></div>
       <h2>Ο κόσμος είναι<br>για σπάσιμο.</h2>
-      <p class="hero-description">Σπάσε την πόλη. Δυνάμωσε το σφυρί.<br>Αντιμετώπισε την ορδή.</p>
+      <p class="hero-description">Σφυρί στο ένα χέρι. Ασπίδα στο άλλο.<br>Σπάσε την πόλη. Αντιμετώπισε την ορδή.</p>
 
       <button id="startButton" class="primary-button start-button" type="button" disabled>
         <svg><use href="#i-hammer"/></svg>
@@ -57,7 +57,9 @@
         <div class="legend-movement"><span class="key-set"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Ελεύθερη κίνηση</span></div>
         <div><kbd class="wide-key">SPACE</kbd><span>Πάτησε: χτύπημα<br><em>Κράτα & άφησε: σύνθλιψη</em></span></div>
       </div>
-      <p class="direction-note">Χτυπάς προς την κατεύθυνση που κινείσαι.</p>
+      <p class="direction-note">WASD: κατεύθυνση σφυριάς · Ποντίκι: άμυνα και ρίψη.</p>
+      <div class="combat-hints" aria-label="Νέες κινήσεις"><span><kbd>Z</kbd> Δύο χέρια</span><span><kbd>Q</kbd> Άμυνα</span><span><kbd>E</kbd> Ψηλό άλμα</span><span><kbd>R</kbd> Ρίψη</span></div>
+      <p class="air-hint">Στον αέρα, πάτησε <b>SPACE</b> για συντριβή στην προσγείωση.</p>
     </div>
 
     <aside class="world-label" aria-hidden="true">
@@ -126,7 +128,7 @@
     <div class="combat-controls" aria-label="Χειρισμός">
       <div class="movement-controls">
         <div class="movement-keys"><kbd data-key="KeyW">W</kbd><kbd data-key="KeyA">A</kbd><kbd data-key="KeyS">S</kbd><kbd data-key="KeyD">D</kbd></div>
-        <span>ΚΙΝΗΣΗ & ΣΤΟΧΕΥΣΗ</span>
+        <span>ΚΙΝΗΣΗ & ΣΦΥΡΙΑ</span>
       </div>
       <div class="control-divider"></div>
       <div class="hammer-controls">
@@ -137,12 +139,28 @@
       <div class="control-divider"></div>
       <div class="dodge-controls"><kbd data-key="ShiftLeft">SHIFT</kbd><span>ΑΠΟΦΥΓΗ</span></div>
     </div>
+    <section class="ability-controls" aria-label="Στάση και ειδικές κινήσεις">
+      <div class="stance-control"><kbd data-key="KeyZ">Z</kbd><strong id="stanceValue">ΣΦΥΡΙ + ΑΣΠΙΔΑ</strong><small>ΑΛΛΑΓΗ ΣΤΑΣΗΣ</small></div>
+      <div class="ability-row">
+        <div><kbd data-key="KeyQ">Q</kbd><span><b>ΠΕΡΙΣΤΡΟΦΗ</b><small id="guardValue">ΚΡΑΤΑ Q</small></span></div>
+        <div><kbd data-key="KeyE">E</kbd><span><b>ΨΗΛΟ ΑΛΜΑ</b><small id="leapValue">ΕΤΟΙΜΟ</small></span></div>
+        <div><kbd data-key="KeyR">R</kbd><span><b>ΡΙΨΗ ΣΦΥΡΙΟΥ</b><small id="throwValue">ΣΤΟΧΕΥΣΕ</small></span></div>
+      </div>
+      <p>Ποντίκι: Q / R <i>·</i> SPACE στον αέρα: συντριβή</p>
+    </section>
     <span class="hud-corner-note">ΣΠΑΣΕ. ΜΑΖΕΨΕ. ΕΠΑΝΑΛΑΒΕ.</span>
   </section>
 
   <div id="touchControls" class="touch-controls" aria-label="Χειρισμός αφής" hidden>
     <div id="joystick" class="joystick" role="group" aria-label="Μοχλός κίνησης"><div class="joystick-cross"></div><div id="joystickKnob" class="joystick-knob"></div></div>
-    <div class="touch-actions"><button id="dashButton" type="button" aria-label="Αποφυγή"><svg><use href="#i-boot"/></svg></button><button id="attackButton" type="button" aria-label="Χτύπημα σφυριού. Κράτα πατημένο για φόρτιση."><svg><use href="#i-hammer"/></svg><span>ΚΡΑΤΑ</span></button></div>
+    <div class="touch-actions">
+      <button id="stanceButton" type="button" aria-label="Αλλαγή ανάμεσα σε σφυρί και ασπίδα ή σφυρί δύο χεριών"><b>Z</b><span>ΣΤΑΣΗ</span></button>
+      <button id="guardButton" type="button" aria-label="Κράτα για μπροστινή περιστροφική άμυνα"><b>Q</b><span>ΑΜΥΝΑ</span></button>
+      <button id="leapButton" type="button" aria-label="Ψηλό άλμα προς τα εμπρός"><b>E</b><span>ΑΛΜΑ</span></button>
+      <button id="throwButton" type="button" aria-label="Ρίψη σφυριού στην κατεύθυνση στόχευσης"><b>R</b><span>ΡΙΨΗ</span></button>
+      <button id="dashButton" type="button" aria-label="Αποφυγή"><svg><use href="#i-boot"/></svg><span>ΑΠΟΦΥΓΗ</span></button>
+      <button id="attackButton" type="button" aria-label="Σφυριά ή συντριβή στον αέρα. Κράτα για φόρτιση."><svg><use href="#i-hammer"/></svg><span>ΧΤΥΠΑ</span></button>
+    </div>
   </div>
 
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
@@ -155,6 +173,16 @@
       <p>Πάρε μια ανάσα.<br>Η επόμενη σφυριά είναι δική σου.</p>
       <button id="resumeButton" class="primary-button" type="button"><span>ΣΥΝΕΧΕΙΑ</span><svg><use href="#i-arrow"/></svg></button>
       <button id="restartButton" class="secondary-button" type="button">ΝΕΟΣ ΓΥΡΟΣ</button>
+      <details class="combat-help"><summary>ΧΕΙΡΙΣΜΟΣ ΜΑΧΗΣ</summary>
+        <dl><dt>W A S D</dt><dd>Ελεύθερη κίνηση και κατεύθυνση της σφυριάς.</dd>
+        <dt>SPACE</dt><dd>Συνεχής σφυριά. Κράτα και άφησε για περισσότερη δύναμη.</dd>
+        <dt>Z</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά Z για επαναφορά.</dd>
+        <dt>Κράτα Q</dt><dd>Κατακόρυφη περιστροφή μπροστά σου. Η άμυνα ακολουθεί το ποντίκι και αποκρούει μετωπικά βλήματα.</dd>
+        <dt>E → SPACE</dt><dd>Ψηλό άλμα προς τα εμπρός. SPACE στον αέρα: ισχυρή ζημιά περιοχής στην προσγείωση.</dd>
+        <dt>R</dt><dd>Στόχευσε με το ποντίκι και ρίξε το σφυρί. Χτυπά το πρώτο εμπόδιο και επιστρέφει αυτόματα.</dd>
+        <dt>SHIFT</dt><dd>Σύντομη αποφυγή.</dd></dl>
+        <p>Η ασπίδα στο χέρι μειώνει τη μετωπική ζημιά κατά 35%. Η πλάτη και τα χτυπήματα εδάφους παραμένουν εκτεθειμένα.</p>
+      </details>
       <div class="modal-footnote"><kbd>ESC</kbd> επιστροφή στο παιχνίδι</div>
     </div>
   </section>

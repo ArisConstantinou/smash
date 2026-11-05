@@ -10,6 +10,7 @@ import * as THREE from '../vendor/three.module.js';
 import * as models from '../models.js';
 import * as world from '../world.js';
 import * as core from '../core.js';
+import * as combat from '../combat.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -29,11 +30,12 @@ class Classes {
   }
 }
 function context2D() {
-  return new Proxy({}, {
+  return new Proxy({ textCalls: [] }, {
     get(target, key) {
       if (key in target) return target[key];
       if (key === 'createRadialGradient' || key === 'createLinearGradient') return () => ({ addColorStop() {} });
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
+      if (key === 'fillText') return (text, x, y) => target.textCalls.push({ text: String(text), x, y });
       return () => {};
     },
     set(target, key, value) { target[key] = value; return true; },
@@ -115,6 +117,7 @@ const imports = new Map([
   ['./models.js', synthetic(models, 'real-models')],
   ['./world.js', synthetic(world, 'real-world')],
   ['./core.js', synthetic(core, 'real-core')],
+  ['./combat.js', synthetic(combat, 'real-combat')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
@@ -127,9 +130,15 @@ export const __integration = {
   get elapsed(){return elapsed;}, get round(){return round;}, get relics(){return relics;},
   get kills(){return kills;}, get bolts(){return bolts;}, get score(){return score;},
   get scene(){return scene;}, get keys(){return keys;},
+  get stance(){return stance;}, get stanceTarget(){return stanceTarget;},
+  get guarding(){return guarding;}, get aim(){return aim;}, get aimPreview(){return aimPreview;},
+  get leap(){return leap;}, get throwWindup(){return throwWindup;}, get throwFlight(){return throwFlight;},
+  get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
   updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
+  clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
+  drawHP, screenPoint, updateEffects,
   setFacing(x,z){facing=normalize(x,z);},
   primeSwing(q){chargeHeld=false;chargeStarted=true;charge=q;attackCooldown=0;swing=null;},
 };`;
@@ -152,7 +161,44 @@ function advance(seconds, step = 1 / 60) {
     api.frame(time);
   }
 }
-function reset() { api.startGame(); advance(.02); }
+function reset() {
+  api.clearInput(); api.startGame(); advance(.1);
+  elements.get('fxCanvas').context.textCalls.length = 0;
+}
+const close = (actual, expected, tolerance = 1e-6) => assert.ok(Math.abs(actual - expected) <= tolerance,
+  `Expected ${actual} to be within ${tolerance} of ${expected}`);
+const worldPosition = object => object.getWorldPosition(new THREE.Vector3());
+function playerSteps(seconds, step = 1 / 120, afterStep = () => {}) {
+  for (let remaining = seconds; remaining > 1e-8; remaining -= step) {
+    const dt = Math.min(step, remaining); api.updatePlayer(dt); afterStep(dt);
+  }
+}
+function arena() {
+  reset();
+  // Keep real models, health, materials and disposal ownership, while moving
+  // unrelated district geometry outside this isolated action's play area.
+  api.world.objects.forEach((o, i) => { o.x = 500 + i * 10; o.z = 500; o.mesh.position.set(o.x, o.baseY, o.z); });
+  for (const h of api.world.hazards) { h.x = 500; h.z = 500; }
+  api.setFacing(0, 1); api.poseHero(.05); api.player.invincible = 0;
+}
+function aimAt(x, z) {
+  const p = api.screenPoint(x, api.player.y + 1.2, z);
+  emit('pointermove', { clientX: p.x, clientY: p.y, pointerType: 'mouse' });
+  api.updateAim();
+}
+function stationaryEnemy(type, x, z) {
+  api.spawnEnemy(type, { x, z });
+  const enemy = api.enemies.at(-1);
+  enemy.speed = 0; enemy.state = 'idle'; enemy.timer = 100;
+  return enemy;
+}
+function placeObject(type, x, z, options = {}) {
+  const object = api.world.objects.find(o => o.type === type);
+  assert.ok(object, `Real world fixture has a ${type}`);
+  Object.assign(object, { x, z }, options);
+  object.mesh.position.set(x, object.baseY, z);
+  return object;
+}
 
 test('game initializes using its actual HTML ids, world and warrior, and renders a frame', () => {
   assert.deepEqual(browserErrors, []);
@@ -167,23 +213,206 @@ test('game initializes using its actual HTML ids, world and warrior, and renders
 });
 
 test('actual keyboard movement selects facing and released charged Space hits a surviving brute', () => {
-  reset();
+  arena();
   key('KeyD', true); advance(.12); key('KeyD', false);
   const before = { x: api.player.x, z: api.player.z }, facing = { ...api.facing };
   assert.ok(before.x > 0 && before.z < 0);
-  api.spawnEnemy('brute', { x: before.x + facing.x * 2.4, z: before.z + facing.z * 2.4 });
-  const enemy = api.enemies.at(-1);
   key('Space', true); advance(1.31);
   assert.equal(api.charge, 1); assert.equal(api.swing, null, 'Holding must charge without auto-swinging');
+  const enemy = stationaryEnemy('brute', before.x + facing.x * 3.5, before.z + facing.z * 3.5);
   key('Space', false);
   assert.ok(api.swing?.charged);
-  advance(.2);
+  advance(.19);
+  assert.equal(enemy.hp, enemy.maxHp, 'Windup must not apply the complete arc as an instantaneous hit');
+  for (let frame = 0; enemy.hp === enemy.maxHp && frame < 60; frame++) advance(1 / 60);
   assert.equal(enemy.dead, false);
   assert.equal(enemy.hp, 25);
   assert.ok(enemy.flash > 0 && enemy.stagger > 0);
   assert.ok(Math.hypot(enemy.vx, enemy.vz) > 1);
   assert.ok(enemy.vy > 0 || enemy.y > 0);
   assert.ok(audioEvents.some(e => (e.name === 'hit' || e.name === 'break') && e.power === 1));
+});
+
+test('the initial stance holds the hammer in one hand and the real shield in the other', () => {
+  arena();
+  const u = api.hero.userData;
+  assert.equal(api.stance, 0); assert.equal(api.stanceTarget, 0);
+  assert.equal(u.shieldStored, false); assert.equal(u.shieldRig.userData.attachment, 'left-hand');
+  assert.equal(u.shield.visible, true); assert.equal(u.hammerPivot.visible, true);
+  assert.equal(u.leftGrip.parent, api.hero); assert.equal(u.rightGrip.parent, api.hero);
+  close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.shieldGripAnchor)), 0);
+  close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
+  assert.ok(worldPosition(u.leftGrip).distanceTo(worldPosition(u.leftGripAnchor)) > .5);
+});
+
+test('Z carries the same shield onto the back, joins both hammer grips, and toggles back', () => {
+  arena();
+  const u = api.hero.userData, shield = u.shield, start = u.shieldRig.position.clone();
+  key('KeyZ', true); key('KeyZ', false);
+  assert.equal(api.stanceTarget, 1); assert.equal(api.stance, 0);
+  playerSteps(.32);
+  assert.ok(api.stance > .2 && api.stance < .5, 'The switch must animate through intermediate poses');
+  assert.ok(u.shieldRig.position.distanceTo(start) > .4);
+  assert.ok(u.shieldRig.position.y > start.y + .35, 'The shield travels over the shoulder');
+  assert.equal(u.shield, shield); assert.equal(u.shield.visible, true);
+  key('Space', true); key('Space', false);
+  assert.equal(api.swing, null, 'A weapon action cannot interrupt a partial grip transition');
+  playerSteps(.76);
+  assert.equal(api.stance, 1); assert.equal(u.shieldStored, true);
+  assert.equal(u.shieldRig.userData.attachment, 'back'); assert.ok(u.shieldRig.position.z < -.45);
+  close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.leftGripAnchor)), 0);
+  close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
+  key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
+  assert.equal(api.stance, 0); assert.equal(u.shieldStored, false); assert.equal(u.shield, shield);
+  close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.shieldGripAnchor)), 0);
+});
+
+test('a continuous swing crosses many poses and damages a target only once', () => {
+  arena();
+  const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
+  key('Space', true); key('Space', false);
+  const strike = api.swing;
+  assert.ok(strike);
+  let changes = 0, previousHp = hp, previousHead = worldPosition(api.hero.userData.hammerHead);
+  let maximumStep = 0;
+  const poses = new Set();
+  for (let frame = 0; api.swing && frame < 150; frame++) {
+    api.updatePlayer(1 / 120);
+    const head = worldPosition(api.hero.userData.hammerHead);
+    maximumStep = Math.max(maximumStep, head.distanceTo(previousHead)); previousHead = head;
+    poses.add(head.toArray().map(n => n.toFixed(3)).join(','));
+    if (enemy.hp !== previousHp) { changes++; previousHp = enemy.hp; }
+    if (strike.time / strike.duration < .22) assert.equal(enemy.hp, hp);
+  }
+  assert.equal(api.swing, null); assert.equal(changes, 1);
+  assert.equal(enemy.hp, hp - strike.damage); assert.ok(strike.hits.has(enemy));
+  assert.ok(poses.size > 45, `Expected many evolving hammer poses, got ${poses.size}`);
+  assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 120 Hz step`);
+});
+
+test('Q aims a vertical frontal propeller with the mouse, blocks the front and leaves the rear exposed', () => {
+  arena(); aimAt(9, 0);
+  key('KeyQ', true); api.updatePlayer(.05);
+  assert.equal(api.guarding, true); close(api.aim.x, 1); close(api.aim.z, 0);
+  const hp = api.player.hp;
+  api.hurtPlayer(24, -api.aim.x, -api.aim.z);
+  assert.equal(api.player.hp, hp, 'Front-facing Q must block an incoming strike');
+  api.hurtPlayer(24, api.aim.x, api.aim.z);
+  assert.equal(api.player.hp, hp - 24, 'Q must not provide a circular or rear shield');
+  const points = [];
+  playerSteps(.38, 1 / 120, () => points.push(worldPosition(api.hero.userData.hammerHead).sub(api.hero.position)));
+  const heights = points.map(p => p.y), depths = points.map(p => p.x * api.aim.x + p.z * api.aim.z);
+  const lateral = points.map(p => p.x * api.aim.z - p.z * api.aim.x);
+  assert.ok(Math.max(...heights) - Math.min(...heights) > 2);
+  assert.ok(Math.max(...lateral) - Math.min(...lateral) > 2);
+  assert.ok(Math.max(...depths) - Math.min(...depths) < .02, 'The spin stays in one vertical plane in front');
+  assert.ok(Math.min(...depths) > .8, 'The propeller does not orbit around the warrior');
+  key('KeyQ', false); assert.equal(api.guarding, false);
+});
+
+test('Q reflects a frontal robot bolt back into an enemy without hurting the warrior', () => {
+  arena(); aimAt(0, 10);
+  key('KeyQ', true); api.updatePlayer(.05);
+  const robot = stationaryEnemy('robot', 0, 5), hp = api.player.hp, robotHP = robot.hp;
+  api.shoot(robot);
+  for (let i = 0; i < 60 && !api.bolts[0]?.reflected; i++) api.updateEnemies(1 / 120);
+  assert.equal(api.bolts.length, 1); assert.equal(api.bolts[0].reflected, true);
+  assert.ok(api.bolts[0].vz > 0); assert.equal(api.player.hp, hp);
+  for (let i = 0; i < 60 && api.bolts.length; i++) api.updateEnemies(1 / 120);
+  assert.equal(api.bolts.length, 0); assert.ok(robot.hp < robotHP); assert.equal(api.player.hp, hp);
+  key('KeyQ', false);
+});
+
+test('E makes a high forward leap and ordinary landing does not trigger area damage', () => {
+  arena();
+  const direction = core.screenMovement(1, 0);
+  const enemy = stationaryEnemy('brute', direction.x * 13 - direction.z * 2.3, direction.z * 13 + direction.x * 2.3);
+  const hp = enemy.hp;
+  key('KeyD', true); key('KeyE', true); key('KeyE', false); key('KeyD', false);
+  assert.ok(api.leap); assert.equal(api.leap.slam, false);
+  let apex = 0;
+  for (let i = 0; api.leap && i < 300; i++) { api.updatePlayer(1 / 120); apex = Math.max(apex, api.player.y); }
+  assert.equal(api.leap, null); assert.ok(apex > 6, `Expected a clearly visible jump; apex was ${apex}`);
+  assert.ok(api.player.x * direction.x + api.player.z * direction.z > 10);
+  close(api.player.x * direction.z - api.player.z * direction.x, 0);
+  close(api.player.y, 0); assert.equal(enemy.hp, hp);
+});
+
+test('airborne Space arms a large smash whose damage happens only on landing', () => {
+  arena();
+  const nearLeft = stationaryEnemy('brute', -2, 5.6), nearRight = stationaryEnemy('brute', 2, 5.6);
+  const distant = stationaryEnemy('brute', 10, 5.6);
+  const wall = placeObject('wall', 3.5, 5.6, { w: 1, d: 1, h: 1, hp: 1000, maxHp: 1000 });
+  const targets = [nearLeft, nearRight, wall], before = targets.map(t => t.hp);
+  key('KeyE', true); key('KeyE', false); playerSteps(.5);
+  assert.ok(api.player.y > 6); assert.ok(api.leap); assert.equal(api.leap.slam, false);
+  key('Space', true); key('Space', false);
+  assert.equal(api.leap.slam, true); assert.equal(api.swing, null);
+  assert.deepEqual(targets.map(t => t.hp), before, 'Arming the slam is not an impact');
+  for (let i = 0; api.leap && i < 120; i++) {
+    api.updatePlayer(1 / 120);
+    if (api.leap) assert.deepEqual(targets.map(t => t.hp), before, 'Airborne frames must not damage ground targets');
+  }
+  assert.equal(api.leap, null); close(api.player.y, 0);
+  assert.ok(targets.every((target, i) => target.hp < before[i]));
+  assert.equal(distant.hp, distant.maxHp);
+  const after = targets.map(t => t.hp); playerSteps(.45);
+  assert.deepEqual(targets.map(t => t.hp), after, 'The one landing must not repeatedly apply its area damage');
+});
+
+test('R uses mouse aim, sweeps into the first thin wall, and returns the only visible hammer', () => {
+  arena();
+  const wall = placeObject('wall', 0, 5.5, { w: 4, d: .04, h: 3, hp: 1000, maxHp: 1000 });
+  const robot = stationaryEnemy('robot', 0, 9), initialRobotHP = robot.hp;
+  aimAt(0, 12);
+  assert.equal(api.aimPreview.contact?.target, wall, 'The guidance must stop at the first obstacle');
+  key('KeyR', true); key('KeyR', false);
+  assert.ok(api.throwWindup); assert.equal(api.throwFlight, null);
+  playerSteps(.29);
+  const thrown = api.throwFlight, u = api.hero.userData;
+  assert.ok(thrown); assert.equal(thrown.returning, false); close(thrown.dir.x, 0); close(thrown.dir.z, 1);
+  assert.equal(u.weaponHeld, false); assert.equal(u.hammerPivot.visible, false);
+  assert.equal(u.leftGrip.visible, true); assert.equal(u.rightGrip.visible, true);
+  assert.equal(api.scene.children.filter(child => child.userData.kind === 'hammer-projectile').length, 1);
+  key('Space', true); key('Space', false); key('KeyQ', true); api.updatePlayer(.01); key('KeyQ', false);
+  assert.equal(api.swing, null); assert.equal(api.guarding, false, 'The absent hammer cannot swing or guard');
+  // One large segment traverses both fixtures: endpoint-only collision would
+  // miss the thin wall and either hit the farther robot or tunnel through both.
+  api.updateThrownHammer(.5);
+  assert.equal(thrown.returning, true);
+  assert.equal(wall.hp, 1000 - Math.round(api.stats.power * 2.2));
+  assert.equal(robot.hp, initialRobotHP); assert.ok(thrown.z < wall.z);
+  for (let i = 0; api.throwFlight && i < 120; i++) api.updatePlayer(1 / 120);
+  assert.equal(api.throwFlight, null); assert.equal(u.weaponHeld, true); assert.equal(u.hammerPivot.visible, true);
+  assert.equal(thrown.mesh.parent, null);
+  assert.equal(api.scene.children.filter(child => child.userData.kind === 'hammer-projectile').length, 0);
+});
+
+test('an R throw that misses also returns automatically after its outward range', () => {
+  arena(); aimAt(0, 16); key('KeyR', true); key('KeyR', false); playerSteps(.29);
+  let returning = false;
+  for (let i = 0; api.throwFlight && i < 240; i++) {
+    api.updatePlayer(1 / 120); returning ||= !!api.throwFlight?.returning;
+  }
+  assert.equal(returning, true); assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+});
+
+test('damaged objects draw numeric HP, then a short zero-HP echo survives destruction', () => {
+  arena();
+  const house = placeObject('house', 0, 3), maximum = house.maxHp;
+  api.hurtObject(house, 17);
+  assert.equal(house.hp, maximum - 17); assert.ok(house.hurtTimer > 0);
+  assert.ok(api.numbers.some(n => n.text === '−17'));
+  const canvas = elements.get('fxCanvas').context;
+  canvas.textCalls.length = 0; api.drawFX();
+  assert.ok(canvas.textCalls.some(c => c.text === `${Math.ceil(house.hp)} / ${Math.ceil(maximum)} HP`));
+  assert.ok(canvas.textCalls.some(c => c.text === 'ΣΠΙΤΙ'));
+  api.hurtObject(house, maximum * 2);
+  assert.equal(house.dead, true); assert.equal(house.mesh.visible, false);
+  assert.ok(api.hpEchoes.some(e => e.maxHp === maximum && e.x === house.x && e.z === house.z));
+  canvas.textCalls.length = 0; api.drawFX();
+  assert.ok(canvas.textCalls.some(c => c.text === `0 / ${Math.ceil(maximum)} HP`));
+  api.updateEffects(1.2); assert.equal(api.hpEchoes.length, 0);
 });
 
 test('pause and blur clear held controls, freeze the player and allow a clean resume', () => {
@@ -248,22 +477,18 @@ test('60% destruction summons one boss, a killing hit wins, and continuation ret
     api.hurtObject(o, 99999, 1); destroyed += o.weight;
   }
   assert.ok(core.destructionPercent(api.world.objects) < core.GOAL);
-  api.primeSwing(1); api.beginSwing(); api.impact();
-  // That swing may finish an incidental near prop; advance setup only if needed.
-  if (!api.boss) {
-    for (const o of api.world.objects) {
-      if (o.dead) continue;
-      api.hurtObject(o, 99999, 1);
-      if (core.destructionPercent(api.world.objects) >= core.GOAL) break;
-    }
-    api.primeSwing(1); api.beginSwing(); api.impact();
+  api.checkGoal(); assert.equal(api.boss, null);
+  for (const o of api.world.objects) {
+    if (o.dead) continue;
+    api.hurtObject(o, 99999, 1);
+    if (core.destructionPercent(api.world.objects) >= core.GOAL) break;
   }
+  api.checkGoal();
   assert.ok(api.boss); assert.equal(elements.get('bossHud').hidden, false);
   const boss = api.boss;
-  api.primeSwing(1); api.beginSwing(); api.impact(); assert.equal(api.boss, boss);
+  api.checkGoal(); assert.equal(api.boss, boss);
   boss.state = 'walk'; boss.y = 0; boss.hp = 1;
-  api.player.x = boss.x; api.player.z = boss.z - 3.3; api.setFacing(0, 1);
-  api.primeSwing(1); api.beginSwing(); api.impact();
+  api.hitBoss(1, { x: 0, z: 1 }, 5);
   assert.equal(boss.dead, true); assert.equal(api.phase, 'victory');
   assert.equal(elements.get('continueButton').hidden, false);
   const score = api.score;
@@ -276,6 +501,7 @@ test('60% destruction summons one boss, a killing hit wins, and continuation ret
 });
 
 test('lethal damage opens defeat and retry resets score, upgrades and sector', () => {
+  reset();
   api.player.hp = 1; api.player.invincible = 0;
   api.hurtPlayer(40, 1, 0);
   assert.equal(api.phase, 'dead'); assert.equal(api.player.hp, 0);

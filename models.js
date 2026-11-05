@@ -149,8 +149,8 @@ export function makeWarrior() {
 
   const leftLeg = limb(root, 'leftLeg', -.205, .62, 0, P.blueDark, P.steel, P.ink);
   const rightLeg = limb(root, 'rightLeg', .205, .62, 0, P.blueDark, P.steel, P.ink);
-  // Two articulated arms connect the moving grip points to fixed shoulders.
-  // The gauntlets themselves live with the weapon so contact is never faked.
+  // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
+  // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
     const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .49, 1.28, .015);
     const pauldron = group(arm, 'pauldron');
@@ -171,6 +171,10 @@ export function makeWarrior() {
   }
   const leftArm = grippingArm(-1);
   const rightArm = grippingArm(1);
+  const shoulderRests = [
+    { arm: leftArm, position: leftArm.position.clone() },
+    { arm: rightArm, position: rightArm.position.clone() },
+  ];
 
   const cape = group(root, 'cape', 0, 1.32, -.27);
   box(cape, 0xc86035, 0, -.25, -.06, .6, .59, .07, -.17);
@@ -178,14 +182,26 @@ export function makeWarrior() {
   box(cape, 0x923b30, .22, -.58, -.13, .18, .24, .08, -.25, 0, .08);
   compact(cape);
 
-  const weaponRig = group(root, 'weaponRig', 0, 1.04, .38);
-  weaponRig.rotation.set(.55, 0, -.72);
+  const weaponRest = { x: .22, y: 0, z: -.24 };
+  const weaponRestPosition = new THREE.Vector3(.53, .98, .23);
+  const weaponRig = group(root, 'weaponRig');
+  weaponRig.position.copy(weaponRestPosition);
+  weaponRig.rotation.set(weaponRest.x, weaponRest.y, weaponRest.z);
   const hammerPivot = group(weaponRig, 'hammerPivot');
-  cylinder(hammerPivot, P.timberDark, 0, .57, 0, .065, .085, 1.37, 8);
-  for (let i = 0; i < 6; i++) box(hammerPivot, P.timber, 0, -.035 + i * .1, 0, .15, .035, .15);
-  box(hammerPivot, P.gold, 0, -.13, 0, .18, .16, .18);
-  box(hammerPivot, P.steel, 0, 1.12, 0, .2, .13, .2);
-  compact(hammerPivot);
+  const handle = group(hammerPivot, 'hammerHandle');
+  cylinder(handle, P.timberDark, 0, .2, 0, .07, .085, .68, 8);
+  for (let i = 0; i < 6; i++) box(handle, P.timber, 0, -.035 + i * .1, 0, .15, .035, .15);
+  box(handle, P.gold, 0, -.13, 0, .18, .16, .18);
+  compact(handle);
+  // A separate unit shaft allows reach upgrades without squashing the head
+  // or moving either hand's grip point along the wrapped part of the handle.
+  const shaft = group(hammerPivot, 'hammerShaft');
+  cylinder(shaft, P.timberDark, 0, 0, 0, .062, .07, 1, 8);
+  box(shaft, P.timber, 0, 0, .067, .045, .92, .017);
+  compact(shaft);
+  const collar = group(hammerPivot, 'hammerCollar');
+  box(collar, P.steel, 0, 0, 0, .2, .13, .2);
+  compact(collar);
   const hammerHead = group(hammerPivot, 'hammerHead', 0, 1.43, 0);
   box(hammerHead, P.ink, 0, 0, 0, 1.27, .58, .63);
   box(hammerHead, P.blue, 0, .015, 0, 1.02, .65, .69);
@@ -198,8 +214,46 @@ export function makeWarrior() {
   box(hammerHead, P.gold, 0, 0, -.357, .24, .32, .035, 0, 0, Math.PI / 4, .45);
   box(hammerHead, P.gold, 0, .34, 0, .18, .05, .53);
   compact(hammerHead);
-  const leftGrip = group(hammerPivot, 'leftGrip', 0, .08, 0);
-  const rightGrip = group(hammerPivot, 'rightGrip', 0, .43, 0);
+  const leftGripAnchor = group(hammerPivot, 'leftGripAnchor', 0, .08, 0);
+  const rightGripAnchor = group(hammerPivot, 'rightGripAnchor', 0, .43, 0);
+
+  // This single shield is carried all the way around the shoulder and onto
+  // the back. It is a solid beveled steel plate with a gold rim, boss, rivets,
+  // back straps and an actual handle for the left gauntlet.
+  const shieldRig = group(root, 'shieldRig');
+  const shield = group(shieldRig, 'steelAndGoldShield');
+  const shieldShape = new THREE.Shape();
+  shieldShape.moveTo(-.48, .54); shieldShape.lineTo(.48, .54);
+  shieldShape.lineTo(.46, -.04); shieldShape.lineTo(.32, -.4);
+  shieldShape.lineTo(0, -.66); shieldShape.lineTo(-.32, -.4);
+  shieldShape.lineTo(-.46, -.04); shieldShape.closePath();
+  const shieldPlate = new THREE.ExtrudeGeometry(shieldShape, {
+    depth: .1, steps: 1, bevelEnabled: true, bevelThickness: .025,
+    bevelSize: .025, bevelSegments: 1, curveSegments: 1,
+  });
+  part(shield, shieldPlate, 0xd7ad61, 0, 0, -.05);
+  part(shield, shieldPlate, 0x93a7ad, 0, .015, .025, .87, .87, .45);
+  part(shield, shieldPlate, 0x3d6579, 0, .025, .067, .72, .73, .26);
+  box(shield, 0xd7ad61, 0, -.015, .118, .07, .86, .04);
+  box(shield, 0xd7ad61, 0, .26, .118, .67, .07, .04);
+  cylinder(shield, 0xd7ad61, 0, .025, .145, .19, .19, .055, 10, Math.PI / 2);
+  cylinder(shield, P.pale, 0, .025, .19, .12, .16, .1, 8, Math.PI / 2);
+  for (const [x, y] of [[-.405, .45], [.405, .45], [-.393, .05], [.393, .05], [-.26, -.35], [.26, -.35], [0, -.56]]) {
+    cylinder(shield, P.cream, x, y, .075, .025, .025, .055, 6, Math.PI / 2);
+  }
+  // The metal rear has leather forearm straps and a center hand grip.
+  box(shield, P.timberDark, -.22, .03, -.106, .11, .62, .075);
+  box(shield, P.timberDark, .22, .03, -.106, .11, .62, .075);
+  for (const y of [-.1, .23]) box(shield, P.steel, 0, y, -.135, .31, .065, .1);
+  cylinder(shield, P.timberDark, 0, .065, -.197, .056, .056, .32, 8);
+  compact(shield);
+  shieldPlate.dispose();
+  const shieldGripAnchor = group(shieldRig, 'shieldGripAnchor', 0, .065, -.197);
+
+  // Hands belong to the warrior, never to the flying hammer. Markers on the
+  // weapons describe contact points but contain no visible hand geometry.
+  const leftGrip = group(root, 'leftGrip');
+  const rightGrip = group(root, 'rightGrip');
   for (const grip of [leftGrip, rightGrip]) {
     box(grip, P.timberDark, 0, 0, 0, .25, .2, .26);
     box(grip, P.steel, 0, .01, -.035, .28, .15, .2);
@@ -207,6 +261,40 @@ export function makeWarrior() {
     box(grip, P.pale, .12, 0, .075, .065, .14, .15);
     compact(grip);
   }
+  let stance = 0, weaponHeld = true, reachScale = 1;
+  const shieldFront = new THREE.Vector3(-.72, 1.025, .5);
+  const shieldBack = new THREE.Vector3(0, 1.11, -.55);
+  const shieldPath = new THREE.CubicBezierCurve3(shieldFront,
+    new THREE.Vector3(-1.04, 1.84, .42), new THREE.Vector3(-.91, 1.88, -.74), shieldBack);
+  const shieldFrontQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.06, -.25, -.13));
+  const shieldBackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.07, Math.PI, .04));
+  const leftJoinControl = new THREE.Vector3(-.75, 1.43, .16);
+  const emptyRight = new THREE.Vector3(.61, 1.22, .66);
+  const emptyLeft = new THREE.Vector3(-.37, 1.01, .4);
+  const emptyRightQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.8, -.1, -.3));
+  const emptyLeftQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.3, 0, .2));
+  const shieldContact = new THREE.Vector3(), hammerContact = new THREE.Vector3();
+  const shieldContactQuaternion = new THREE.Quaternion(), hammerContactQuaternion = new THREE.Quaternion();
+  const rootInverseQuaternion = new THREE.Quaternion();
+  const smooth = v => { const n = Math.max(0, Math.min(1, v)); return n * n * (3 - 2 * n); };
+
+  function poseShield() {
+    const progress = smooth(stance / .65);
+    shieldPath.getPoint(progress, shieldRig.position);
+    shieldRig.quaternion.slerpQuaternions(shieldFrontQuaternion, shieldBackQuaternion, progress);
+    shieldRig.rotateX(-.35 * Math.sin(Math.PI * progress));
+    shieldRig.position.applyMatrix4(body.matrix);
+    shieldRig.quaternion.premultiply(body.quaternion);
+    shieldRig.userData.attachment = stance < .65 ? 'left-hand' : 'back';
+  }
+
+  function anchorInHero(anchor, position, quaternion) {
+    anchor.getWorldPosition(position);
+    root.worldToLocal(position);
+    anchor.getWorldQuaternion(quaternion);
+    quaternion.premultiply(rootInverseQuaternion);
+  }
+
   const gripTarget = new THREE.Vector3();
   const elbow = new THREE.Vector3();
   const axisY = new THREE.Vector3(0, 1, 0);
@@ -220,6 +308,36 @@ export function makeWarrior() {
     segment.scale.set(1, length, 1);
   }
   function updateGrip() {
+    body.updateMatrix();
+    for (const { arm, position } of shoulderRests) {
+      arm.position.copy(position).applyMatrix4(body.matrix);
+      arm.quaternion.copy(body.quaternion);
+      arm.scale.copy(body.scale);
+    }
+    poseShield();
+    root.updateMatrixWorld(true);
+    root.getWorldQuaternion(rootInverseQuaternion).invert();
+    if (weaponHeld) {
+      anchorInHero(rightGripAnchor, rightGrip.position, rightGrip.quaternion);
+    } else {
+      rightGrip.position.copy(emptyRight);
+      rightGrip.quaternion.copy(emptyRightQuaternion);
+    }
+    anchorInHero(shieldGripAnchor, shieldContact, shieldContactQuaternion);
+    if (weaponHeld) anchorInHero(leftGripAnchor, hammerContact, hammerContactQuaternion);
+    else { hammerContact.copy(emptyLeft); hammerContactQuaternion.copy(emptyLeftQuaternion); }
+    const join = smooth((stance - .65) / .35);
+    if (join <= 0) {
+      leftGrip.position.copy(shieldContact);
+      leftGrip.quaternion.copy(shieldContactQuaternion);
+    } else {
+      // Reach around the left side of the torso, not straight through it.
+      leftGrip.position.copy(shieldContact).multiplyScalar((1 - join) ** 2)
+        .addScaledVector(leftJoinControl, 2 * (1 - join) * join)
+        .addScaledVector(hammerContact, join ** 2);
+      leftGrip.quaternion.slerpQuaternions(shieldContactQuaternion, hammerContactQuaternion, join);
+    }
+    leftGrip.visible = true; rightGrip.visible = true;
     root.updateMatrixWorld(true);
     for (const [arm, grip] of [[leftArm, leftGrip], [rightArm, rightGrip]]) {
       grip.getWorldPosition(gripTarget);
@@ -232,15 +350,137 @@ export function makeWarrior() {
       poseSegment(arm.userData.fore, elbow, gripTarget);
     }
   }
+
+  function setStance(progress) {
+    stance = Math.max(0, Math.min(1, Number(progress) || 0));
+    // Metadata only: the game owns weaponRig position/quaternion animations.
+    weaponRest.x = .22 + (.55 - .22) * stance;
+    weaponRest.y = 0;
+    weaponRest.z = -.24 + (-.72 + .24) * stance;
+    weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
+    root.userData.stance = stance;
+    root.userData.shieldStored = stance >= .65;
+    updateGrip();
+    return stance;
+  }
+
+  function setReach(scale) {
+    const n = Number(scale);
+    reachScale = Number.isFinite(n) ? Math.max(.35, n) : 1;
+    hammerHead.position.y = .43 + reachScale;
+    const length = Math.max(.1, hammerHead.position.y - .21 - .5);
+    shaft.position.y = .5 + length / 2;
+    shaft.scale.set(1, length, 1);
+    collar.position.y = hammerHead.position.y - .31;
+    root.userData.reachScale = reachScale;
+    return hammerHead.position.y;
+  }
+
+  function setWeaponVisible(visible) {
+    weaponHeld = !!visible;
+    hammerPivot.visible = weaponHeld;
+    root.userData.weaponHeld = weaponHeld;
+    updateGrip();
+    return weaponHeld;
+  }
+
+  const localBoundsCache = {
+    key: '', bounds: new THREE.Box3(), center: new THREE.Vector3(),
+    radius: 0, spinRadius: 0,
+  };
+  const localMatrices = new Map();
+  const localRootScale = new THREE.Matrix4();
+  const localMeshBox = new THREE.Box3();
+  const localSphere = new THREE.Sphere();
+  function localHammerBounds() {
+    const key = [reachScale, hammerHead.scale.x, hammerHead.scale.y, hammerHead.scale.z,
+      hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z].join(':');
+    if (key === localBoundsCache.key) return localBoundsCache;
+    const bounds = localBoundsCache.bounds;
+    bounds.makeEmpty();
+    localRootScale.makeScale(hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z);
+    function visit(node, parentMatrix) {
+      node.updateMatrix();
+      let matrix = localMatrices.get(node);
+      if (!matrix) { matrix = new THREE.Matrix4(); localMatrices.set(node, matrix); }
+      matrix.multiplyMatrices(parentMatrix, node.matrix);
+      if (node.isMesh) {
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        localMeshBox.copy(node.geometry.boundingBox).applyMatrix4(matrix);
+        bounds.union(localMeshBox);
+      }
+      for (const child of node.children) visit(child, matrix);
+    }
+    for (const child of hammerPivot.children) visit(child, localRootScale);
+    bounds.getCenter(localBoundsCache.center);
+    bounds.getBoundingSphere(localSphere);
+    localBoundsCache.radius = localSphere.radius;
+    localBoundsCache.spinRadius = Math.hypot(
+      Math.max(Math.abs(bounds.min.x), Math.abs(bounds.max.x)),
+      Math.max(Math.abs(bounds.min.y), Math.abs(bounds.max.y)));
+    localBoundsCache.key = key;
+    return localBoundsCache;
+  }
+  const getThrowRadius = () => localHammerBounds().radius;
+  const getSpinRadius = () => localHammerBounds().spinRadius;
+  function getThrowCenterWorld(target = new THREE.Vector3()) {
+    target.copy(localHammerBounds().center);
+    // Cached bounds already include pivot scale; localToWorld applies it once.
+    target.x /= hammerPivot.scale.x || 1;
+    target.y /= hammerPivot.scale.y || 1;
+    target.z /= hammerPivot.scale.z || 1;
+    return hammerPivot.localToWorld(target);
+  }
+
+  function createThrownHammer() {
+    // Clone only the actual hammer, with independent resources so disposing
+    // the projectile never invalidates the weapon still owned by the hero.
+    const projectile = new THREE.Group();
+    projectile.name = 'Thrown Stormforged hammer';
+    const weapon = hammerPivot.clone(true);
+    weapon.name = 'projectileHammer'; weapon.visible = true;
+    weapon.position.set(0, 0, 0); weapon.rotation.set(0, 0, 0);
+    weapon.getObjectByName('leftGripAnchor')?.removeFromParent();
+    weapon.getObjectByName('rightGripAnchor')?.removeFromParent();
+    const geometries = new Map(), materials = new Map();
+    weapon.traverse(node => {
+      if (!node.isMesh) return;
+      if (!geometries.has(node.geometry)) geometries.set(node.geometry, node.geometry.clone());
+      node.geometry = geometries.get(node.geometry);
+      const clone = m => {
+        if (!materials.has(m)) materials.set(m, m.clone());
+        return materials.get(m);
+      };
+      node.material = Array.isArray(node.material) ? node.material.map(clone) : clone(node.material);
+    });
+    projectile.add(weapon);
+    const bounds = localHammerBounds();
+    weapon.position.sub(bounds.center);
+    projectile.userData = {
+      kind: 'hammer-projectile', spinAxis: 'z', balanceY: bounds.center.y,
+      balance: {
+        x: bounds.center.x / (hammerPivot.scale.x || 1),
+        y: bounds.center.y / (hammerPivot.scale.y || 1),
+        z: bounds.center.z / (hammerPivot.scale.z || 1),
+      },
+      radius: bounds.radius, reachScale, headSize: hammerHead.scale.x,
+    };
+    return projectile;
+  }
+
   root.userData = {
     body, leftLeg, rightLeg, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
-    leftGrip, rightGrip, updateGrip,
-    weaponRest: { x: .55, y: 0, z: -.72 },
+    leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
+    shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach,
+    setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld,
+    getSpinRadius, weaponRest, weaponRestPosition,
+    stance: 0, shieldStored: false, weaponHeld: true, reachScale: 1,
     hammerRest: { x: 0, y: 0, z: 0 },
     width: 1.1, depth: .7, height: 1.99, color: P.blue,
     fragments: [P.blue, P.steel, P.gold, P.hot],
   };
-  updateGrip();
+  setReach(1);
+  setStance(0);
   return root;
 }
 
