@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261105-spin3">
+  <link rel="stylesheet" href="./style.css?v=20261105-spin4">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -51,6 +51,9 @@
       <symbol id="a-throw" viewBox="0 0 96 80"><path d="M7 52 83 24" fill="none" stroke="#ffc77c" stroke-width="2.7" stroke-dasharray="5 5"/><path d="m78 18 13 3-8 10Z" fill="#ffe2a2"/><path d="M80 51C64 75 27 75 13 62" fill="none" stroke="#88d8d0" stroke-width="2"/><path d="m11 57-2 11 10-6Z" fill="#88d8d0"/><path d="M2 43 14 41 23 48 15 56 4 57" fill="#a9c7d1" stroke="#17343f" stroke-width="2"/><use href="#a-hammer" transform="translate(53 25) rotate(53) scale(.66)"/><path d="M81 5V13M81 35V43M62 24H70M92 24H96" stroke="#b9e9dc" stroke-width="2"/><circle cx="81" cy="24" r="10" fill="none" stroke="#b9e9dc" stroke-width="2"/></symbol>
       <symbol id="a-stance" viewBox="0 0 96 80"><path d="m49 31-9 38 21-6 16 5-9-37" fill="#c66d42"/><path d="m47 20 21-1 5 31-29 2Z" fill="#7fa7b5" stroke="#173641" stroke-width="3"/><path d="M49 12 65 10 68 22 48 24Z" fill="#bbd1d7" stroke="#19343e" stroke-width="2"/><path d="M55 6H63V13H55Z" fill="#edab56"/><path d="M47 48 46 73M64 48 69 72" stroke="#abc6cf" stroke-width="7"/><use href="#a-shield" transform="translate(58 38) scale(.72)"/><use href="#a-hammer" transform="translate(24 26) rotate(-18) scale(.56)"/><path d="M17 64C24 73 37 68 39 48" fill="none" stroke="#ffe0a0" stroke-width="3"/><path d="m33 50 7-10 4 12Z" fill="#ffe0a0"/></symbol>
       <symbol id="a-dodge" viewBox="0 0 96 80"><use href="#a-warrior" transform="translate(31 42) rotate(-28) scale(.7)" opacity=".13"/><use href="#a-warrior" transform="translate(44 42) rotate(-28) scale(.7)" opacity=".3"/><use href="#a-warrior" transform="translate(62 42) rotate(-28) scale(.7)"/><path d="M7 31H28M3 43H22M9 55H32" stroke="#9de0d2" stroke-width="3" stroke-linecap="round"/><path d="M30 74H81l-8-6M81 74l-8 5" fill="none" stroke="#f9cb7e" stroke-width="2.5" stroke-linejoin="round"/></symbol>
+      <g id="a-speaker-body"><path d="M9 18H18L30 9V39L18 30H9Z" fill="#d9b879" stroke="#14303b" stroke-width="2.5" stroke-linejoin="round"/><path d="M9 18H18V30H9Z" fill="#bdd6dc"/><path d="M18 18 30 9V39L18 30Z" fill="#6f9bad"/><path d="m18 18 9-7v26l-9-7Z" fill="#c9dce0"/><path d="M9 18H18V30H9Z" fill="none" stroke="#6f929f" stroke-width="2"/></g>
+      <symbol id="a-sound-on" viewBox="0 0 48 48"><use href="#a-speaker-body"/><path d="M35 17C40 21 40 27 35 31M40 10C49 18 49 30 40 38" fill="none" stroke="#b0ead5" stroke-width="3" stroke-linecap="round"/></symbol>
+      <symbol id="a-sound-off" viewBox="0 0 48 48"><use href="#a-speaker-body"/><path d="M8 41 41 8" stroke="#17313a" stroke-width="7" stroke-linecap="round"/><path d="M8 41 41 8" stroke="#ffaf87" stroke-width="3.8" stroke-linecap="round"/></symbol>
       <symbol id="a-keycap" viewBox="0 0 44 46"><path d="M5 5H39V39L35 44H9L5 39Z" fill="#0d202b"/><rect class="key-face" x="3" y="2" width="38" height="38" rx="5" fill="var(--key-face,#35515b)" stroke="var(--key-edge,#76969d)" stroke-width="1.4"/><path d="M7 35H37M8 5H35" stroke="var(--key-edge,#76969d)" opacity=".6"/><path d="m18 11 4-4 4 4Z" fill="var(--key-mark,#eec27e)"/></symbol>
     </defs>
   </svg>
@@ -202,7 +205,10 @@
       <div class="dock-status">
         <span class="dock-stance"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg><strong id="stanceValue">ΣΦΥΡΙ + ΑΣΠΙΔΑ</strong></span>
         <div class="dock-charge"><span id="chargeText">ΚΡΑΤΑ SPACE · 360°</span><div id="chargeWrap" class="charge-track"><div id="chargeFill" style="width:0%"></div><i></i><i></i><i></i></div></div>
-        <span class="dock-aim"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-range"/></svg>ΠΟΝΤΙΚΙ · Q / R</span>
+        <div class="dock-tools">
+          <span class="dock-aim"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-range"/></svg>ΠΟΝΤΙΚΙ · Q / R</span>
+          <button id="muteButton" class="dock-sound" type="button" aria-pressed="false" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Σίγαση ή ενεργοποίηση ήχου"><svg viewBox="0 0 48 48" aria-hidden="true"><use id="muteIcon" href="#a-sound-on"/></svg><span id="muteValue">ΣΙΓΑΣΗ</span></button>
+        </div>
       </div>
     </section>
     <span class="hud-corner-note">ΣΠΑΣΕ. ΜΑΖΕΨΕ. ΕΠΑΝΑΛΑΒΕ.</span>
@@ -274,6 +280,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261105-spin3"></script>
+  <script type="module" src="./game.js?v=20261105-spin4"></script>
 </body>
 </html>

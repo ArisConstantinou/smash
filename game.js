@@ -864,18 +864,28 @@ function pressGuard(){
   if(phase!=='playing')return;
   guardHeld=true;cancelAttack();spinRecovery=null;
 }
+function updateSoundButtons(){
+  const label=settings.muted?'Ήχος κλειστός — πάτησε για ενεργοποίηση':'Ήχος ενεργός — πάτησε για σίγαση';
+  for(const id of ['soundButton','muteButton']){
+    const button=$(id);if(!button)continue;
+    button.classList.toggle('muted',settings.muted);button.setAttribute('aria-pressed',String(settings.muted));button.setAttribute('aria-label',label);button.setAttribute('title',label);
+  }
+  $('muteIcon')?.setAttribute('href',settings.muted?'#a-sound-off':'#a-sound-on');
+  if($('muteValue'))$('muteValue').textContent=settings.muted?'ΚΛΕΙΣΤΟΣ':'ΣΙΓΑΣΗ';
+}
+function toggleSound(){audio.unlock();settings.muted=audio.toggle();updateSoundButtons();save('ironfall.settings',settings);}
 function initInput(){
   $('startButton').onclick=startGame;$('retryButton').onclick=startGame;$('restartButton').onclick=startGame;
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
   $('continueButton').onclick=()=>{round++;resetWorld(true);setPhase('playing');audio.play('start');announce('ΤΟΜΕΑΣ '+String(round).padStart(2,'0'),'Η ορδή δυναμώνει. Οι αναβαθμίσεις σου παραμένουν.',3.2);};
-  $('soundButton').onclick=()=>{audio.unlock();settings.muted=audio.toggle();$('soundButton').classList.toggle('muted',settings.muted);$('soundButton').setAttribute('aria-label',settings.muted?'Ήχος κλειστός — πάτησε για ενεργοποίηση':'Ήχος ενεργός — πάτησε για σίγαση');save('ironfall.settings',settings);};
+  $('soundButton').onclick=toggleSound;if($('muteButton'))$('muteButton').onclick=toggleSound;
   $('settingsButton').onclick=()=>{if(phase==='upgrade')return;previousPhase=phase;setPhase('settings');};
   $('closeSettingsButton').onclick=()=>{setPhase(previousPhase);save('ironfall.settings',settings);};
   $('qualitySelect').value=settings.quality;$('shakeToggle').checked=settings.shake;$('volumeRange').value=Math.round(settings.volume*100);
   $('qualitySelect').onchange=e=>{settings.quality=e.target.value;resize();save('ironfall.settings',settings);};
   $('shakeToggle').onchange=e=>{settings.shake=e.target.checked;save('ironfall.settings',settings);};
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);save('ironfall.settings',settings);};
-  if(settings.muted){audio.toggle();$('soundButton').classList.add('muted');$('soundButton').setAttribute('aria-label','Ήχος κλειστός — πάτησε για ενεργοποίηση');}
+  if(settings.muted)audio.toggle();updateSoundButtons();
   window.addEventListener('keydown',e=>{
     const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyQ','KeyE','KeyR','KeyZ'];
     if(handled.includes(e.code)&&!['INPUT','SELECT'].includes(document.activeElement?.tagName))e.preventDefault();
