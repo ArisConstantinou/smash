@@ -219,3 +219,188 @@ kbd.cooldown{opacity:.42;border-color:#6f8170;box-shadow:none}
   .combat-hints { margin-top:7px; font-size:7px; gap:6px 12px; }
   .air-hint { display:none; }
 }
+
+/* The armory is a manually opened HUD drawer. It never creates a backdrop. */
+.upgrade-dock {
+  position:absolute; top:139px; left:28px; z-index:11; width:270px;
+  pointer-events:auto; color:#ecedd9;
+}
+.upgrades-toggle {
+  display:flex; align-items:center; gap:9px; width:100%; height:40px; padding:7px 10px;
+  color:#ecd7a6; background:linear-gradient(110deg,#263b3bfa,#12282ff5);
+  border:1px solid #65786c; border-left:3px solid #d5ad65; border-bottom:3px solid #0a1c23;
+  border-radius:5px; box-shadow:0 3px 10px #07171940; text-align:left;
+}
+.upgrades-toggle>svg { width:20px; height:20px; color:#eac37b; }
+.upgrades-toggle>span { font:800 12px/1 var(--body); letter-spacing:.4px; }
+.pending-upgrade-count {
+  display:grid; place-items:center; min-width:23px; height:23px; padding:0 5px; margin-left:auto;
+  background:#e7bb6b; border:1px solid #f5dca0; border-radius:4px; color:#17333b;
+  font:900 12px/1 var(--body); box-shadow:0 2px 0 #785c31;
+}
+.upgrades-toggle>kbd { height:22px; min-width:22px; padding:1px 4px; font:700 11px/1 var(--body); }
+.upgrades-toggle>.upgrade-chevron { width:13px; height:13px; transform:rotate(90deg); transition:transform .16s; }
+.upgrades-toggle[aria-expanded="true"] { border-color:#d1b16e; background:linear-gradient(110deg,#3c4b41,#1a3137); }
+.upgrades-toggle[aria-expanded="true"]>.upgrade-chevron { transform:rotate(-90deg); }
+.upgrades-toggle:hover { border-color:#f4d197; }
+.upgrades-toggle.has-pending,.upgrades-toggle[data-pending="true"] { border-left-color:#ffda8e; }
+#upgradePanel {
+  position:absolute; top:calc(100% + 7px); left:0; width:min(640px,calc(50vw - 56px));
+  max-height:calc(100dvh - var(--combat-dock-space) - 201px); overflow:auto; padding:14px;
+  background:linear-gradient(135deg,rgba(33,54,53,.98),rgba(13,31,37,.98));
+  border:1px solid #738472; border-top:2px solid #d9bc7b; border-radius:7px;
+  box-shadow:0 5px 0 #0b1b22,0 12px 32px #05131955; overscroll-behavior:contain;
+  scrollbar-width:thin; scrollbar-color:#7e936e #142c30; touch-action:pan-y;
+}
+#upgradePanel .upgrade-drawer-heading { display:flex; align-items:center; gap:12px; margin:0 0 11px; }
+#upgradePanel .upgrade-eyebrow { display:block; color:#9bbbae; font:700 8px/1.3 var(--body); letter-spacing:1px; }
+#upgradePanel h2 { margin:4px 0 0; font:700 24px/1 var(--display); letter-spacing:1.2px; color:#f1d79e; }
+#upgradePanel .loadout-level { margin-left:auto; display:flex; align-items:center; gap:7px; color:#a9c3b6; white-space:nowrap; font:700 9px/1 var(--body); letter-spacing:.6px; }
+#upgradePanel .loadout-level b { color:#ffdda0; font:700 24px/1 var(--display); }
+#upgradePanel .upgrade-close { display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; padding:0; border:1px solid #657d75; border-radius:4px; color:#c9d6c7; background:#152d34; }
+#upgradePanel .upgrade-close:hover { border-color:#e5c27e; color:#ffe1a8; }
+#upgradePanel .upgrade-close svg { width:16px; height:16px; }
+#upgradePanel .loadout-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+#upgradePanel .loadout-stats>div { display:grid; grid-template-columns:42px minmax(0,1fr); grid-template-rows:auto auto; align-items:center; justify-items:start; gap:2px 6px; min-height:48px; padding:5px 7px; border:1px solid #4c68604d; border-radius:4px; background:#0d252a80; }
+#upgradePanel .loadout-stats svg { width:42px; height:35px; grid-row:1/3; }
+#upgradePanel .loadout-stats strong { align-self:end; font:800 15px/1.05 var(--body); color:#f0deb5; }
+#upgradePanel .loadout-stats small { align-self:start; font:700 8px/1.2 var(--body); color:#a5c2b5; letter-spacing:.35px; }
+#upgradePanel .relic-slots { display:flex; gap:5px; margin:8px 0 0; flex-wrap:wrap; }
+#upgradePanel .relic-slots:empty { display:none; }
+#upgradePanel .relic-slots>.relic-installed { display:flex; align-items:center; gap:3px; padding:2px 6px 2px 3px; border:1px solid #7b9a794d; border-radius:4px; background:#1f403d; font:700 10px/1 var(--body); color:#f1d59b; }
+#upgradePanel .relic-installed svg { width:29px; height:24px; }
+#upgradePanel .relic-installed b { font:800 11px/1 var(--body); }
+#upgradePanel .upgrade-queue-heading { display:flex; align-items:center; gap:7px; margin:11px 0 9px; color:#f2d59c; }
+#upgradePanel .upgrade-queue-heading svg { width:15px; height:15px; }
+#upgradePanel .upgrade-queue-heading p { margin:0; color:#cbd9c9; font:600 11px/1.4 var(--body); }
+#upgradePanel .upgrade-choices { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:0; }
+#upgradePanel .upgrade-choices:empty { display:none; }
+#upgradePanel .upgrade-card {
+  position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+  min-width:0; min-height:184px; padding:8px 10px 9px; gap:3px; text-align:center;
+  border:1px solid #617f75; border-bottom:3px solid #0b2027; border-radius:5px;
+  background:linear-gradient(150deg,#2e4948,#183138); color:#dce4cd;
+  box-shadow:inset 0 1px 0 #c8dbba12; transition:border-color .12s,background .12s;
+  touch-action:manipulation;
+}
+#upgradePanel .upgrade-card:hover { background:linear-gradient(150deg,#405b50,#25423e); border-color:var(--card-accent,#e5c27e); transform:none; }
+#upgradePanel .upgrade-card:active { background:#475b44; border-color:#ffdb93; }
+#upgradePanel .upgrade-card::after { display:none; }
+#upgradePanel .upgrade-card>.upgrade-key { display:grid; place-items:center; position:absolute; top:7px; right:7px; left:auto; min-width:22px; height:22px; padding:0; border:1px solid #9aa98c; border-bottom:2px solid #10232b; background:#182e35; color:#f5ddb1; font:800 11px/1 var(--body); border-radius:3px; }
+#upgradePanel .upgrade-card>.upgrade-icon { display:block; width:79px; height:65px; margin:0 0 2px; padding:0; background:transparent; border:0; border-radius:0; color:var(--card-accent,#f6c777); }
+#upgradePanel .upgrade-card>small { margin:0; font:700 9px/1.3 var(--body); letter-spacing:.4px; color:#b1cbb9; }
+#upgradePanel .upgrade-card>h3 { display:block; min-height:0; margin:1px 0 2px; font:800 15px/1.2 var(--body); letter-spacing:.1px; color:#f0d39a; overflow-wrap:anywhere; }
+#upgradePanel .upgrade-card>p { margin:0 0 8px; font:400 11px/1.45 var(--body); color:#c8d7cb; }
+#upgradePanel .upgrade-card>.upgrade-level { display:flex; justify-content:space-between; align-items:center; gap:5px; width:100%; margin-top:auto; padding-top:7px; border-top:1px solid #76917b3b; color:#a7bfa9; font:700 9px/1.4 var(--body); letter-spacing:0; }
+#upgradePanel .upgrade-level b,#upgradePanel .upgrade-level>span { color:#f5d897; font:800 9px/1.4 var(--body); }
+#upgradePanel .upgrade-empty { grid-column:1/-1; display:flex; align-items:center; justify-content:center; gap:13px; min-height:90px; padding:12px; background:#102a2d80; border:1px dashed #637e684d; border-radius:5px; color:#afc9b8; font:12px/1.5 var(--body); }
+#upgradePanel .upgrade-empty svg { width:55px; height:46px; }
+#upgradePanel .upgrade-drawer-footnote { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:9px; border-top:1px solid #76917b38; color:#a9bfaf; font:9px/1.4 var(--body); }
+#upgradePanel .upgrade-drawer-footnote>span { display:flex; align-items:center; gap:4px; }
+#upgradePanel .upgrade-drawer-footnote kbd { height:17px; min-width:17px; padding:1px 3px; font:700 9px/1 var(--body); border-bottom-width:2px; }
+#upgradePanel .upgrade-live { flex:none; color:#a5cdb5; font:700 8px/1.4 var(--body); letter-spacing:.4px; }
+#upgradePanel .upgrade-live i { display:block; width:5px; height:5px; background:#96cdb3; border-radius:50%; box-shadow:0 0 6px #96cdb340; }
+
+/* Wave progress stays visible beside the destruction objective. */
+.wave-progress { display:flex; align-items:center; gap:6px; margin-top:9px; min-height:18px; color:#a7c6b5; }
+.wave-progress>span { font:700 9px/1.2 var(--body); letter-spacing:.6px; }
+.wave-progress>strong { margin-left:auto; color:#f4d5a0; font:800 17px/1 var(--body); }
+.wave-progress>svg { width:13px; height:13px; color:#dcac6c; }
+.run-counters { margin-top:9px; gap:21px; }
+.minimap-panel { top:199px; }
+
+/* Left mouse button images share the illustrated keyboard's visual language. */
+kbd.mouse-key { gap:4px; }
+.landing-controls .mouse-key { min-width:56px; height:34px; padding:2px 5px; font:700 9px/1 var(--body); }
+.landing-controls .mouse-key svg { width:20px; height:26px; }
+#combatDock .action-key.mouse-key { gap:3px; padding:0 4px; }
+#combatDock .action-key.mouse-key svg { flex:none; width:11px; height:14px; margin:0; }
+.direction-note { line-height:1.6; }
+.combat-hints,.air-hint,.combat-help { font-family:var(--body); }
+.combat-help { font-size:11px; }
+.combat-help dl { grid-template-columns:92px 1fr; }
+.combat-help p { font-size:10px; }
+
+@media (min-width:1600px) { .upgrade-dock { top:145px; left:35px; } }
+@media (max-width:1150px) {
+  .upgrade-dock { top:130px; left:20px; width:220px; }
+  .upgrades-toggle { gap:6px; padding-right:7px; }
+  .upgrades-toggle>span { font-size:11px; letter-spacing:0; }
+  .upgrades-toggle>svg { width:18px; height:18px; }
+  #upgradePanel { width:min(610px,calc(50vw - 40px)); max-height:calc(100dvh - var(--combat-dock-space) - 192px); }
+  .minimap-panel { top:190px; }
+}
+@media (max-width:800px) {
+  .upgrade-dock { top:115px; left:14px; width:190px; }
+  .upgrades-toggle { height:34px; padding:5px 6px; gap:5px; border-left-width:2px; }
+  .upgrades-toggle>span { font-size:10px; }
+  .upgrades-toggle>svg { width:16px; height:16px; }
+  .pending-upgrade-count { min-width:20px; height:20px; padding:0 4px; font-size:10px; }
+  .upgrades-toggle>kbd { height:19px; min-width:19px; padding:0 3px; font-size:9px; }
+  .upgrades-toggle>.upgrade-chevron { width:10px; height:10px; }
+  #upgradePanel { width:min(590px,calc(100vw - 28px)); max-height:min(350px,calc(50dvh - 175px)); padding:11px; }
+  .boss-panel { top:158px; }
+  .minimap-panel { top:281px; }
+  .wave-progress { gap:5px; margin-top:7px; min-height:16px; }
+  .wave-progress>span { font-size:8px; letter-spacing:.3px; }
+  .wave-progress>strong { font-size:15px; }
+  .wave-progress>svg { width:12px; height:12px; }
+}
+@media (max-width:540px) {
+  .upgrade-dock { top:calc(max(12px,env(safe-area-inset-top)) + 96px); left:11px; width:181px; }
+  .upgrades-toggle>span { font-size:9px; letter-spacing:.1px; }
+  #upgradePanel { width:calc(100vw - 22px); max-height:min(330px,calc(50dvh - 163px)); padding:10px; }
+  #upgradePanel .upgrade-drawer-heading { gap:8px; margin-bottom:9px; }
+  #upgradePanel .upgrade-eyebrow { font-size:7px; letter-spacing:.4px; }
+  #upgradePanel h2 { font-size:22px; letter-spacing:.7px; }
+  #upgradePanel .loadout-level { gap:4px; font-size:8px; letter-spacing:0; }
+  #upgradePanel .loadout-level b { font-size:21px; }
+  #upgradePanel .upgrade-close { width:27px; height:27px; flex-basis:27px; }
+  #upgradePanel .loadout-stats { gap:4px; }
+  #upgradePanel .loadout-stats>div { grid-template-columns:1fr; grid-template-rows:28px auto auto; justify-items:center; gap:2px; padding:4px 2px 5px; }
+  #upgradePanel .loadout-stats svg { width:34px; height:28px; grid-row:1; }
+  #upgradePanel .loadout-stats strong { font-size:13px; }
+  #upgradePanel .loadout-stats small { font-size:7px; letter-spacing:.1px; }
+  #upgradePanel .upgrade-queue-heading { margin:9px 0 8px; gap:5px; }
+  #upgradePanel .upgrade-queue-heading p { font-size:10px; }
+  #upgradePanel .upgrade-choices { gap:5px; }
+  #upgradePanel .upgrade-card { display:flex; min-height:186px; padding:7px 5px; gap:3px; }
+  #upgradePanel .upgrade-card>.upgrade-key { display:grid; top:5px; right:5px; width:19px; min-width:19px; height:19px; font-size:10px; }
+  #upgradePanel .upgrade-card>.upgrade-icon { width:65px; height:54px; margin:4px 0 2px; }
+  #upgradePanel .upgrade-card>small { font-size:8px; letter-spacing:0; }
+  #upgradePanel .upgrade-card>h3 { font-size:12px; line-height:1.2; min-height:29px; margin:1px 0 2px; }
+  #upgradePanel .upgrade-card>p { font-size:10px; line-height:1.4; margin-bottom:5px; }
+  #upgradePanel .upgrade-card>.upgrade-level { flex-wrap:wrap; gap:2px 5px; padding-top:6px; margin-top:auto; font-size:8px; }
+  #upgradePanel .upgrade-level b,#upgradePanel .upgrade-level>span { font-size:8px; }
+  #upgradePanel .upgrade-drawer-footnote { flex-wrap:wrap; gap:7px; font-size:9px; margin-top:9px; padding-top:8px; }
+  #upgradePanel .upgrade-live { font-size:8px; }
+  .boss-panel { top:155px; }
+  .minimap-panel { top:261px; }
+  .run-counters { margin-top:7px; }
+  .wave-progress>span { font-size:7px; letter-spacing:.1px; }
+  .wave-progress>strong { font-size:14px; }
+  #combatDock .action-key.mouse-key { gap:2px; padding:0 2px; }
+  #combatDock .action-key.mouse-key svg { width:8px; height:11px; }
+  .combat-help dl { grid-template-columns:75px 1fr; font-size:10px; }
+}
+@media (orientation:landscape) and (max-height:500px) {
+  .upgrade-dock { top:98px; left:12px; width:175px; }
+  .upgrades-toggle { height:31px; }
+  .upgrades-toggle>span { font-size:9px; }
+  .upgrades-toggle>.upgrade-chevron { display:none; }
+  #upgradePanel { width:min(320px,calc(50vw - 24px)); max-height:calc(100dvh - var(--combat-dock-space) - 151px); min-height:85px; padding:9px; }
+  #upgradePanel .upgrade-drawer-heading { margin-bottom:7px; }
+  #upgradePanel h2 { font-size:20px; }
+  #upgradePanel .loadout-stats>div { grid-template-columns:35px minmax(0,1fr); grid-template-rows:auto auto; justify-items:start; min-height:39px; padding:3px 6px; gap:1px 4px; }
+  #upgradePanel .loadout-stats svg { grid-row:1/3; width:35px; height:29px; }
+  #upgradePanel .upgrade-card { min-height:172px; padding:7px; }
+  #upgradePanel .upgrade-card>.upgrade-icon { width:66px; height:55px; }
+  #upgradePanel .upgrade-card>h3 { font-size:13px; min-height:0; }
+  #upgradePanel .upgrade-card>p { font-size:10px; }
+  #combatDock .action-key.mouse-key { gap:2px; padding:0 2px; }
+  #combatDock .action-key.mouse-key svg { width:7px; height:10px; }
+  .boss-panel { top:100px; }
+  .wave-progress { margin-top:6px; min-height:15px; }
+  .wave-progress>span { font-size:7px; }
+  .wave-progress>strong { font-size:13px; }
+}

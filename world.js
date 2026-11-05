@@ -1,227 +1,230 @@
 import * as THREE from './vendor/three.module.js';
 import { makeProp } from './models.js';
+import { makeCityBuilding, makeCityVehicle } from './city-models.js';
+import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
+import { createCityNavigation } from './city-navigation.js';
 
-// A continuous, traversable town.  Only the ground, markings and weather are
-// scenery: every solid prop in the town is registered as a destructible object.
+// All solid buildings, vehicles and street furniture share the same damage and
+// collision registry. Only ground markings, weather and cloth are scenery.
 export function createWorld(scene, { seed = 1, round = 1 } = {}) {
-  const group = new THREE.Group();
-  group.name = 'Ironfall district';
-  scene.add(group);
-  const objects = [], hazards = [], owned = new Set(), flags = [], trees = [];
-  const zones = {
-    rain: {id:'old-quarter', name:'ΠΑΛΙΑ ΣΥΝΟΙΚΙΑ', weather:'rain'},
-    snow: {id:'frost-quarter', name:'ΠΑΓΩΜΕΝΗ ΣΥΝΟΙΚΙΑ', weather:'snow'},
-    ash: {id:'foundry', name:'ΤΟ ΧΥΤΗΡΙΟ', weather:'ash'},
-  };
-  const regionAt = (x,z) => x < -7 && z < -7 ? zones.snow : x > 8 && z < -9 ? zones.ash : zones.rain;
-  let currentZone = zones.rain;
-  let state = (seed * 98771 + round * 11213) >>> 0;
-  const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296; };
-  const range = (a, b) => a + (b - a) * random();
-  const modulo = (a, b) => ((a % b) + b) % b;
-  const own = v => { owned.add(v); return v; };
-  const material = (color, options = {}) => own(new THREE.MeshLambertMaterial({ color, ...options }));
-  const basic = (color, options = {}) => own(new THREE.MeshBasicMaterial({ color, ...options }));
-  const matrix = new THREE.Matrix4(), transform = new THREE.Object3D();
-  const cube = own(new THREE.BoxGeometry(1, 1, 1));
-  const batches = new Map();
-  const palette = {
-    grass: 0x344f4b, asphalt: 0x263c43, sidewalk: 0x607275,
-    curb: 0x82928d, lane: 0xc8bd83, seam: 0x3b5559,
-    soil: 0x34443d, snow: 0xaec2c3, frost: 0x688c9b,
-    ash: 0x484a47, metal: 0x405c62, brick: 0x746f62,
-  };
-  const floorMats = Object.fromEntries(Object.entries(palette).map(([k, c]) => [k, material(c)]));
-
-  function box(mat, x, y, z, w, h, d, rotation = 0) {
-    if (typeof mat === 'string') mat = floorMats[mat];
-    if (!batches.has(mat)) batches.set(mat, []);
-    transform.position.set(x, y, z);
-    transform.rotation.set(0, rotation, 0);
-    transform.scale.set(w, h, d);
-    transform.updateMatrix();
-    batches.get(mat).push(transform.matrix.clone());
+  const group = new THREE.Group(); group.name = 'Ironfall city'; scene.add(group);
+  const objects=[], hazards=[], owned=new Set(), sharedModelMaterials=new Set(), flags=[], trees=[], cranes=[], emergencyVehicles=[];
+  const layout=createCityLayout(seed), regionAt=cityRegionAt;
+  let currentZone=regionAt(0,0), disposed=false;
+  let state=(seed*98771+round*11213)>>>0;
+  const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
+  const range=(a,b)=>a+(b-a)*random(), modulo=(a,b)=>((a%b)+b)%b;
+  const own=v=>{owned.add(v);return v;};
+  const material=(color,options={})=>own(new THREE.MeshLambertMaterial({color,...options}));
+  const basic=(color,options={})=>own(new THREE.MeshBasicMaterial({color,...options}));
+  const transform=new THREE.Object3D(), cube=own(new THREE.BoxGeometry(1,1,1));
+  const chunks=new Map(), batches=new Map(), chunkSize=44;
+  const palette={grass:0x344f4b,asphalt:0x263c43,sidewalk:0x647679,curb:0x8a9992,lane:0xc8bd83,seam:0x405b5f,soil:0x35473f,snow:0xb9cdce,frost:0x7094a2,ash:0x484c49,metal:0x405c62,brick:0x746f62};
+  const floorMats=Object.fromEntries(Object.entries(palette).map(([k,c])=>[k,material(c)]));
+  function chunkFor(x,z){
+    const cx=Math.floor(x/chunkSize),cz=Math.floor(z/chunkSize),key=`${cx},${cz}`;
+    if(!chunks.has(key)){
+      const mesh=new THREE.Group();mesh.name=`City ground ${key}`;group.add(mesh);
+      chunks.set(key,{mesh,x:(cx+.5)*chunkSize,z:(cz+.5)*chunkSize});
+    }
+    return chunks.get(key);
   }
-  function flushBatches() {
-    for (const [mat, matrices] of batches) {
-      const mesh = new THREE.InstancedMesh(cube, mat, matrices.length);
-      matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
-      mesh.receiveShadow = true;
-      mesh.frustumCulled = false;
-      group.add(mesh);
+  function box(mat,x,y,z,w,h,d,rotation=0){
+    if(typeof mat==='string')mat=floorMats[mat];
+    const chunk=chunkFor(x,z),key=`${chunk.mesh.uuid}:${mat.uuid}`;
+    if(!batches.has(key))batches.set(key,{mat,chunk,matrices:[]});
+    transform.position.set(x,y,z);transform.rotation.set(0,rotation,0);transform.scale.set(w,h,d);transform.updateMatrix();
+    batches.get(key).matrices.push(transform.matrix.clone());
+  }
+  function flushBatches(){
+    for(const {mat,chunk,matrices} of batches.values()){
+      const mesh=new THREE.InstancedMesh(cube,mat,matrices.length);
+      matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.receiveShadow=true;mesh.computeBoundingSphere();chunk.mesh.add(mesh);
     }
     batches.clear();
   }
-  function patch(x, z, rx, rz, mat, height = .018, sides = 9, roughness = .2) {
-    const shape = new THREE.Shape();
-    for (let i = 0; i < sides; i++) {
-      const a = i / sides * Math.PI * 2;
-      const r = 1 - random() * roughness;
-      const px = Math.cos(a) * rx * r, pz = Math.sin(a) * rz * r;
-      if (!i) shape.moveTo(px, pz); else shape.lineTo(px, pz);
+  function patch(x,z,rx,rz,mat,height=.018,sides=9,roughness=.2){
+    const shape=new THREE.Shape();
+    for(let i=0;i<sides;i++){
+      const a=i/sides*Math.PI*2,r=1-random()*roughness,px=Math.cos(a)*rx*r,pz=Math.sin(a)*rz*r;
+      if(!i)shape.moveTo(px,pz);else shape.lineTo(px,pz);
     }
-    shape.closePath();
-    const geo = own(new THREE.ShapeGeometry(shape));
-    geo.rotateX(-Math.PI / 2);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, height, z);
-    mesh.receiveShadow = true;
-    group.add(mesh);
-    return mesh;
+    shape.closePath();const geo=own(new THREE.ShapeGeometry(shape));geo.rotateX(-Math.PI/2);
+    const mesh=new THREE.Mesh(geo,mat);mesh.position.set(x,height,z);mesh.receiveShadow=true;chunkFor(x,z).mesh.add(mesh);return mesh;
   }
 
-  // Crossroads and four blocks, with a second circuit around the neighbourhood.
-  // Broad curbs and paving sit almost flush so there are no invisible barriers.
-  box('grass', 0, -.3, 0, 106, .55, 106);
-  box('asphalt', 0, -.002, 0, 7.8, .045, 92);
-  box('asphalt', 0, -.001, 0, 92, .045, 7.8);
-  for (const side of [-1, 1]) {
-    box('asphalt', side * 27.5, -.008, 0, 4.6, .04, 59.6);
-    box('asphalt', 0, -.008, side * 27.5, 59.6, .04, 4.6);
-    box('sidewalk', side * 5.2, .015, 0, 2.55, .06, 50.1);
-    box('sidewalk', 0, .014, side * 5.2, 50.1, .06, 2.55);
-    for (let z = -24; z <= 24; z += 1.18) {
-      if (Math.abs(z) < 4) continue;
-      box('curb', side * 3.99, .07, z, .19, .12, 1.08);
-      box('curb', z, .07, side * 3.99, 1.08, .12, .19);
-      box('seam', side * 5.2, .053, z + .56, 2.35, .008, .025);
-      box('seam', z + .56, .053, side * 5.2, .025, .008, 2.35);
-    }
-    // Drains set into the gutters, not raised collisions.
-    for (const p of [-21, -10, 11, 22]) {
-      box('metal', side * 3.66, .03, p, .36, .025, .8);
-      for (let i = 0; i < 4; i++) box('asphalt', side * 3.66, .046, p - .27 + i * .18, .33, .01, .055);
+  // A continuous street grid connects every block and the outer ring road.
+  const ground=new THREE.Mesh(own(new THREE.PlaneGeometry(260,260)),floorMats.grass);
+  ground.rotation.x=-Math.PI/2;ground.position.y=-.04;ground.receiveShadow=true;group.add(ground);
+  for(const road of layout.roads) for(let i=0;i<10;i++){
+    const center=(i-4.5)*CITY_SPACING;
+    box('asphalt',road,-.005,center,CITY_ROAD_WIDTH,.045,CITY_SPACING);
+    box('asphalt',center,-.004,road,CITY_SPACING,.045,CITY_ROAD_WIDTH);
+    for(const dash of [-6,-2,2,6]){
+      box('lane',road,.032,center+dash,.105,.01,1.75);
+      box('lane',center+dash,.032,road,1.75,.01,.105);
     }
   }
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-    box(sx < 0 && sz < 0 ? 'frost' : sx > 0 && sz < 0 ? 'ash' : 'soil', sx * 15.6, -.005, sz * 15.6, 18.3, .04, 18.3);
-    // Stepping paths through the building courtyards.
-    for (let p = 7.4; p < 25; p += 1.55) {
-      box('sidewalk', sx * 15.4, .026, sz * p, 1.27, .055, 1.26);
-      box('sidewalk', sx * p, .026, sz * 15.4, 1.26, .055, 1.27);
+  for(const p of layout.plots){
+    const terrain=p.districtId==='frost-quarter'?'frost':p.districtId==='foundry'?'ash':'soil';
+    box('sidewalk',p.x,.008,p.z,15.2,.055,15.2);
+    box(terrain,p.x,.04,p.z,13.4,.018,13.4);
+    for(const side of [-1,1]){
+      box('curb',p.x+side*7.56,.063,p.z,.14,.09,15.15);
+      box('curb',p.x,.063,p.z+side*7.56,15.15,.09,.14);
+      for(const seam of [-5,0,5]){
+        box('seam',p.x+side*7.07,.041,p.z+seam,.8,.008,.035);
+        box('seam',p.x+seam,.041,p.z+side*7.07,.035,.008,.8);
+      }
+    }
+    // Civic forecourts and construction warning stripes belong to their lot.
+    if(p.kind==='townhall'||p.kind==='police'||p.kind==='hospital'){
+      box(p.kind==='townhall'?'brick':'sidewalk',p.x,.052,p.z,14.9,.02,14.9);
+      for(const offset of [-6.8,6.8])box('lane',p.x+offset,.069,p.z,.09,.012,12.6);
+    }
+    if(p.kind==='construction')for(let i=0;i<9;i++)box('lane',p.x-5.8+i*1.4,.07,p.z+7.1,.65,.015,.5,-.5);
+  }
+  // Walkways on the outside of the ring road leave the whole city reachable.
+  for(const side of [-1,1]){
+    box('sidewalk',side*115.2,.016,0,3.1,.05,230.5);
+    box('sidewalk',0,.016,side*115.2,230.5,.05,3.1);
+  }
+  for(const rx of layout.roads)for(const rz of layout.roads){
+    if(Math.abs(rx)>88||Math.abs(rz)>88||(Math.abs(rx)+Math.abs(rz)>1&&((rx/22+rz/22)%2)))continue;
+    for(const side of [-1,1])for(let i=-2;i<=2;i++){
+      box('curb',rx+i*1.1,.037,rz+side*4.8,.64,.01,1.1);
+      box('curb',rx+side*4.8,.037,rz+i*1.1,1.1,.01,.64);
     }
   }
-  for (let p = -43; p <= 43; p += 5) {
-    if (Math.abs(p) < 6) continue;
-    box('lane', -.11, .035, p, .09, .012, 2.25);
-    box('lane', .11, .035, p, .09, .012, 2.25);
-    box('lane', p, .035, -.11, 2.25, .012, .09);
-    box('lane', p, .035, .11, 2.25, .012, .09);
+  const roadPatch=material(0x304950),crackMat=basic(0x182f34);
+  for(let i=0;i<65;i++){
+    const road=layout.roads[Math.floor(random()*layout.roads.length)],along=range(-106,106);
+    const x=i%2?road+range(-2.6,2.6):along,z=i%2?along:road+range(-2.6,2.6);
+    patch(x,z,range(.35,1.2),range(.3,.7),roadPatch,.029,6,.25);
+    box(crackMat,x,.048,z,1.1,.008,.025,random()*Math.PI);
   }
-  // Chipped crosswalk stripes around the central intersection.
-  for (const side of [-1, 1]) for (let i = -2; i <= 2; i++) {
-    box('curb', i * 1.13, .038, side * 6.5, .67, .012, 1.6);
-    box('curb', side * 6.5, .038, i * 1.13, 1.6, .012, .67);
+  const manholeGeo=own(new THREE.CylinderGeometry(.5,.5,.035,12));
+  for(let i=0;i<22;i++){
+    const x=layout.roads[i%11]+1.5,z=(Math.floor(i/11)*2-1)*((i%5)*22+10);
+    const mesh=new THREE.Mesh(manholeGeo,floorMats.metal);mesh.position.set(x,.039,z);chunkFor(x,z).mesh.add(mesh);
+    for(let j=-2;j<=2;j++)box('asphalt',x,.06,z+j*.15,.62,.008,.035);
   }
-  const manholeGeo = own(new THREE.CylinderGeometry(.58, .58, .045, 12));
-  for (const p of [[-2,-7],[2,11],[-12,1.6],[22,-1.4],[0,31]]) {
-    const m = new THREE.Mesh(manholeGeo, floorMats.metal);
-    m.position.set(p[0], .035, p[1]); m.receiveShadow = true; group.add(m);
-    for (let i = -2; i <= 2; i++) box('asphalt', p[0], .06, p[1]+i*.17, .7, .01, .052);
-  }
-  // Road repairs, little cracks, broken cobbles, and soil patches.
-  const roadPatch = material(0x304950);
-  const crackMat = basic(0x182f34);
-  for (let i = 0; i < 32; i++) {
-    let x, z;
-    if (i % 2) { x = range(-2.9,2.9); z = range(-43,43); }
-    else { x = range(-43,43); z = range(-2.9,2.9); }
-    patch(x,z,range(.35,1.25),range(.3,.75),roadPatch,.029,6,.28);
-    let cx=x-.4, cz=z;
-    for(let j=0;j<3;j++) {
-      const nx=cx+range(.35,.65), nz=cz+range(-.23,.23);
-      box(crackMat,(cx+nx)/2,.049,(cz+nz)/2,Math.hypot(nx-cx,nz-cz),.008,.025,-Math.atan2(nz-cz,nx-cx));
-      cx=nx; cz=nz;
-    }
-  }
-  for (let i = 0; i < 150; i++) {
-    const x=range(-41,41),z=range(-41,41);
-    if (Math.abs(x)<6.4 || Math.abs(z)<6.4 || (Math.abs(x)>25&&Math.abs(x)<30) || (Math.abs(z)>25&&Math.abs(z)<30)) continue;
-    box(i % 3 ? 'seam':'brick',x,.04,z,range(.1,.35),range(.04,.13),range(.13,.4),random()*Math.PI);
-  }
-
-  // Frozen north-west block: snow banks, powder and iced puddles.
   const snowMat=material(0xb8cccc),snowShadow=material(0x8aabb6),iceMat=material(0x658f9d,{transparent:true,opacity:.82});
-  patch(-18.8,-18.4,15.8,15,snowShadow,.012,14,.17);
-  patch(-19.2,-19.2,13.9,13.6,snowMat,.019,15,.22);
-  for(let i=0;i<18;i++) {
-    const x=range(-38,-7),z=range(-38,-7);
-    if ((Math.abs(x+27.5)<2.6)||(Math.abs(z+27.5)<2.6)) continue;
-    patch(x,z,range(.6,2.4),range(.5,1.8),i%4?snowMat:iceMat,.036,7,.25);
+  for(const p of layout.plots.filter(p=>p.districtId==='frost-quarter')){
+    patch(p.x,p.z,7.2,7.2,snowShadow,.05,12,.08);
+    patch(p.x,p.z,6.9,6.9,snowMat,.057,12,.13);
+    patch(p.x+6.1,p.z-5.2,.9,1.6,iceMat,.067,8,.2);
   }
-  patch(-29.7,-33.4,4.9,2.3,iceMat,.045,10,.2);
-  // Thin ice cracks make the frozen quarter distinct even between snowfalls.
-  for(let i=0;i<7;i++) box('frost',-32+i*.75,.058,-33.1+Math.sin(i)*.5,.83,.012,.035,Math.sin(i)*.5);
-
-  // Rain-slick puddles catch the lamps without expensive reflections.
   const puddleMat=own(new THREE.MeshPhongMaterial({color:0x4e8590,emissive:0x0c1d25,shininess:95,transparent:true,opacity:.64,depthWrite:false}));
   const puddleGlint=basic(0x83c1bb,{transparent:true,opacity:.27,depthWrite:false});
-  const puddles=[];
-  for(let i=0;i<21;i++) {
-    let x,z;
-    if(i%2){x=range(-2.8,2.8);z=range(-35,35);}
-    else{x=range(-35,35);z=range(-2.8,2.8);}
-    if(Math.abs(x)<3&&Math.abs(z)<3) continue;
-    const rx=range(.45,1.25),rz=range(.2,.6);
-    puddles.push(patch(x,z,rx,rz,puddleMat,.06,8,.25));
-    patch(x-.08,z-.05,rx*.63,rz*.11,puddleGlint,.064,5,.1);
+  for(let i=0;i<60;i++){
+    const road=layout.roads[Math.floor(random()*layout.roads.length)],along=range(-105,105);
+    const x=i%2?road+range(-2.7,2.7):along,z=i%2?along:road+range(-2.7,2.7);
+    if(regionAt(x,z).weather!=='rain')continue;
+    const rx=range(.45,1.25),rz=range(.2,.6);patch(x,z,rx,rz,puddleMat,.06,8,.25);patch(x-.08,z-.05,rx*.63,rz*.11,puddleGlint,.064,5,.1);
   }
 
-  const stats = {
-    house:[220,4],shop:[230,4],garage:[190,3],car:[115,2],
-    wall:[85,1],crate:[38,1],barrel:[45,1],tree:[78,1],lamp:[54,1],bench:[48,1],
-  };
-  const fallbackDimensions={house:[4.6,4.1,4.8],shop:[5,4.4,3.7],garage:[4.8,4.3,3.3],car:[1.8,3.6,1.45],wall:[3.4,.5,1.3],crate:[1,1,1],barrel:[.85,.85,1.1],tree:[1,1,4],lamp:[.35,.35,3.8],bench:[1.8,.65,.9]};
-  function addProp(type,x,z,variant=0,rotate=false) {
-    const mesh=makeProp(type,variant);
-    mesh.position.set(x,.065,z);
-    mesh.rotation.y=rotate?Math.PI/2:0;
-    const dim=fallbackDimensions[type],u=mesh.userData;
-    const w=u.width||dim[0],d=u.depth||dim[1],h=u.height||dim[2];
-    const hp=stats[type][0]*(1+(round-1)*.10);
-    const object={mesh,type,x,z,w:rotate?d:w,d:rotate?w:d,h,hp,maxHp:hp,weight:stats[type][1],color:u.color||0x6b9b9a,dead:false,seed:random()*999};
-    mesh.userData.worldObjectIndex=objects.length;
-    objects.push(object); group.add(mesh);
-    if(type==='tree') trees.push(object);
-    return object;
-  }
-
-  // Sixteen substantial buildings leave clear lanes between their gardens.
-  let buildingIndex=0;
-  for(const sx of [-1,1]) for(const sz of [-1,1]) {
-    for(const [ix,iz] of [[10.6,10.7],[20.1,10.7],[10.6,20],[20.1,20]]) {
-      const variant=sx<0&&sz<0?3:sx>0&&sz<0?2:(buildingIndex%3);
-      const type=(buildingIndex%7===1)?'shop':(buildingIndex%7===4)?'garage':'house';
-      const o=addProp(type,sx*ix,sz*iz,variant,buildingIndex%4===2);
-      if(sz<0&&sx<0) {
-        // Snow against foundation edges.  It cannot block passage.
-        patch(o.x-o.w*.38,o.z+o.d*.53,.9,.35,snowMat,.075,6,.2);
-        patch(o.x+o.w*.3,o.z-o.d*.54,1.1,.34,snowMat,.075,6,.2);
-      }
-      buildingIndex++;
+  const stats={townhouse:[190,4],apartment:[250,5],shop:[210,4],office:[290,5],townhall:[420,7],police:[340,6],hospital:[380,6],skyscraper:[540,9],construction:[280,5],warehouse:[240,5],car:[100,2],policecar:[110,2],ambulance:[115,2],wall:[75,1],crate:[34,1],barrel:[38,1],tree:[65,1],lamp:[45,1],bench:[42,1]};
+  const fallbackDimensions={car:[1.8,3.6,1.45],wall:[3.4,.6,1.3],crate:[1,1,1],barrel:[.85,.85,1.1],tree:[.68,.68,4.45],lamp:[.45,.45,3.8],bench:[1.8,.7,1]};
+  const spatial=new Map(),spatialCell=22;
+  const bucketKey=(x,z)=>`${x},${z}`;
+  function indexObject(o){
+    const x0=Math.floor((o.x-o.w/2)/spatialCell),x1=Math.floor((o.x+o.w/2)/spatialCell),z0=Math.floor((o.z-o.d/2)/spatialCell),z1=Math.floor((o.z+o.d/2)/spatialCell);
+    for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
+      const key=bucketKey(x,z);if(!spatial.has(key))spatial.set(key,[]);spatial.get(key).push(o);
     }
   }
-  for(const [i,p] of [[2.35,-19,0],[-2.35,18,0],[18,2.35,1],[-18,-2.35,1],[27.2,12,0],[-27.2,-11,0],[11,-27.3,1],[-13,27.3,1]].entries()) addProp('car',p[0],p[1],i,!!p[2]);
-  for(const sx of [-1,1]) for(const sz of [-1,1]) {
-    addProp('wall',sx*9.2,sz*6.5,(sx+sz+2)%3);
-    addProp('wall',sx*20.4,sz*6.5,1);
-    addProp('wall',sx*6.6,sz*12.2,2,true);
-    addProp('wall',sx*6.6,sz*22.1,0,true);
+  function nearObjects(x,z,r,{includeDead=false}={}){
+    const found=[],seen=new Set(),radius=Math.max(0,r);
+    for(let bz=Math.floor((z-radius)/spatialCell);bz<=Math.floor((z+radius)/spatialCell);bz++)for(let bx=Math.floor((x-radius)/spatialCell);bx<=Math.floor((x+radius)/spatialCell);bx++){
+      for(const o of spatial.get(bucketKey(bx,bz))||[]){
+        if(seen.has(o)||(!includeDead&&o.dead))continue;seen.add(o);
+        const dx=Math.max(0,Math.abs(x-o.x)-o.w/2),dz=Math.max(0,Math.abs(z-o.z)-o.d/2);
+        if(dx*dx+dz*dz<=radius*radius)found.push(o);
+      }
+    }
+    return found;
   }
-  const smallProps=[
-    ['crate',5.5,-2.6],['crate',-5.5,-3.1],['barrel',5.3,3],['barrel',-5.4,2.4],
-    ['crate',8.6,-15.1],['crate',9.8,-15],['barrel',22.7,-15.5],['barrel',23.8,-16],
-    ['crate',-16.7,-8.2],['barrel',-17.7,-8],['crate',-22.6,-23.8],['crate',-23.7,-23.6],
-    ['crate',9.8,23.5],['barrel',11,23.7],['crate',22.5,15.4],['barrel',23.5,16.2],
-    ['crate',-14.7,9],['crate',-15.6,9.4],['barrel',-23.6,18],['barrel',-24,19.2],
-    ['crate',32,8],['barrel',33,8.7],['crate',-33,3],['barrel',-34.1,3.5],
-  ];
-  smallProps.forEach((p,i)=>addProp(p[0],p[1],p[2],i%4));
-  for(const [i,p] of [[-5.2,-8],[5.2,-14],[-5.2,14],[5.2,23],[-14,5.2],[14,-5.2],[-23,-5.2],[22,5.2]].entries()) addProp('lamp',p[0],p[1],i);
-  for(const [i,p] of [[-5.2,21,1],[5.2,10,1],[-11,-5.2,0],[11,5.2,0]].entries()) addProp('bench',p[0],p[1],i,!!p[2]);
-  for(const [i,p] of [[-8.2,17.4],[-21.9,23.4],[18.3,23.6],[23.8,9.1],[-8,-23.5],[-24.1,-17.1],[-33,-17],[-34,22],[34,19],[20,35],[-15,35],[34,-9]].entries()) addProp('tree',p[0],p[1],i%4);
-  // A few ruined outer-wall segments make the edge feel like a place, not a box.
-  [[-34,32],[-30,32],[31,33],[35,33],[-35,-35],[-31,-35]].forEach((p,i)=>addProp('wall',p[0],p[1],i));
+  function canPlace(x,z,w,d,margin=.24){
+    if(Math.abs(x)+w/2>CITY_BOUNDS-1||Math.abs(z)+d/2>CITY_BOUNDS-1)return false;
+    return !nearObjects(x,z,Math.hypot(w,d)/2+margin).some(o=>Math.abs(o.x-x)<(o.w+w)/2+margin&&Math.abs(o.z-z)<(o.d+d)/2+margin);
+  }
+  function register(mesh,type,x,z,rotation=0,plot=null){
+    mesh.position.set(x,.065,z);mesh.rotation.y=rotation;
+    mesh.traverse(node=>{if(node.material)for(const mat of Array.isArray(node.material)?node.material:[node.material])sharedModelMaterials.add(mat);});
+    const u=mesh.userData,dim=fallbackDimensions[type]||[12,12,8],swap=Math.abs(Math.sin(rotation))>.5;
+    const width=u.width||dim[0],depth=u.depth||dim[1],h=u.height||dim[2],hp=stats[type][0]*(1+(round-1)*.08);
+    const o={mesh,type,x,z,w:swap?depth:width,d:swap?width:depth,h,hp,maxHp:hp,weight:stats[type][1],color:u.color||0x6b9b9a,dead:false,seed:random()*999,isBuilding:!!plot,buildingKind:plot?.kind,districtId:plot?.districtId||regionAt(x,z).id,plotId:plot?.id,label:plot?.label};
+    mesh.userData.worldObjectIndex=objects.length;objects.push(o);group.add(mesh);indexObject(o);
+    if(type==='tree')trees.push(o);
+    if(u.crane)cranes.push(o);
+    if(u.lightMeshes?.length)emergencyVehicles.push(o);
+    return o;
+  }
+  function addProp(type,x,z,variant=0,rotation=0){return register(makeProp(type,variant),type,x,z,rotation);}
+  const buildingObjects=[];
+  for(const plot of layout.plots){
+    const o=register(makeCityBuilding(plot.kind,plot.variant),plot.kind,plot.x,plot.z,plot.rotation,plot);buildingObjects.push(o);
+    const landmark=layout.landmarks.find(v=>v.id===plot.id);if(landmark){landmark.object=o;landmark.w=o.w;landmark.d=o.d;}
+  }
+  // Cars occupy a single kerb lane. Alternate frontages prevent opposing rows
+  // from narrowing a road, and the centre of every junction remains clear.
+  let carIndex=0;
+  const parkedSegments=new Set();
+  const parkingPlots=[...layout.plots].sort((a,b)=>Number(['police','hospital'].includes(b.kind))-Number(['police','hospital'].includes(a.kind)));
+  for(const p of parkingPlots){
+    if(p.row%2===1&&p.col%2===1&&!['police','hospital'].includes(p.kind))continue;
+    const sx=Math.sin(p.rotation),sz=Math.cos(p.rotation),streetX=p.x+sx*11,streetZ=p.z+sz*11;
+    const segment=Math.abs(sx)>.5?`v:${Math.round(streetX)}:${p.z}`:`h:${p.x}:${Math.round(streetZ)}`;
+    if(parkedSegments.has(segment))continue;
+    parkedSegments.add(segment);
+    const vehicleKind=p.kind==='police'?'policecar':p.kind==='hospital'?'ambulance':'car';
+    const rotation=p.rotation+Math.PI/2,carX=streetX-sx*2.35,carZ=streetZ-sz*2.35;
+    const positions=vehicleKind==='car'?[0]:[-3.3,3.3];
+    for(const shift of positions){
+      const x=carX+sz*shift,z=carZ-sx*shift;
+      const w=Math.abs(Math.sin(rotation))>.5?4.5:2.2,d=Math.abs(Math.sin(rotation))>.5?2.2:4.5;
+      if(!canPlace(x,z,w,d,.35))continue;
+      const mesh=vehicleKind==='car'?makeProp('car',carIndex++):makeCityVehicle(vehicleKind,carIndex++);
+      register(mesh,vehicleKind,x,z,rotation);
+      // Painted bays show why vehicles occupy this side of the street.
+      for(const side of [-1,1])box('curb',x+sz*side*2.5,.044,z-sx*side*2.5,Math.abs(sz)>.5?.055:2.3,.008,Math.abs(sz)>.5?2.3:.055);
+    }
+  }
+  // Furniture and garden details use free corners, not the walking corridor.
+  for(const [i,p] of layout.plots.entries()){
+    const corners=[[-6.65,-6.65],[6.65,-6.65],[-6.65,6.65],[6.65,6.65]];
+    const available=corners.filter(([dx,dz])=>canPlace(p.x+dx,p.z+dz,.7,.7,.22));
+    if(available.length){
+      const [dx,dz]=available[i%available.length];addProp(i%3===0?'lamp':'tree',p.x+dx,p.z+dz,p.variant);
+    }
+    if(['construction','warehouse'].includes(p.kind)){
+      for(const [j,[dx,dz]]of corners.entries())if(canPlace(p.x+dx,p.z+dz,1.1,1.1,.28))addProp(j%2?'barrel':'crate',p.x+dx,p.z+dz,j);
+    }else if(i%2===0){
+      const x=p.x,z=p.z+6.8;
+      if(canPlace(x,z,1.84,.7,.2))addProp('bench',x,z,p.variant);
+    }
+    // Short garden walls leave wide openings on all four street frontages.
+    if(p.kind==='townhouse'){
+      const x=p.x-6.8,z=p.z+2.9;
+      if(canPlace(x,z,.6,3.4,.25))addProp('wall',x,z,p.variant,Math.PI/2);
+    }
+  }
+  // Local smashable supplies make the opening streets rewarding before the
+  // player has upgraded enough to level the civic buildings.
+  for(const [i,[x,z]]of [[-2.7,-6],[2.7,6],[-6,2.7],[6,-2.7],[-2.7,9],[2.7,-9],[-9,-2.7],[9,2.7]].entries()){
+    if(canPlace(x,z,1.05,1.05,.2))addProp(i%2?'barrel':'crate',x,z,i);
+  }
+  for(const rx of layout.roads)for(const rz of layout.roads){
+    if(Math.abs(rx)>88||Math.abs(rz)>88||(Math.abs(rx)+Math.abs(rz)<20)||((rx+rz)/22)%2)continue;
+    const x=rx+2.65,z=rz+5.2;
+    if(canPlace(x,z,1.05,1.05,.2))addProp((Math.round(rx/22)%3)?'crate':'barrel',x,z,Math.abs(Math.round(rz/22))%4);
+  }
+  // Outer parks have trees and low ruined walls without closing the ring road.
+  for(let p=-99;p<=99;p+=22)for(const side of [-1,1]){
+    if(regionAt(side*115,p).weather!=='ash'&&canPlace(side*115,p,.7,.7,.4))addProp('tree',side*115,p,(p+99)/22%4);
+    if(p%3&&canPlace(p,115,3.4,.6,.4))addProp('wall',p,115,2);
+  }
 
   // Flags are children of destructible lamps, so destroying a pole removes its
   // cloth as well.  A real rippling mesh, not a static sign.
@@ -240,7 +243,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   // collision circle, while tiny orange seams between them are decorative.
   const lavaMat=basic(0xff642f),lavaHot=basic(0xffcb68),lavaCrust=material(0x283536),lavaShore=material(0x59463a);
   const lavaMeshes=[];
-  const lavaPools=[[33.8,-19,2.25],[34.2,-24,2.7],[30.7,-33.5,2.9],[36.5,-30.5,2.2],[18,-34.6,1.8]];
+  const lavaPools=[[115,-77,1.55],[115,-99,1.6],[77,-115,1.6],[99,-115,1.7],[55,-115,1.45]];
   for(const [x,z,r] of lavaPools) {
     patch(x,z,r*1.35,r*1.25,lavaShore,.025,10,.18);
     patch(x,z,r*1.13,r*1.09,lavaCrust,.035,11,.16);
@@ -253,16 +256,16 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     }
   }
   for(let i=0;i<5;i++) {
-    const x=33.7+Math.sin(i*2)*.5,z=-19-i*1.2;
+    const x=114.7+Math.sin(i*2)*.2,z=-78-i*1.2;
     box(lavaMat,x,.04,z,.25,.02,1.5,Math.sin(i)*.28);
   }
   // Hazard paint telegraphs the foundry approach.
   const warning=material(0xdbac4e);
-  for(let i=0;i<7;i++) box(warning,30.5+i*.6,.047,-13.4,.29,.02,1.2,-.4);
+  for(let i=0;i<7;i++) box(warning,112.8+i*.5,.047,-71.4,.29,.02,1.2,-.4);
 
   // Small fires and ember columns have an outer orange flame, hot core, smoke,
   // and airborne sparks.  Animated instancing keeps even a busy scene cheap.
-  const fires=[{x:22.8,z:-23.6,r:.9},{x:31,z:-15,r:.9},{x:-32,z:13,r:.8},{x:17.6,z:32.5,r:.95}];
+  const fires=[{x:2.7,z:-13,r:.55},{x:115,z:-55,r:.8},{x:66,z:-115,r:.85},{x:-115,z:44,r:.7},{x:77,z:115,r:.85},{x:110.2,z:-44,r:.65}];
   for(const f of fires) {
     patch(f.x,f.z,f.r*1.45,f.r*1.22,lavaCrust,.037,8,.15);
     hazards.push({x:f.x,z:f.z,r:f.r*.68,type:'fire',damage:11});
@@ -287,11 +290,13 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   const grassGeo=own(new THREE.ConeGeometry(.11,.55,3));
   const grassMat=material(0x63806c);
   const grassLocations=[];
-  for(let i=0;i<210;i++) {
-    const x=range(-41,41),z=range(-41,41);
-    if(Math.abs(x)<6.7||Math.abs(z)<6.7||(Math.abs(x)>25&&Math.abs(x)<30)||(Math.abs(z)>25&&Math.abs(z)<30)||(x>6&&z< -7)||(x< -6&&z< -6)) continue;
-    if(objects.some(o=>Math.abs(o.x-x)<o.w*.6&&Math.abs(o.z-z)<o.d*.6))continue;
-    grassLocations.push([x,z,random()*6,range(.6,1.3)]);
+  for(const p of layout.plots) {
+    if(regionAt(p.x,p.z).weather!=='rain')continue;
+    for(let i=0;i<8;i++) {
+      const x=p.x+range(-7.1,7.1),z=p.z+range(-7.1,7.1);
+      if(nearObjects(x,z,.4).length)continue;
+      grassLocations.push([x,z,random()*6,range(.6,1.3)]);
+    }
   }
   const grassMesh=new THREE.InstancedMesh(grassGeo,grassMat,grassLocations.length*3);grassMesh.frustumCulled=false;group.add(grassMesh);
   let grassTick=-1;
@@ -312,12 +317,24 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   snowMesh.frustumCulled=ashMesh.frustumCulled=false;group.add(snowMesh,ashMesh);
   snowMesh.visible=ashMesh.visible=false;
 
-  // Painted boundary stones show the limits without creating artificial walls.
-  for(let p=-40;p<=40;p+=4) for(const side of [-1,1]) {
-    box('seam',side*42.2,.045,p,.2,.06,.8);
-    box('seam',p,.045,side*42.2,.8,.06,.2);
+  // Boundary paint leaves an open outside pavement instead of solid walls.
+  for(let p=-114;p<=114;p+=6)for(const side of [-1,1]) {
+    box('seam',side*117.6,.045,p,.2,.06,.8);
+    box('seam',p,.045,side*117.6,.8,.06,.2);
   }
   flushBatches();
+  const navigation=createCityNavigation({objects,nearObjects,bounds:CITY_BOUNDS});
+  function updateVisibility(player,camera) {
+    const px=player?.x??player?.position?.x??0,pz=player?.z??player?.position?.z??0;
+    // The camera looks over the player: keep enough skyline beyond the view.
+    const viewRadius=76;
+    for(const o of objects) {
+      const visible=!o.dead&&Math.hypot(o.x-px,o.z-pz)<viewRadius+Math.min(20,o.h*.6);
+      o.mesh.visible=visible;o.renderActive=visible;
+    }
+    for(const chunk of chunks.values())chunk.mesh.visible=Math.hypot(chunk.x-px,chunk.z-pz)<viewRadius+chunkSize*.72;
+  }
+  function rebuildSpatialIndex(){spatial.clear();objects.forEach(indexObject);navigation.invalidateNavigation();}
 
   function update(dt,time,player,weather) {
     const px=player?.x??player?.position?.x??0,pz=player?.z??player?.position?.z??0;
@@ -358,7 +375,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     lavaMat.color.setRGB(1,.28+Math.sin(time*2.8)*.065,.065);
     lavaHot.color.setRGB(1,.69+Math.sin(time*2.1+1)*.085,.24);
     for(const flag of flags) {
-      if(flag.object.dead)continue;
+      if(flag.object.dead||!flag.object.mesh.visible)continue;
       const a=flag.mesh.geometry.attributes.position,b=flag.base;
       for(let i=0;i<a.count;i++) {
         const x=b[i*3],y=b[i*3+1];
@@ -366,9 +383,19 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
       }
       a.needsUpdate=true;
     }
-    for(const o of trees)if(!o.dead) {
+    for(const o of trees)if(!o.dead&&o.mesh.visible) {
       o.mesh.rotation.z=Math.sin(time*1.3+o.seed)*.016+wind*.012;
       o.mesh.rotation.x=Math.cos(time*.8+o.seed)*.009;
+    }
+    for(const o of cranes)if(!o.dead&&o.mesh.visible) {
+      const crane=o.mesh.userData.crane;crane.pivot.rotation.y+=dt*.10;
+      const drop=crane.baseDrop+Math.sin(time*.7+o.seed)*.5;
+      crane.hook.position.y=-drop;crane.wire.scale.y=drop;crane.wire.position.y=-drop/2;
+    }
+    for(const o of emergencyVehicles)if(!o.dead&&o.mesh.visible) {
+      o.mesh.userData.lightMeshes.forEach((light,i)=>{
+        for(const mat of Array.isArray(light.material)?light.material:[light.material])mat.emissiveIntensity=Math.sin(time*8+i*Math.PI)>.1?1.25:.2;
+      });
     }
     if(time-grassTick>.065) {
       grassTick=time;
@@ -413,10 +440,27 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     }
     emberGeo.attributes.position.needsUpdate=true;
   }
+  updateVisibility({x:0,z:0});
   update(0,0,{x:0,z:0},'rain');
   return {
-    group,objects,hazards,update,bounds:42,regionAt,
+    group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,
+    bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,
+    buildingCount:buildingObjects.length,buildingObjects,
+    getChaseDirection:navigation.getChaseDirection,
+    hasLineOfSight:navigation.hasLineOfSight,
+    invalidateNavigation:navigation.invalidateNavigation,
     get district(){return currentZone.name;},
-    dispose(){scene.remove(group);for(const resource of owned)resource.dispose?.();group.clear();},
+    dispose(){
+      if(disposed)return;disposed=true;scene.remove(group);
+      // Models share immutable prototype materials. Gameplay replaces them with
+      // per-instance hit-flash materials; dispose those current render resources.
+      const resources=new Set(owned);
+      group.traverse(node=>{
+        if(node.geometry)resources.add(node.geometry);
+        if(node.material)for(const mat of Array.isArray(node.material)?node.material:[node.material])if(!sharedModelMaterials.has(mat))resources.add(mat);
+      });
+      for(const resource of resources)resource.dispose?.();
+      group.clear();spatial.clear();sharedModelMaterials.clear();navigation.invalidateNavigation();
+    },
   };
 }

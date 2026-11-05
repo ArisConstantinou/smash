@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261105-spin4">
+  <link rel="stylesheet" href="./style.css?v=20261105-city1">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -55,6 +55,15 @@
       <symbol id="a-sound-on" viewBox="0 0 48 48"><use href="#a-speaker-body"/><path d="M35 17C40 21 40 27 35 31M40 10C49 18 49 30 40 38" fill="none" stroke="#b0ead5" stroke-width="3" stroke-linecap="round"/></symbol>
       <symbol id="a-sound-off" viewBox="0 0 48 48"><use href="#a-speaker-body"/><path d="M8 41 41 8" stroke="#17313a" stroke-width="7" stroke-linecap="round"/><path d="M8 41 41 8" stroke="#ffaf87" stroke-width="3.8" stroke-linecap="round"/></symbol>
       <symbol id="a-keycap" viewBox="0 0 44 46"><path d="M5 5H39V39L35 44H9L5 39Z" fill="#0d202b"/><rect class="key-face" x="3" y="2" width="38" height="38" rx="5" fill="var(--key-face,#35515b)" stroke="var(--key-edge,#76969d)" stroke-width="1.4"/><path d="M7 35H37M8 5H35" stroke="var(--key-edge,#76969d)" opacity=".6"/><path d="m18 11 4-4 4 4Z" fill="var(--key-mark,#eec27e)"/></symbol>
+      <symbol id="a-mouse-left" viewBox="0 0 32 40"><path d="M16 3C8 3 4 8 4 15V26C4 34 9 38 16 38S28 34 28 26V15C28 8 24 3 16 3Z" fill="#6c9bb0" stroke="#132d3b" stroke-width="2.5"/><path d="M16 5C9 5 6 9 6 16V20H15V5Z" fill="#ffce81"/><path d="M18 5V20H26V16C26 10 23 6 18 5Z" fill="#c3dce0"/><path d="M5 22H27M16 4V23" stroke="#193541" stroke-width="2"/><rect x="14" y="10" width="4" height="8" rx="2" fill="#193541"/><path d="M8 27C8 32 11 35 16 35" fill="none" stroke="#b7d9db" stroke-width="2" stroke-linecap="round"/></symbol>
+
+      <!-- Original illustrated relics, matching the blue-steel combat artwork. -->
+      <symbol id="upgrade-power" viewBox="0 0 96 80"><path d="m62 36 5-21 7 19 17-10-8 20 12 7-20 3-1 21-13-17-18 11 7-20-18-8Z" fill="#ffb958" opacity=".18"/><path d="m65 43 5-15 5 15 12-4-8 11 9 7-16-1-3 16-6-13-12 5 5-13-10-5Z" fill="#ffd38b"/><use href="#a-hammer" transform="translate(42 25) rotate(-39) scale(1.05)"/><path d="m10 13 7 2M17 4l3 6m64 56 5 5M81 9l-3 9" stroke="#f9cb7e" stroke-width="3" stroke-linecap="round"/></symbol>
+      <symbol id="upgrade-size" viewBox="0 0 96 80"><path d="M11 17V7H26M70 7H85V17M11 61V72H26M70 72H85V61" fill="none" stroke="#9ee3d3" stroke-width="2.5"/><path d="M6 23 11 17l5 6M80 23l5-6 5 6M6 55l5 6 5-6M80 55l5 6 5-6" fill="none" stroke="#9ee3d3" stroke-width="2.5" stroke-linejoin="round"/><use href="#a-hammer" transform="translate(46 33) rotate(-12) scale(1.28)"/><path d="M23 17 66 12" stroke="#ffdf9b" stroke-width="2.5" stroke-linecap="round"/></symbol>
+      <symbol id="upgrade-range" viewBox="0 0 96 80"><ellipse cx="49" cy="49" rx="38" ry="21" fill="#8bd5c9" opacity=".07"/><path d="M14 60C-4 31 35 12 67 24M21 67C43 80 91 63 89 39" fill="none" stroke="#a6e6d6" stroke-width="2.5" stroke-linecap="round"/><path d="m61 18 10 8-13 1M82 42l7-10 5 12" fill="#a6e6d6"/><path d="M22 62 69 20" stroke="#193541" stroke-width="9" stroke-linecap="round"/><path d="M22 62 69 20" stroke="#d9ad68" stroke-width="5" stroke-linecap="round"/><use href="#a-hammer" transform="translate(65 23) rotate(48) scale(.75)"/><circle cx="22" cy="62" r="4" fill="#f7d293"/><path d="M8 69H25M16 61V77" stroke="#c3dce0" stroke-width="1.5"/></symbol>
+      <symbol id="upgrade-speed" viewBox="0 0 96 80"><path d="M5 24H29M11 36H25M2 48H23M10 60H30" stroke="#a6e6d6" stroke-width="3" stroke-linecap="round"/><path d="m43 10 25 4-8 30 21 13 2 13-47 2-6-12 9-18Z" fill="#6c9bb0" stroke="#132d3b" stroke-width="3" stroke-linejoin="round"/><path d="m45 13 20 3-3 10-20-4Z" fill="#c3dce0"/><path d="m41 28 19 4-3 9-18-5Z" fill="#d9b879"/><path d="m37 47 16 3 12 9-29 2-3-5Z" fill="#aac9d2"/><path d="M37 64H80L81 70H37Z" fill="#d0ddd7"/><path d="m45 28-2 12m12-10-3 12" stroke="#1e3d47" stroke-width="2"/><path d="m68 4 7 6-3 12 11-9-6-5 4-8Z" fill="#ffd38b"/></symbol>
+      <symbol id="upgrade-vitality" viewBox="0 0 96 80"><path d="M16 16 48 7 80 16 76 48 48 73 20 48Z" fill="#6c9bb0" stroke="#132d3b" stroke-width="3"/><path d="M20 18 48 11 76 18 71 46 48 67 25 46Z" fill="#adcbd2"/><path d="M25 22 48 16 71 22 67 44 48 61 29 44Z" fill="#2b666b"/><path d="M48 31C37 18 23 32 34 43L48 55 62 43C73 32 59 18 48 31Z" fill="#90d8b6" stroke="#173d40" stroke-width="2"/><path d="M48 32V47M41 39H55" stroke="#f0edce" stroke-width="4"/><path d="m12 49 3 6 6 3-6 3-3 7-3-7-6-3 6-3Zm71-39 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z" fill="#ffd38b"/></symbol>
+      <symbol id="upgrade-quake" viewBox="0 0 96 80"><ellipse cx="48" cy="62" rx="39" ry="12" fill="none" stroke="#a6e6d6" stroke-width="2" opacity=".6"/><ellipse cx="48" cy="60" rx="27" ry="8" fill="none" stroke="#ffce81" stroke-width="3"/><path d="m27 58 10 4-7 13m25-16 9 8 15 4M46 65l2 12M20 46l-7-6m67 8 7-9" fill="none" stroke="#f7c476" stroke-width="2.5" stroke-linejoin="round"/><use href="#a-hammer" transform="translate(48 39) rotate(171) scale(.92)"/><path d="m47 49-6-9-1 13-11-4 8 10 10 4 14-6-7-3 5-10-9 7Z" fill="#ffdf9b"/><path d="m14 58 5-5 5 2-4 7Zm63 0 4-7 5 4-2 6ZM63 72l5-3 3 6-5 2Z" fill="#6c9bb0" stroke="#14333e" stroke-width="1.5"/></symbol>
     </defs>
   </svg>
 
@@ -85,11 +94,11 @@
 
       <div class="landing-controls">
         <div class="legend-movement"><span class="key-set"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Ελεύθερη κίνηση</span></div>
-        <div><kbd class="wide-key">SPACE</kbd><span>Πάτησε: σφυριά<br><em>Κράτα: περιστροφή 360°</em></span></div>
+        <div><kbd class="mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg><span>LMB</span></kbd><span>Κλικ: σφυριά<br><em>Κράτα: περιστροφή 360°</em></span></div>
       </div>
-      <p class="direction-note">Άφησε το Space για να σταματήσεις την περιστροφή.<br>WASD: κατεύθυνση σφυριάς · Ποντίκι: άμυνα και ρίψη.</p>
-      <div class="combat-hints" aria-label="Νέες κινήσεις"><span><kbd>Z</kbd> Δύο χέρια</span><span><kbd>Q</kbd> Άμυνα</span><span><kbd>E</kbd> Ψηλό άλμα</span><span><kbd>R</kbd> Ρίψη</span></div>
-      <p class="air-hint">Στον αέρα, πάτησε <b>SPACE</b> για συντριβή στην προσγείωση.</p>
+      <p class="direction-note">WASD για κίνηση · Ποντίκι για κατεύθυνση και στόχευση.<br>Άφησε το αριστερό κλικ για να σταματήσεις την περιστροφή.</p>
+      <div class="combat-hints" aria-label="Κινήσεις πολεμιστή"><span><kbd>SPACE</kbd> Ψηλό άλμα</span><span><kbd>Q</kbd> Άμυνα</span><span><kbd>R</kbd> Ρίψη</span><span><kbd>Z</kbd> Δύο χέρια</span><span><kbd>U</kbd> Αναβαθμίσεις</span></div>
+      <p class="air-hint">Στον αέρα, πάτησε <b>αριστερό κλικ</b> για συντριβή στην προσγείωση.</p>
     </div>
 
     <aside class="world-label" aria-hidden="true">
@@ -121,9 +130,10 @@
         <p id="objectiveText">Φτάσε στο 60% για να καλέσεις τον Κολοσσό.</p>
       </section>
 
-      <section class="run-status" aria-label="Στατιστικά γύρου">
-        <div class="run-status-top"><span>ΓΥΡΟΣ <b id="roundValue">01</b></span><time id="timeValue">00:00</time></div>
-        <div class="run-counters"><div><svg><use href="#i-skull"/></svg><strong id="killsValue">0</strong><small>ΕΧΘΡΟΙ</small></div><div><svg><use href="#i-gem"/></svg><strong id="relicValue">0</strong><small>ΕΥΡΗΜΑΤΑ</small></div></div>
+      <section class="run-status" aria-label="Κύμα εχθρών και στατιστικά">
+        <div class="run-status-top"><span>ΚΥΜΑ <b id="roundValue">01</b></span><time id="timeValue">00:00</time></div>
+        <div class="wave-progress"><span id="waveStatus">ΑΠΟΜΕΝΟΥΝ</span><strong id="waveEnemiesValue">10</strong><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-skull"/></svg></div>
+        <div class="run-counters"><div><svg><use href="#i-skull"/></svg><strong id="killsValue">0</strong><small>ΝΙΚΗΜΕΝΟΙ</small></div><div><svg><use href="#i-gem"/></svg><strong id="relicValue">0</strong><small>ΕΥΡΗΜΑΤΑ</small></div></div>
         <div class="hud-buttons">
           <button id="soundButton" class="icon-button" type="button" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Ήχος"><svg><use href="#i-sound"/></svg></button>
           <button id="settingsButton" class="icon-button" type="button" aria-label="Ρυθμίσεις" title="Ρυθμίσεις"><svg><use href="#i-settings"/></svg></button>
@@ -132,6 +142,25 @@
       </section>
     </header>
 
+    <section class="upgrade-dock" aria-label="Αναβαθμίσεις πολεμιστή">
+      <button id="upgradesToggle" class="upgrades-toggle" type="button" aria-expanded="false" aria-controls="upgradePanel" aria-label="Άνοιγμα αναβαθμίσεων — U" title="Αναβαθμίσεις · U">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gem"/></svg><span>ΑΝΑΒΑΘΜΙΣΕΙΣ</span><b id="pendingUpgradeCount" class="pending-upgrade-count" aria-label="Διαθέσιμες επιλογές">0</b><kbd>U</kbd><svg class="upgrade-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
+      </button>
+      <section id="upgradePanel" class="upgrade-drawer" aria-label="Οπλοστάσιο και διαθέσιμες αναβαθμίσεις" hidden>
+        <header class="upgrade-drawer-heading"><div><span class="upgrade-eyebrow">ΤΟ ΣΦΥΡΙ ΣΟΥ. ΟΙ ΕΠΙΛΟΓΕΣ ΣΟΥ.</span><h2>ΟΠΛΟΣΤΑΣΙΟ</h2></div><span class="loadout-level">ΕΠΙΠΕΔΟ <b id="levelValue">1</b></span><button id="upgradeCloseButton" class="upgrade-close" type="button" aria-label="Κλείσιμο αναβαθμίσεων — U" title="Κλείσιμο · U"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cross"/></svg></button></header>
+        <div class="loadout-stats" aria-label="Τρέχουσα δύναμη πολεμιστή">
+          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-power"/></svg><strong id="powerValue">1.0×</strong><small>ΔΥΝΑΜΗ</small></div>
+          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-size"/></svg><strong id="sizeValue">1.0×</strong><small>ΜΕΓΕΘΟΣ</small></div>
+          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-range"/></svg><strong id="rangeValue">1.0×</strong><small>ΕΜΒΕΛΕΙΑ</small></div>
+          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-speed"/></svg><strong id="speedValue">1.0×</strong><small>ΤΑΧΥΤΗΤΑ</small></div>
+        </div>
+        <div id="relicSlots" class="relic-slots" aria-label="Ενεργά ευρήματα"></div>
+        <div class="upgrade-queue-heading"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gem"/></svg><p id="upgradeQueueText">Σπάσε, εξερεύνησε και βρες νέες αναβαθμίσεις.</p></div>
+        <div id="upgradeChoices" class="upgrade-choices"></div>
+        <footer class="upgrade-drawer-footnote"><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> επιλογή όταν το πάνελ είναι ανοιχτό</span><span class="upgrade-live"><i></i> Η ΜΑΧΗ ΣΥΝΕΧΙΖΕΤΑΙ</span></footer>
+      </section>
+    </section>
+
     <div id="bossHud" class="boss-panel" hidden>
       <div class="boss-heading"><svg><use href="#i-skull"/></svg><span>THE IRON COLOSSUS</span><strong id="bossValue">100%</strong></div>
       <div class="boss-track"><div id="bossFill" style="width:100%"></div></div>
@@ -139,20 +168,9 @@
     </div>
 
     <aside class="minimap-panel" aria-label="Χάρτης περιοχής">
-      <div class="map-heading"><span>ΤΟΜΕΑΣ <b>07</b></span><span class="north-mark">N ↑</span></div>
+      <div class="map-heading"><span>ΤΟΜΕΑΣ <b id="sectorValue">01</b></span><span class="north-mark">N ↑</span></div>
       <canvas id="minimap" width="140" height="140" aria-label="Χάρτης με τον παίκτη και τους εχθρούς"></canvas>
       <div class="map-legend"><span><i class="player-dot"></i> ΕΣΥ</span><span><i class="enemy-dot"></i> ΟΡΔΗ</span></div>
-    </aside>
-
-    <aside class="loadout-panel" aria-label="Δύναμη και αναβαθμίσεις">
-      <div class="loadout-heading"><span>ΤΟ ΣΦΥΡΙ ΣΟΥ</span><b>LV. <span id="levelValue">1</span></b></div>
-      <div class="loadout-stats">
-        <div><svg><use href="#i-bolt"/></svg><strong id="powerValue">1.0×</strong><small>ΔΥΝΑΜΗ</small></div>
-        <div><svg><use href="#i-expand"/></svg><strong id="sizeValue">1.0×</strong><small>ΜΕΓΕΘΟΣ</small></div>
-        <div><svg><use href="#i-range"/></svg><strong id="rangeValue">1.0×</strong><small>ΕΜΒΕΛΕΙΑ</small></div>
-        <div><svg><use href="#i-boot"/></svg><strong id="speedValue">1.0×</strong><small>ΤΑΧΥΤΗΤΑ</small></div>
-      </div>
-      <div id="relicSlots" class="relic-slots" aria-label="Ενεργά ευρήματα"></div>
     </aside>
 
     <section id="combatDock" class="combat-dock" aria-label="Εικονογραφημένο πάνελ χειρισμού">
@@ -168,24 +186,24 @@
           <svg class="movement-directions" viewBox="0 0 60 14" aria-hidden="true"><path d="M4 7H56M4 7l5-4M4 7l5 4M56 7l-5-4M56 7l-5 4M30 1v12m0-12-4 4m4-4 4 4m-4 8-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
         </div>
         <div class="dock-actions" role="group" aria-label="Ενέργειες πολεμιστή">
-          <button id="attackButton" class="action-tile" data-key="Space" type="button" aria-label="Γρήγορη σφυριά. Space στο πληκτρολόγιο." title="Γρήγορη σφυριά. Space στο πληκτρολόγιο.">
-            <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-swing"/></svg>
+          <button id="attackButton" class="action-tile" type="button" aria-label="Αριστερό κλικ: γρήγορη σφυριά προς το ποντίκι." title="Αριστερό κλικ: γρήγορη σφυριά προς το ποντίκι.">
+            <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg>LMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-swing"/></svg>
             <span class="action-name">ΣΦΥΡΙΑ</span><small class="action-status">ΓΡΗΓΟΡΟ ΧΤΥΠΗΜΑ</small>
           </button>
-          <button id="chargeButton" class="action-tile" type="button" aria-label="Κράτα Space: ο πολεμιστής και το σφυρί περιστρέφονται συνεχώς 360°. Άφησε για να σταματήσεις." title="Κράτα Space: ο πολεμιστής και το σφυρί περιστρέφονται συνεχώς 360°. Άφησε για να σταματήσεις.">
-            <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-spin"/></svg>
+          <button id="chargeButton" class="action-tile" type="button" aria-label="Κράτα αριστερό κλικ: συνεχής περιστροφή 360° με το σφυρί. Άφησε για να σταματήσεις." title="Κράτα αριστερό κλικ: συνεχής περιστροφή 360° με το σφυρί. Άφησε για να σταματήσεις.">
+            <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg>LMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-spin"/></svg>
             <span class="action-name">ΠΕΡΙΣΤΡΟΦΗ</span><small class="action-status">ΚΡΑΤΑ ΓΙΑ 360°</small>
           </button>
           <button id="guardButton" class="action-tile" data-key="KeyQ" type="button" aria-label="Κράτα Q: κατακόρυφη περιστροφή σφυριού μπροστά σου, προς το ποντίκι." title="Κράτα Q: κατακόρυφη περιστροφή σφυριού μπροστά σου, προς το ποντίκι.">
             <kbd class="action-key">Q</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-guard"/></svg>
             <span class="action-name">ΑΜΥΝΑ</span><small id="guardValue" class="action-status">ΚΡΑΤΑ Q</small>
           </button>
-          <button id="leapButton" class="action-tile" data-key="KeyE" type="button" aria-label="Ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση." title="Ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση.">
-            <kbd class="action-key">E</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg>
+          <button id="leapButton" class="action-tile" data-key="Space" type="button" aria-label="Space: ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση." title="Space: ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση.">
+            <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg>
             <span class="action-name">ΨΗΛΟ ΑΛΜΑ</span><small id="leapValue" class="action-status">ΕΤΟΙΜΟ</small>
           </button>
-          <button id="slamButton" class="action-tile" type="button" aria-label="Ψηλό άλμα και μεγάλη συντριβή στην προσγείωση. Στον αέρα, Space." title="Ψηλό άλμα και μεγάλη συντριβή στην προσγείωση. Στον αέρα, Space.">
-            <kbd class="action-key">E + SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-slam"/></svg>
+          <button id="slamButton" class="action-tile" type="button" aria-label="Space και αριστερό κλικ στον αέρα: μεγάλη συντριβή στην προσγείωση." title="Space και αριστερό κλικ στον αέρα: μεγάλη συντριβή στην προσγείωση.">
+            <kbd class="action-key mouse-key">SPACE +<svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg></kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-slam"/></svg>
             <span class="action-name">ΣΥΝΤΡΙΒΗ</span><small id="slamValue" class="action-status">ΖΗΜΙΑ ΠΕΡΙΟΧΗΣ</small>
           </button>
           <button id="throwButton" class="action-tile" data-key="KeyR" type="button" aria-label="Ρίξε το σφυρί προς το ποντίκι. Χτυπά το πρώτο εμπόδιο και επιστρέφει." title="Ρίξε το σφυρί προς το ποντίκι. Χτυπά το πρώτο εμπόδιο και επιστρέφει.">
@@ -204,9 +222,9 @@
       </div>
       <div class="dock-status">
         <span class="dock-stance"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg><strong id="stanceValue">ΣΦΥΡΙ + ΑΣΠΙΔΑ</strong></span>
-        <div class="dock-charge"><span id="chargeText">ΚΡΑΤΑ SPACE · 360°</span><div id="chargeWrap" class="charge-track"><div id="chargeFill" style="width:0%"></div><i></i><i></i><i></i></div></div>
+        <div class="dock-charge"><span id="chargeText">ΚΡΑΤΑ LMB · 360°</span><div id="chargeWrap" class="charge-track"><div id="chargeFill" style="width:0%"></div><i></i><i></i><i></i></div></div>
         <div class="dock-tools">
-          <span class="dock-aim"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-range"/></svg>ΠΟΝΤΙΚΙ · Q / R</span>
+          <span class="dock-aim"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-range"/></svg>ΠΟΝΤΙΚΙ · ΣΤΟΧΕΥΣΗ</span>
           <button id="muteButton" class="dock-sound" type="button" aria-pressed="false" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Σίγαση ή ενεργοποίηση ήχου"><svg viewBox="0 0 48 48" aria-hidden="true"><use id="muteIcon" href="#a-sound-on"/></svg><span id="muteValue">ΣΙΓΑΣΗ</span></button>
         </div>
       </div>
@@ -230,14 +248,17 @@
       <button id="resumeButton" class="primary-button" type="button"><span>ΣΥΝΕΧΕΙΑ</span><svg><use href="#i-arrow"/></svg></button>
       <button id="restartButton" class="secondary-button" type="button">ΝΕΟΣ ΓΥΡΟΣ</button>
       <details class="combat-help"><summary>ΧΕΙΡΙΣΜΟΣ ΜΑΧΗΣ</summary>
-        <dl><dt>W A S D</dt><dd>Ελεύθερη κίνηση και κατεύθυνση της σφυριάς.</dd>
-        <dt>SPACE</dt><dd>Σύντομο πάτημα: γρήγορη σφυριά. Κράτημα: συνεχής περιστροφή 360° του πολεμιστή μαζί με το σφυρί. Άφησε για να σταματήσεις. Το εικονίδιο περιστροφής λειτουργεί με τον ίδιο τρόπο.</dd>
+        <dl><dt>W A S D</dt><dd>Ελεύθερη κίνηση προς κάθε κατεύθυνση, ανεξάρτητα από το πού κοιτάς.</dd>
+        <dt>ΠΟΝΤΙΚΙ</dt><dd>Ο πολεμιστής κοιτάζει προς το ποντίκι. Καθορίζει τη σφυριά, την άμυνα και τη ρίψη.</dd>
+        <dt>LMB</dt><dd>Αριστερό κλικ: γρήγορη σφυριά. Κράτημα: συνεχής περιστροφή 360° του πολεμιστή μαζί με το σφυρί. Άφησε για να σταματήσεις. Το εικονίδιο περιστροφής λειτουργεί με τον ίδιο τρόπο.</dd>
         <dt>Z</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά Z για επαναφορά.</dd>
         <dt>Κράτα Q</dt><dd>Κατακόρυφη περιστροφή μπροστά σου. Η άμυνα ακολουθεί το ποντίκι και αποκρούει μετωπικά βλήματα.</dd>
-        <dt>E</dt><dd>Ψηλό άλμα προς τα εμπρός και μικρό χτύπημα στην προσγείωση.</dd>
-        <dt>E → SPACE</dt><dd>SPACE στον αέρα: μεγάλη ζημιά περιοχής στην προσγείωση. Το εικονίδιο συντριβής εκτελεί ολόκληρη την κίνηση.</dd>
+        <dt>SPACE</dt><dd>Ψηλό άλμα προς τα εμπρός και μικρό χτύπημα στην προσγείωση.</dd>
+        <dt>SPACE → LMB</dt><dd>Αριστερό κλικ στον αέρα: μεγάλη ζημιά περιοχής στην προσγείωση. Το εικονίδιο συντριβής εκτελεί ολόκληρη την κίνηση.</dd>
         <dt>R</dt><dd>Στόχευσε με το ποντίκι και ρίξε το σφυρί. Χτυπά το πρώτο εμπόδιο και επιστρέφει αυτόματα.</dd>
-        <dt>SHIFT</dt><dd>Σύντομη αποφυγή.</dd></dl>
+        <dt>SHIFT</dt><dd>Σύντομη αποφυγή.</dd>
+        <dt>U</dt><dd>Άνοιγμα ή κλείσιμο του οπλοστασίου. Οι αναβαθμίσεις σε περιμένουν εκεί, χωρίς παύση της μάχης.</dd>
+        <dt>1 / 2 / 3</dt><dd>Επιλογή αναβάθμισης, μόνο όσο το οπλοστάσιο είναι ανοιχτό.</dd></dl>
         <p>Η ασπίδα στο χέρι μειώνει τη μετωπική ζημιά κατά 35%. Η πλάτη και τα χτυπήματα εδάφους παραμένουν εκτεθειμένα.</p>
       </details>
       <div class="modal-footnote"><kbd>ESC</kbd> επιστροφή στο παιχνίδι</div>
@@ -267,19 +288,9 @@
     </div>
   </section>
 
-  <section id="upgradeMenu" class="modal-overlay upgrade-overlay" aria-label="Επιλογή αναβάθμισης" hidden>
-    <div class="upgrade-panel">
-      <div class="modal-eyebrow"><svg><use href="#i-gem"/></svg> Ο ΘΗΣΑΥΡΟΣ ΕΙΝΑΙ ΔΙΚΟΣ ΣΟΥ</div>
-      <h2>ΠΕΡΙΣΣΟΤΕΡΗ <span>ΔΥΝΑΜΗ.</span></h2>
-      <p>Διάλεξε την επόμενη αναβάθμιση του πολεμιστή σου.</p>
-      <div id="upgradeChoices" class="upgrade-choices"></div>
-      <div class="upgrade-footnote">Η μάχη συνεχίζεται μόλις επιλέξεις.</div>
-    </div>
-  </section>
-
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261105-spin4"></script>
+  <script type="module" src="./game.js?v=20261105-city1"></script>
 </body>
 </html>

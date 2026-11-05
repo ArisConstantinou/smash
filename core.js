@@ -1,6 +1,6 @@
 // Pure combat / movement rules. X/Z are world coordinates; Y is height.
 export const GOAL = 60;
-export const BOUNDS = 41;
+export const BOUNDS = 117;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const lerp = (a, b, t) => a + (b - a) * t;
 export function normalize(x, z) {

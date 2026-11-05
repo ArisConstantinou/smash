@@ -86,7 +86,7 @@ test('a valid circle remains outside building corners after seeded high-speed mo
 test('large movement respects the district boundary for the entire player radius', () => {
   for (const x of [-1, 1]) for (const z of [-1, 1]) {
     const e = { x: 0, z: 0, radius: .5 };
-    moveCircle(e, x * 110, z * 110, []);
+    moveCircle(e, x * BOUNDS * 3, z * BOUNDS * 3, []);
     close(e.x, x * (BOUNDS - .5)); close(e.z, z * (BOUNDS - .5));
   }
 });
