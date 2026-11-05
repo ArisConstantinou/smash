@@ -2,8 +2,9 @@ import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js';
 import {createWorld} from './world.js';
 import {GameAudio} from './audio.js';
-import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261105-fast2';
+import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261105-spin3';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
+import {hordeAt,chooseEnemyType,enemyStats} from './progression.js?v=20261105-spin3';
 
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
@@ -18,9 +19,9 @@ let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, kills=0
 let enemies=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
 let boss=null,bossSpawned=false,spawnTimer=2.3,spawnCounter=0,lootCounter=0,announcementTimer=0;
 let shake=0,hitStop=0,redFlash=0,combo=0,comboTimer=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
-let chargeHeld=false,chargeStarted=false,charge=0,chargeFullPlayed=false,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
-let attackBuffer=null;
-const CHARGE_SECONDS=.68,ATTACK_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
+let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
+let attackBuffer=null,spin=null,spinRecovery=null,holdElapsed=0;
+const SPIN_HOLD_SECONDS=.18,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
 let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0},stats=calculateStats(levels);
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0;
@@ -80,7 +81,7 @@ function setPhase(next){
   if(next!=='playing'){clearInput();if(guardRing)guardRing.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
 }
-function clearInput(){keys.clear();touch.x=0;touch.y=0;touch.attack=false;chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;guardHeld=false;guarding=false;document.querySelectorAll('[data-key]').forEach(e=>e.classList.remove('active'));$('attackButton')?.classList.remove('active');$('chargeButton')?.classList.remove('active');$('slamButton')?.classList.remove('active');$('guardButton')?.classList.remove('active');if($('joystickKnob'))$('joystickKnob').style.transform='translate(0,0)';}
+function clearInput(){keys.clear();touch.x=0;touch.y=0;touch.attack=false;cancelAttack();guardHeld=false;guarding=false;document.querySelectorAll('[data-key]').forEach(e=>e.classList.remove('active'));$('attackButton')?.classList.remove('active');$('chargeButton')?.classList.remove('active');$('slamButton')?.classList.remove('active');$('guardButton')?.classList.remove('active');if($('joystickKnob'))$('joystickKnob').style.transform='translate(0,0)';}
 function prepareMaterials(group){
   const clones=new Map(),list=[];
   group.traverse(n=>{if(n.isMesh){
@@ -142,7 +143,7 @@ function resetWorld(keepUpgrades=false){
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;level=1;xp=0;xpTarget=12;score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0};}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
-  roundTime=0;currentDistrict='';bossSpawned=false;spawnTimer=2.8;spawnCounter=0;lootCounter=0;combo=0;comboTimer=0;charge=0;swing=null;attackBuffer=null;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
+  roundTime=0;currentDistrict='';bossSpawned=false;spawnTimer=hordeAt(0,round).firstSpawnDelay;spawnCounter=0;lootCounter=0;combo=0;comboTimer=0;chargeHeld=false;chargeStarted=false;charge=0;swing=null;attackBuffer=null;spin=null;spinRecovery=null;holdElapsed=0;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
   $('bossHud').hidden=true;fragments?.clear();numbers=[];cameraTarget.set(0,.6,0);
   hero.position.set(0,0,0);facing={x:-.585491,z:-.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);
   applyStats();updateHUD(true);
@@ -180,11 +181,62 @@ function openUpgrade(){
 function weaponBusy(){return !!(throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005||landingRecovery>0);}
 function stancePower(){return stance>.95?1.25:1;}
 function beginSwing(){
-  if(phase!=='playing'||!chargeStarted||attackCooldown>0||weaponBusy()||guarding)return;
+  if(phase!=='playing'||!chargeStarted||spin||attackCooldown>0||weaponBusy()||guarding)return;
   const q=charge,details=attackStats(stats,q);
   swing={time:0,q,...details,duration:details.duration,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
-  chargeStarted=false;charge=0;chargeFullPlayed=false;attackCooldown=swing.duration+.012;audio.play('swing',q);
+  chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q);
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);
+}
+function startSpin(){
+  if(spin)return true;
+  if(phase!=='playing'||swing||weaponBusy()||guardHeld)return false;
+  const rig=hero.userData.weaponRig;
+  spin={time:0,angle:hero.rotation.y,rotation:0,cycle:0,hitTimes:new Map(),trailTime:0,soundTime:-1,recoil:0,
+    damage:Math.round(stats.power*.9*stancePower()),knockback:4.6,lift:1.1,
+    fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone()};
+  spinRecovery=null;chargeStarted=false;charge=0;attackBuffer=null;attackCooldown=0;guarding=false;
+  hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);audio.play('swing',.3);return true;
+}
+function stopSpin(){
+  if(!spin)return;
+  const rig=hero.userData.weaponRig;
+  spinRecovery={time:0,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone()};
+  facing={x:Math.sin(hero.rotation.y),z:Math.cos(hero.rotation.y)};
+  hero.rotation.y=Math.atan2(facing.x,facing.z);spin=null;
+  if(chargeRing)chargeRing.visible=false;
+}
+function spinImpact(from,to){
+  const s=spin;if(!s)return;
+  const radius=.52*stats.size,shaftRadius=.30*stats.size;
+  const grip=hero.userData.hammerPivot.getWorldPosition(new THREE.Vector3());
+  // A struck wall remains an occluder for the entire turn. Targets are eligible
+  // again only after a full revolution, including across the angle wrap.
+  const objects=world.objects.filter(o=>!o.dead);
+  const headWall=firstHammerHit(from,to,objects,radius),shaftWall=firstHammerHit(grip,to,objects,shaftRadius);
+  const wall=shaftWall||headWall;
+  const ready=e=>s.time-(s.hitTimes.get(e)??-Infinity)>=SPIN_TURN_SECONDS-1e-7;
+  let hits=0,breaks=0;
+  for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+    if(!ready(e))continue;
+    const headContact=firstHammerHit(from,to,[e],radius),shaftContact=firstHammerHit(grip,to,[e],shaftRadius);
+    if(!headContact&&!shaftContact)continue;
+    if(headWall&&headContact&&headContact.t>headWall.t&&!shaftContact)continue;
+    const lineOfContact=firstHammerHit(grip,{x:e.x,y:grip.y,z:e.z},[...objects,e],shaftRadius);
+    if(lineOfContact&&lineOfContact.target!==e)continue;
+    s.hitTimes.set(e,s.time);hits++;
+    const dir=normalize(e.x-player.x,e.z-player.z);
+    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift);
+  }
+  if(wall&&ready(wall.target)){
+    s.hitTimes.set(wall.target,s.time);hits++;
+    if(hurtObject(wall.target,s.damage,.15))breaks++;else s.recoil=1;
+  }
+  if(hits){
+    shake=Math.max(shake,breaks?.09:.045);
+    if(s.time-s.soundTime>.09){s.soundTime=s.time;audio.play(breaks?'break':'hit',.3);}
+    // No hit-stop on a sustained spin: contact sparks and recoil carry the hit.
+    checkGoal();
+  }
 }
 function hitEnemy(e,damage,dir,strength,lift){
   if(e.dead)return;
@@ -255,7 +307,7 @@ function impact(from=headPrevious,to=headNow){
 
 function toggleStance(){
   if(phase!=='playing'||swing||throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005)return;
-  stanceTarget=stanceTarget===0?1:0;guardHeld=false;guarding=false;chargeStarted=false;chargeHeld=false;charge=0;attackBuffer=null;
+  cancelAttack();spinRecovery=null;stanceTarget=stanceTarget===0?1:0;guardHeld=false;guarding=false;
   audio.play('ui');
 }
 function updateAim(){
@@ -273,7 +325,7 @@ function updateAim(){
 function startLeap(){
   if(phase!=='playing'||leap||leapCooldown>0||throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
   const attackWasHeld=chargeHeld||chargeStarted||keys.has('Space');
-  chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;guarding=false;guardHeld=false;dashTime=0;swing=null;attackCooldown=0;landingRecovery=0;
+  cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;dashTime=0;swing=null;attackCooldown=0;landingRecovery=0;
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
   const direction=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};facing={...direction};
@@ -303,8 +355,8 @@ function landLeap(){
 }
 function startThrow(){
   if(phase!=='playing'||throwFlight||throwWindup||throwCooldown>0||swing||leap||Math.abs(stance-stanceTarget)>.005)return;
-  updateAim();throwWindup={time:0,dir:{...aim},fromRotation:hero.userData.weaponRig.quaternion.clone()};
-  facing={...aim};chargeStarted=false;chargeHeld=false;charge=0;attackBuffer=null;guardHeld=false;guarding=false;
+  updateAim();cancelAttack();spinRecovery=null;throwWindup={time:0,dir:{...aim},fromRotation:hero.userData.weaponRig.quaternion.clone()};
+  facing={...aim};guardHeld=false;guarding=false;
 }
 function releaseHammer(){
   const dir=throwWindup.dir,mesh=hero.userData.createThrownHammer();
@@ -346,16 +398,17 @@ function spawnPosition(distance=20){
   return {x:0,z:player.z>0?-36:36};
 }
 function spawnEnemy(forcedType=null,position=null){
-  const cap=settings.quality==='low'?40:58;if(enemies.length>=cap)return;
-  const roll=Math.random();const type=forcedType||(roundTime>35&&roll<.13?'brute':roll<.43?'robot':'zombie');
-  const mesh=makeEnemy(type);let pos=position||spawnPosition(19);const factor=1+(round-1)*.28;
+  const pacing=hordeAt(roundTime,round,bossSpawned),qualityCap=settings.quality==='low'?40:58;
+  const cap=forcedType?qualityCap:Math.min(qualityCap,pacing.cap);if(enemies.length>=cap)return;
+  const type=forcedType||chooseEnemyType(Math.random(),roundTime,round);
+  const mesh=makeEnemy(type);let pos=position||spawnPosition(19);
   if(world.objects.some(o=>circleOverlaps(pos.x,pos.z,.8,o))){
     const origin={...pos};let found=false;
     for(let ring=1;ring<5&&!found;ring++)for(let i=0;i<12;i++){const a=i*Math.PI/6,p={x:clamp(origin.x+Math.sin(a)*ring,-39,39),z:clamp(origin.z+Math.cos(a)*ring,-39,39)};if(!world.objects.some(o=>circleOverlaps(p.x,p.z,.8,o))){pos=p;found=true;break;}}
     if(!found)pos=spawnPosition(19);
   }
-  scene.add(mesh);const base=type==='brute'?{hp:185,speed:1.55,radius:.71,height:2.55,damage:22}:type==='robot'?{hp:92,speed:2.45,radius:.47,height:1.8,damage:12}:{hp:57,speed:2.0,radius:.45,height:1.75,damage:11};
-  const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,hp:base.hp*factor,maxHp:base.hp*factor,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(.7,2.2),state:'walk',dead:false,telegraph:null,attackDir:{x:0,z:1},avoid:Math.random()<.5?-1:1};
+  scene.add(mesh);const base=enemyStats(type,roundTime,round);
+  const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,maxHp:base.hp,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(1.1,2.6),state:'walk',dead:false,telegraph:null,attackDir:{x:0,z:1},avoid:Math.random()<.5?-1:1};
   mesh.position.set(e.x,0,e.z);enemies.push(e);spawnCounter++;
   if(roundTime>5)fragments.add(e.x,.1,e.z,4,[0x537b77,0x81958a],2,.09);
 }
@@ -365,7 +418,8 @@ function hurtPlayer(damage,dx=0,dz=0,blockable=true){
   if(blockable&&directionLength>.01&&guarding&&facingCoverage(aim,source,player,Math.PI*.36)){
     fragments.add(player.x+aim.x,player.y+1.3,player.z+aim.z,7,[0xa5e5de,0xffd490],4,.07);audio.play('hit',.1);return;
   }
-  if(blockable&&directionLength>.01&&stance<.05&&!throwWindup&&facingCoverage(facing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+facing.x*.6,player.y+1,player.z+facing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
+  const shieldFacing=spin?{x:Math.sin(hero.rotation.y),z:Math.cos(hero.rotation.y)}:facing;
+  if(blockable&&directionLength>.01&&stance<.05&&!throwWindup&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
 
   player.hp=Math.max(0,player.hp-damage);player.invincible=.85;player.hurtAgo=0;player.vx=dx*4;player.vz=dz*4;
   redFlash=.55;shake=Math.max(shake,.19);combo=0;audio.play('hurt');floatText(player.x,2.5,player.z,'−'+Math.ceil(damage),'#ff8d80',21);
@@ -383,7 +437,8 @@ function guardContact(from,to){
 function shoot(e){
   const dir=normalize(player.x-e.x,player.z-e.z);
   const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(.13),new THREE.MeshBasicMaterial({color:0xff7963}));
-  mesh.position.set(e.x,1,e.z);scene.add(mesh);bolts.push({mesh,x:e.x,z:e.z,vx:dir.x*10.5,vz:dir.z*10.5,life:2.8,damage:e.damage});
+  const speed=e.boltSpeed||10.5;
+  mesh.position.set(e.x,1,e.z);scene.add(mesh);bolts.push({mesh,x:e.x,z:e.z,vx:dir.x*speed,vz:dir.z*speed,life:3.5,damage:e.damage});
 }
 function updateEnemies(dt){
   for(const e of [...enemies]){
@@ -407,25 +462,26 @@ function updateEnemies(dt){
         e.walk+=Math.hypot(delta.x,delta.z)*6;
         e.mesh.rotation.y=Math.atan2(dir.x,dir.z);
         if(e.timer<=0&&((e.type==='robot'&&dist<12)||(e.type==='zombie'&&dist<3.1)||(e.type==='brute'&&dist<3.4))){
-          e.state='windup';e.timer=e.type==='brute'?.82:e.type==='robot'?.8:.52;e.attackDir=dir;
+          e.state='windup';e.timer=e.windup;e.attackDir=dir;
           e.telegraph=makeTelegraph(e.x,e.z,e.type==='brute'?2.9:e.type==='robot'?.75:1.05,e.type==='robot'?0xff8d62:0xef6863);
         }
       }else if(e.state==='windup'){
         if(e.telegraph){e.telegraph.position.set(e.x,.09,e.z);e.telegraph.material.opacity=.35+Math.sin(visualTime*25)*.2;}
         if(e.timer<=0){
           if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
-          if(e.type==='robot'){shoot(e);e.state='walk';e.timer=2.8+Math.random();}
+          if(e.type==='robot'){shoot(e);e.state='walk';e.timer=e.attackRecovery+Math.random()*.6;}
           else if(e.type==='brute'){
-            pulse(e.x,e.z,3,0xfc7765,.42);fragments.add(e.x,.1,e.z,12,[0xc4bb97,0x75897d],5,.12);if(dist<2.95&&player.y<.8)hurtPlayer(e.damage,dir.x,dir.z,false);e.state='walk';e.timer=2.2;
+            pulse(e.x,e.z,3,0xfc7765,.42);fragments.add(e.x,.1,e.z,12,[0xc4bb97,0x75897d],5,.12);if(dist<2.95&&player.y<.8)hurtPlayer(e.damage,dir.x,dir.z,false);e.state='walk';e.timer=e.attackRecovery;
           }else{e.state='lunge';e.timer=.27;e.vy=3.4;}
         }
       }else if(e.state==='lunge'){
-        moveCircle(e,e.attackDir.x*11*dt,e.attackDir.z*11*dt,world.objects,e.radius);
+        moveCircle(e,e.attackDir.x*e.lungeSpeed*dt,e.attackDir.z*e.lungeSpeed*dt,world.objects,e.radius);
         if(dist<1.1)hurtPlayer(e.damage,e.attackDir.x,e.attackDir.z);
-        if(e.timer<=0){e.state='walk';e.timer=2.0;}
+        if(e.timer<=0){e.state='walk';e.timer=e.attackRecovery;}
       }
     }
-    if(dist<e.radius+player.radius+.1&&e.stagger<=0&&e.state!=='windup')hurtPlayer(e.damage,dir.x,dir.z);
+    // Damage belongs to the telegraphed lunge, slam or projectile; merely
+    // touching a walking enemy must not drain health between its attacks.
     e.mesh.position.set(e.x,e.y,e.z);const u=e.mesh.userData;
     if(u.leftLeg)u.leftLeg.rotation.x=Math.sin(e.walk)*.5;
     if(u.rightLeg)u.rightLeg.rotation.x=-Math.sin(e.walk)*.5;
@@ -543,7 +599,7 @@ function updatePlayer(dt){
   const horizontal=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const vertical=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
   const move=screenMovement(horizontal,vertical),moving=Math.hypot(move.x,move.z)>.01;
-  updateAim();guarding=guardHeld&&!swing&&!weaponBusy()&&!chargeStarted;
+  updateAim();guarding=guardHeld&&!swing&&!spin&&!weaponBusy()&&!chargeStarted;
   if(guarding){facing={...aim};guardAngle+=dt*19;}
   else if(moving&&!swing&&!leap&&!throwWindup)facing=move;
   if(leap){
@@ -557,21 +613,29 @@ function updatePlayer(dt){
   }else{
     let dx,dz;
     if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*dt;dz=dashDirection.z*19*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
-    else{const speed=stats.speed*(guarding?.55:chargeStarted?.82:swing?.92:Math.abs(stance-stanceTarget)>.005?.55:landingRecovery>0?.25:1);dx=move.x*speed*dt;dz=move.z*speed*dt;}
+    else{const speed=stats.speed*(guarding?.55:spin?.84:swing?.92:Math.abs(stance-stanceTarget)>.005?.55:landingRecovery>0?.25:1);dx=move.x*speed*dt;dz=move.z*speed*dt;}
     dx+=player.vx*dt;dz+=player.vz*dt;player.vx*=Math.exp(-9*dt);player.vz*=Math.exp(-9*dt);
     const actual=moveCircle(player,dx,dz,world.objects.filter(o=>o.h>player.y+.1),player.radius);player.walk+=Math.hypot(actual.x,actual.z)*6;
     const floor=supportHeight(player.x,player.z,player.y);
     if(player.y>floor){player.vy=(player.vy||0)-20*dt;player.y=Math.max(floor,player.y+player.vy*dt);}else{player.y=floor;player.vy=0;}
   }
-  if(attackBuffer){
-    if(attackBuffer.held)attackBuffer.q=clamp(attackBuffer.q+dt/CHARGE_SECONDS,0,1);
-    else{attackBuffer.life-=dt;if(attackBuffer.life<=0)attackBuffer=null;}
+  if(spinRecovery){spinRecovery.time+=dt;if(spinRecovery.time>=.12)spinRecovery=null;}
+  if(attackBuffer){attackBuffer.life-=dt;if(attackBuffer.life<=0)attackBuffer=null;}
+  if(chargeHeld){
+    holdElapsed+=dt;
+    if(!spin&&holdElapsed>=SPIN_HOLD_SECONDS&&!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld)startSpin();
   }
-  if(!chargeStarted&&!swing&&attackCooldown<=0&&!weaponBusy()&&!guarding){
-    if(attackBuffer){const queued=attackBuffer;attackBuffer=null;chargeStarted=true;charge=queued.q;chargeFullPlayed=false;if(!queued.held)beginSwing();}
-    else if(chargeHeld){chargeStarted=true;charge=0;chargeFullPlayed=false;}
+  if(attackBuffer&&!chargeHeld&&!spin&&!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld){
+    attackBuffer=null;chargeStarted=true;charge=0;beginSwing();
   }
-  if(chargeStarted){charge=clamp(charge+dt/CHARGE_SECONDS,0,1);if(charge>=1&&!chargeFullPlayed){chargeFullPlayed=true;audio.play('charge',1);pulse(player.x,player.z,2.3,color.gold,.3);}}
+  if(spin){
+    const s=spin,oldCycle=s.cycle;s.time+=dt;const turn=dt*Math.PI*2/SPIN_TURN_SECONDS;
+    s.rotation+=turn;s.angle+=turn;s.cycle=Math.floor(s.rotation/(Math.PI*2));s.recoil=Math.max(0,s.recoil-dt*12);
+    if(s.cycle>oldCycle){
+      audio.play('swing',.25);
+      for(const target of s.hitTimes.keys())if(target.dead)s.hitTimes.delete(target);
+    }
+  }
   if(swing)swing.time+=dt;
   if(throwWindup){throwWindup.time+=dt;if(throwWindup.time>=.28)releaseHammer();}
   poseHero(dt,moving);
@@ -579,6 +643,9 @@ function updatePlayer(dt){
   if(swing){const progress=swing.time/swing.duration;
     if(progress>=.10&&progress<=.72&&!swing.blocked){weaponTrail(headPrevious,headNow,.29*stats.size,swing.charged?0xffefae:0xffbe67);impact(headPrevious,headNow);}
     if(swing&&(swing.time>=swing.duration||(swing.blocked&&swing.time-swing.blockTime>=.085)))swing=null;
+  }else if(spin){
+    if(spin.time-spin.trailTime>=1/60){weaponTrail(headPrevious,headNow,.27*stats.size,0xffcf79);spin.trailTime=spin.time;}
+    spinImpact(headPrevious,headNow);
   }else if(guarding){
     weaponTrail(headPrevious,headNow,.16,0x8ce4d8);
     for(const e of [...enemies])if((guardHits.get(e)||0)<elapsed&&facingCoverage(aim,e,player,Math.PI*.42)&&firstHammerHit(headPrevious,headNow,[e],.45*stats.size)){guardHits.set(e,elapsed+.38);hitEnemy(e,Math.round(stats.power*.3),normalize(e.x-player.x,e.z-player.z),6,1.5);}
@@ -589,22 +656,23 @@ function updatePlayer(dt){
   updateAim();
 }
 function poseHero(dt,moving=false){
-  const u=hero.userData,walk=moving&&!leap&&!swing?Math.sin(player.walk):0;
+  const u=hero.userData,walk=moving&&!leap&&!swing&&!spin?Math.sin(player.walk):0;
   const targetAngle=Math.atan2(swing?swing.fx:facing.x,swing?swing.fz:facing.z);
-  const diff=Math.atan2(Math.sin(targetAngle-hero.rotation.y),Math.cos(targetAngle-hero.rotation.y));hero.rotation.y+=diff*Math.min(1,dt*22);
+  const diff=Math.atan2(Math.sin(targetAngle-hero.rotation.y),Math.cos(targetAngle-hero.rotation.y));
+  if(spin)hero.rotation.y=spin.angle;else hero.rotation.y+=diff*Math.min(1,dt*22);
   hero.position.set(player.x,player.y+(dashTime>0?.15:Math.abs(walk)*.07),player.z);
   const p=swing?clamp(swing.time/swing.duration,0,1):0;
-  const torque=swing?Math.sin((p-.10)*Math.PI*1.3)*.52:guarding?-.08:0;
-  if(u.leftLeg){u.leftLeg.rotation.x=leap?-.55:swing?-.16+Math.sin(p*Math.PI)*.2:walk*.58;u.leftLeg.rotation.z=swing?-.12:0;}
-  if(u.rightLeg){u.rightLeg.rotation.x=leap?.45:swing?.22-Math.sin(p*Math.PI)*.16:-walk*.58;u.rightLeg.rotation.z=swing?.12:0;}
-  if(u.body){u.body.rotation.x=leap?(leap.diving?.5:-.18):dashTime>0?.25:chargeStarted?-.14:swing?Math.sin(p*Math.PI)*.14:landingRecovery>0?.32:0;u.body.rotation.y=torque;u.body.position.y=landingRecovery>0?-.12:Math.sin(visualTime*2)*.015;}
-  if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:moving?.25:0);u.cape.rotation.z=Math.sin(visualTime*3)*.045;}
+  const torque=spin?-.20:swing?Math.sin((p-.10)*Math.PI*1.3)*.52:guarding?-.08:0;
+  const spinStep=spin?Math.sin(spin.rotation*2)*.24:0;
+  if(u.leftLeg){u.leftLeg.rotation.x=leap?-.55:spin?-.12+spinStep:swing?-.16+Math.sin(p*Math.PI)*.2:walk*.58;u.leftLeg.rotation.z=spin?-.18:swing?-.12:0;}
+  if(u.rightLeg){u.rightLeg.rotation.x=leap?.45:spin?.12-spinStep:swing?.22-Math.sin(p*Math.PI)*.16:-walk*.58;u.rightLeg.rotation.z=spin?.18:swing?.12:0;}
+  if(u.body){u.body.rotation.x=leap?(leap.diving?.5:-.18):dashTime>0?.25:spin?.08:swing?Math.sin(p*Math.PI)*.14:landingRecovery>0?.32:0;u.body.rotation.y=torque;u.body.position.y=landingRecovery>0?-.12:spin?-.045:Math.sin(visualTime*2)*.015;}
+  if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:spin?.55:moving?.25:0);u.cape.rotation.z=spin?-.3+Math.sin(spin.rotation)*.1:Math.sin(visualTime*3)*.045;}
   u.setStance?.(stance);
   const rest=u.weaponRest||{x:.55,y:0,z:-.72},rp=u.weaponRestPosition||{x:0,y:1.04,z:.38};
   const rig=u.weaponRig,restQuaternion=new THREE.Quaternion().setFromEuler(new THREE.Euler(rest.x,rest.y,rest.z));
   rig.position.set(rp.x,rp.y,rp.z);rig.quaternion.copy(restQuaternion);
-  u.setReach?.(Math.max(.65,stats.range+(swing?swing.q*1.4:charge*1.4)-.55-.52*stats.size-.43));
-  if(chargeStarted){rig.rotation.set(lerp(rest.x,-.85,smooth(charge)),lerp(0,-.45,smooth(charge)),lerp(rest.z,-.5,smooth(charge)));rig.position.y+=charge*.18;}
+  u.setReach?.(Math.max(.65,stats.range+(swing?swing.q*1.4:0)-.55-.52*stats.size-.43));
   if(swing){
     const setShaft=(angle,y)=>{poseDirection.set(Math.sin(angle),y,Math.cos(angle)).normalize();return new THREE.Quaternion().setFromUnitVectors(shaftUp,poseDirection);};
     rig.position.lerpVectors(swing.fromPosition,new THREE.Vector3(stance>.9?0:.18,1.22,.55),smooth(p/.10));
@@ -612,13 +680,19 @@ function poseHero(dt,moving=false){
     else if(p<.10)rig.quaternion.copy(swing.fromRotation).slerp(setShaft(1.72,.18),smooth(p/.10));
     else if(p<=.72){const t=smooth((p-.10)/.62);rig.quaternion.copy(setShaft(lerp(1.72,-1.72,t),lerp(.18,-.15,t)));}
     else{rig.quaternion.copy(setShaft(-1.72,-.15)).slerp(restQuaternion,smooth((p-.72)/.28));rig.position.lerp(new THREE.Vector3(rp.x,rp.y,rp.z),smooth((p-.72)/.28));}
+  }else if(spin){
+    const reachOut=smooth(spin.time/.10);
+    const target=new THREE.Quaternion().setFromUnitVectors(shaftUp,poseDirection.set(1,.025+spin.recoil*.18,.12).normalize());
+    rig.position.lerpVectors(spin.fromPosition,new THREE.Vector3(stance>.9?.08:.2,1.22,.48),reachOut);
+    rig.quaternion.copy(spin.fromRotation).slerp(target,reachOut);
   }else if(guarding){const g=guardDimensions();u.setReach?.(g.reach);rig.position.set(0,g.height,.95);rig.rotation.set(0,0,guardAngle);}
   else if(leap){rig.position.set(stance>.9?0:.22,leap.diving?1.1:1.65,.55);rig.rotation.set(leap.diving?2.12:-.55,0,leap.diving?0:-.25);}
   else if(throwWindup){const t=throwWindup.time/.28;rig.position.set(lerp(.4,0,smooth(t)),lerp(1.4,1.2,smooth(t)),.55);const target=new THREE.Quaternion().setFromEuler(new THREE.Euler(t<.35?-1.15:lerp(-1.15,Math.PI/2,smooth((t-.35)/.65)),0,0));rig.quaternion.copy(throwWindup.fromRotation).slerp(target,smooth(t/.35));}
   else if(landingRecovery>0){rig.rotation.set(2.0,0,-.05);rig.position.set(0,.9,.7);}
+  else if(spinRecovery){const t=smooth(spinRecovery.time/.12);rig.position.lerpVectors(spinRecovery.fromPosition,new THREE.Vector3(rp.x,rp.y,rp.z),t);rig.quaternion.copy(spinRecovery.fromRotation).slerp(restQuaternion,t);}
   u.updateGrip?.();
   flashMaterials(player,player.invincible>0&&player.hurtAgo<1?(Math.sin(visualTime*30)*.5+.5)*.55:0,0xff8b71);
-  chargeRing.visible=chargeStarted;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(1.1+charge*.6);chargeRing.material.opacity=.25+charge*.55;chargeRing.material.color.setHex(charge>.95?0xffeac4:0xffae57);
+  chargeRing.visible=!!spin;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(stats.range*.88);chargeRing.material.opacity=spin?.12+Math.sin(spin.rotation*2)*.04:0;chargeRing.material.color.setHex(0xffcb7d);
   directionMarker.position.set(player.x+facing.x*1.15,player.y+.055,player.z+facing.z*1.15);directionMarker.rotation.y=Math.atan2(facing.x,facing.z);directionMarker.visible=phase==='playing';
   if(guardRing){const g=guardDimensions();guardRing.visible=guarding;guardRing.position.set(player.x+aim.x*.95,player.y+g.height,player.z+aim.z*.95);guardRing.scale.setScalar(g.radius/1.72);guardRing.rotation.set(0,Math.atan2(aim.x,aim.z),0);guardRing.material.opacity=.12+Math.sin(guardAngle*2)*.035;}
   if(groundShadow){groundShadow.position.set(player.x,.035,player.z);groundShadow.scale.setScalar(1+player.y*.035);groundShadow.material.opacity=clamp(.34-player.y*.018,.15,.34);groundShadow.visible=phase!=='menu';}
@@ -669,7 +743,7 @@ function updateGame(dt){
   updateBoss(dt);if(phase!=='playing')return;
   updateDrops(dt);updateObjects(dt);checkGoal();
   spawnTimer-=dt;
-  if(spawnTimer<=0){const count=bossSpawned?1:roundTime>90?3:roundTime>35?2:1;for(let i=0;i<count;i++)spawnEnemy();spawnTimer=Math.max(.6,1.75-roundTime*.006-(round-1)*.12)*(bossSpawned?1.5:1);}
+  if(spawnTimer<=0){spawnEnemy();spawnTimer=hordeAt(roundTime,round,bossSpawned).interval;}
   const district=world.regionAt?.(player.x,player.z);
   if(district&&currentDistrict!==district.id){currentDistrict=district.id;$('districtName').textContent=district.name;if(roundTime>6)toast(district.name,district.weather==='snow'?'Ο άνεμος φέρνει χιόνι.':district.weather==='ash'?'Πρόσεχε τη λάβα και τις φωτιές.':'Η βροχή δεν σταματά την ορδή.','#82c7bb');}
 }
@@ -681,9 +755,9 @@ function updateHUD(force=false){
   $('objectiveText').textContent=bossSpawned?'Ο στόχος πέτυχε. Νίκησε τον Κολοσσό!':'Φτάσε στο 60% για να καλέσεις τον Κολοσσό.';
   $('killsValue').textContent=kills;$('relicValue').textContent=relics;$('roundValue').textContent=String(round).padStart(2,'0');
   $('timeValue').textContent=String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
-  const shownCharge=chargeStarted?charge:attackBuffer?.held?attackBuffer.q:0;
-  $('chargeFill').style.width=(shownCharge*100)+'%';$('chargeWrap').classList.toggle('charged',shownCharge>=.95);
-  $('chargeText').textContent=shownCharge>=.95?'ΑΦΗΣΕ ΓΙΑ ΣΥΝΘΛΙΨΗ':chargeStarted||attackBuffer?.held?'ΦΟΡΤΙΣΗ '+Math.floor(shownCharge*100)+'%':'ΚΡΑΤΑ ΓΙΑ ΙΣΧΥ';
+  $('chargeFill').style.width=spin?'100%':chargeHeld?Math.min(100,holdElapsed/SPIN_HOLD_SECONDS*100)+'%':'0%';
+  $('chargeWrap').classList.toggle('spinning',!!spin);
+  $('chargeText').textContent=spin?'ΠΕΡΙΣΤΡΟΦΗ · ΑΦΗΣΕ: ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ: ΠΕΡΙΣΤΡΟΦΗ':'ΚΡΑΤΑ SPACE: 360°';
   document.querySelector('[data-key="ShiftLeft"]')?.classList.toggle('cooldown',dashCooldown>0);
   if(boss){$('bossFill').style.width=Math.max(0,boss.hp/boss.maxHp*100)+'%';$('bossValue').textContent=(boss.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(boss.hp))+' / '+Math.ceil(boss.maxHp)+' HP';}
   if($('stanceValue'))$('stanceValue').textContent=Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':'ΣΦΥΡΙ + ΑΣΠΙΔΑ';
@@ -693,7 +767,7 @@ function updateHUD(force=false){
   if($('throwValue'))$('throwValue').textContent=throwFlight?(throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':'ΣΤΟΧΕΥΣΕ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   $('attackButton')?.classList.toggle('active',!!swing);
-  $('chargeButton')?.classList.toggle('active',chargeHeld||chargeStarted);
+  $('chargeButton')?.classList.toggle('active',chargeHeld||!!spin);
   $('guardButton')?.classList.toggle('active',guardHeld||guarding);
   $('leapButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
   $('slamButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
@@ -742,7 +816,6 @@ function drawFX(){
   for(const e of hpEchoes)drawHP(e.x,e.y,e.z,0,e.maxHp,'#ff9d72',Math.min(1,e.life*2));
   for(const n of numbers){const p=screenPoint(n.x,n.y,n.z);if(!p.inside)continue;c.globalAlpha=Math.min(1,n.life/.3);c.textAlign='center';c.font='900 '+n.size+'px "Courier New",monospace';c.lineWidth=3;c.strokeStyle='rgba(10,24,26,.8)';c.strokeText(n.text,p.x,p.y);c.fillStyle=n.color;c.fillText(n.text,p.x,p.y);}
   c.globalAlpha=1;
-  if(chargeStarted){const p=screenPoint(player.x,player.y+3.1,player.z);const width=52;c.fillStyle='#162728';c.fillRect(p.x-width/2-2,p.y-2,width+4,8);c.fillStyle=charge>.95?'#ffebac':'#ffb85f';c.fillRect(p.x-width/2,p.y,width*charge,4);}
   if(boss&&!boss.dead&&phase==='playing'){
     const p=screenPoint(boss.x,3,boss.z);if(p.x<40||p.x>screenW-40||p.y<150||p.y>screenH-100){
       const x=clamp(p.x,40,screenW-180),y=clamp(p.y,165,screenH-135),a=Math.atan2(p.y-y,p.x-x);
@@ -765,24 +838,31 @@ function pressAttack(){
   if(phase!=='playing')return;audio.unlock();
   if(leap){armAirSmash();return;}
   if(throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005||guardHeld||chargeHeld)return;
-  chargeHeld=true;
-  if(!swing&&attackCooldown<=0&&!weaponBusy()){
-    attackBuffer=null;chargeStarted=true;charge=0;chargeFullPlayed=false;
-  }else attackBuffer={held:true,q:0,life:ATTACK_BUFFER_SECONDS};
+  chargeHeld=true;holdElapsed=0;chargeStarted=true;charge=0;
+  // The short tap is committed on release. Holding changes this same input
+  // into a sustained body-and-hammer spin, with no charged release attack.
+}
+function pressSpin(){
+  pressAttack();
+  if(chargeHeld){holdElapsed=SPIN_HOLD_SECONDS;startSpin();}
 }
 function releaseAttack(){
+  const wasHeld=chargeHeld;
   chargeHeld=false;
-  if(phase!=='playing'){chargeStarted=false;charge=0;attackBuffer=null;return;}
-  if(chargeStarted){
-    if(!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld)beginSwing();
-    else{attackBuffer={held:false,q:charge,life:Math.max(ATTACK_BUFFER_SECONDS,attackCooldown+.025)};chargeStarted=false;charge=0;}
-  }else if(attackBuffer){attackBuffer.held=false;attackBuffer.life=Math.max(ATTACK_BUFFER_SECONDS,attackCooldown+.025);}
+  if(spin){cancelAttack();return;}
+  if(phase!=='playing'){cancelAttack();return;}
+  if(!wasHeld||!chargeStarted)return;
+  if(holdElapsed>=SPIN_HOLD_SECONDS){cancelAttack();return;}
+  charge=0;
+  if(!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld)beginSwing();
+  else{attackBuffer={life:Math.max(ATTACK_BUFFER_SECONDS,attackCooldown+.025)};chargeStarted=false;}
+  holdElapsed=0;
 }
-function quickAttack(){pressAttack();releaseAttack();}
-function cancelAttack(){chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;}
+function quickAttack(){if(!spin){pressAttack();releaseAttack();}}
+function cancelAttack(){stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;}
 function pressGuard(){
   if(phase!=='playing')return;
-  guardHeld=true;cancelAttack();
+  guardHeld=true;cancelAttack();spinRecovery=null;
 }
 function initInput(){
   $('startButton').onclick=startGame;$('retryButton').onclick=startGame;$('restartButton').onclick=startGame;
@@ -839,7 +919,7 @@ function initInput(){
     button.addEventListener('pointercancel',()=>{button.classList.remove('active');cancel();});
   }
   bindAction('attackButton',quickAttack);
-  bindAction('chargeButton',pressAttack,releaseAttack,cancelAttack);
+  bindAction('chargeButton',pressSpin,releaseAttack,cancelAttack);
   bindAction('guardButton',pressGuard,()=>{guardHeld=false;guarding=false;});
   bindAction('leapButton',startLeap);
   bindAction('slamButton',()=>{if(leap||startLeap())armAirSmash();});

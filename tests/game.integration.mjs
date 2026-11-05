@@ -11,6 +11,7 @@ import * as models from '../models.js';
 import * as world from '../world.js';
 import * as core from '../core.js';
 import * as combat from '../combat.js';
+import * as progression from '../progression.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -122,6 +123,7 @@ const imports = new Map([
   ['./world.js', synthetic(world, 'real-world')],
   ['./core.js', synthetic(core, 'real-core')],
   ['./combat.js', synthetic(combat, 'real-combat')],
+  ['./progression.js', synthetic(progression, 'real-progression')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
@@ -130,7 +132,7 @@ export const __integration = {
   get phase(){return phase;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
-  get charge(){return charge;}, get swing(){return swing;}, get facing(){return facing;},
+  get charge(){return charge;}, get swing(){return swing;}, get spin(){return spin;}, get facing(){return facing;},
   get elapsed(){return elapsed;}, get round(){return round;}, get relics(){return relics;},
   get kills(){return kills;}, get bolts(){return bolts;}, get score(){return score;},
   get scene(){return scene;}, get keys(){return keys;},
@@ -212,6 +214,11 @@ function placeObject(type, x, z, options = {}) {
   object.mesh.position.set(x, object.baseY, z);
   return object;
 }
+const angleStep = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+function headAzimuth() {
+  const head = worldPosition(api.hero.userData.hammerHead);
+  return Math.atan2(head.x - api.player.x, head.z - api.player.z);
+}
 
 test('game initializes using its actual HTML ids, world and warrior, and renders a frame', () => {
   assert.deepEqual(browserErrors, []);
@@ -225,27 +232,44 @@ test('game initializes using its actual HTML ids, world and warrior, and renders
   assert.ok(renderedFrames > 0 && scheduledFrames > 0);
 });
 
-test('actual keyboard movement selects facing and released charged Space hits a surviving brute', () => {
+test('the opening gives breathing room, spawns a weak zombie first, and a normal hit defeats it', () => {
+  reset(); advance(5.5);
+  assert.equal(api.enemies.length, 0, 'The opening must allow time to learn the controls before the first spawn');
+  advance(1);
+  assert.equal(api.enemies.length, 1);
+  const enemy = api.enemies[0];
+  assert.equal(enemy.type, 'zombie'); assert.ok(enemy.hp <= api.stats.power);
+  assert.ok(enemy.damage <= 6, 'A starter zombie should not retain the previous 11-damage attack');
+  assert.ok(enemy.speed < api.stats.speed / 3);
+  api.world.objects.forEach((o, i) => { o.x = 500 + i * 10; o.z = 500; });
+  enemy.x = api.player.x; enemy.z = api.player.z + 2.3; enemy.speed = 0; enemy.state = 'idle';
+  api.setFacing(0, 1); api.poseHero(1);
+  key('Space', true); key('Space', false); playerSteps(.35);
+  assert.equal(enemy.dead, true, 'One ordinary starter hammer hit must defeat the first zombie');
+  assert.equal(api.kills, 1);
+});
+
+test('actual keyboard movement selects facing and a released Space tap hits a surviving brute', () => {
   arena();
   key('KeyD', true); advance(.12); key('KeyD', false);
   const before = { x: api.player.x, z: api.player.z }, facing = { ...api.facing };
   assert.ok(before.x > 0 && before.z < 0);
-  key('Space', true); advance(.72);
-  assert.equal(api.charge, 1); assert.equal(api.swing, null, 'Holding must charge without auto-swinging');
-  const enemy = stationaryEnemy('brute', before.x + facing.x * 3.5, before.z + facing.z * 3.5);
+  const enemy = stationaryEnemy('brute', before.x + facing.x * 2.3, before.z + facing.z * 2.3), hp = enemy.hp;
+  key('Space', true); advance(.04);
+  assert.equal(api.spin, null, 'A short press must stay a normal swing');
   key('Space', false);
-  assert.ok(api.swing?.charged);
+  const strike = api.swing;
+  assert.ok(strike); assert.equal(strike.charged, false);
   advance(.025);
-  assert.equal(enemy.hp, enemy.maxHp, 'Windup must not apply the complete arc as an instantaneous hit');
+  assert.equal(enemy.hp, hp, 'Windup must not apply the complete arc as an instantaneous hit');
   let contactTime = .025;
-  for (; enemy.hp === enemy.maxHp && contactTime < .18; contactTime += 1 / 120) advance(1 / 120);
-  assert.ok(contactTime <= .17, `Charged forward contact took ${contactTime.toFixed(3)} seconds after release`);
-  assert.equal(enemy.dead, false);
-  assert.equal(enemy.hp, 25);
+  for (; enemy.hp === hp && contactTime < .18; contactTime += 1 / 120) advance(1 / 120);
+  assert.ok(contactTime <= .17, `Forward contact took ${contactTime.toFixed(3)} seconds after release`);
+  assert.equal(enemy.dead, false); assert.equal(enemy.hp, hp - strike.damage);
   assert.ok(enemy.flash > 0 && enemy.stagger > 0);
   assert.ok(Math.hypot(enemy.vx, enemy.vz) > 1);
   assert.ok(enemy.vy > 0 || enemy.y > 0);
-  assert.ok(audioEvents.some(e => (e.name === 'hit' || e.name === 'break') && e.power === 1));
+  assert.ok(audioEvents.some(e => e.name === 'hit' || e.name === 'break'));
 });
 
 test('the initial stance holds the hammer in one hand and the real shield in the other', () => {
@@ -320,16 +344,16 @@ test('a quick Space tap connects promptly and completes its whole swing in under
   assert.equal(api.swing, null);
 });
 
-test('normal and charged swings reach nearby targets without striking behind the warrior', () => {
-  for (const charge of [0, 1]) for (const distance of [.9, 1.1, 2.3]) {
-    arena(); api.poseHero(1);
+test('normal swings with either stock or upgraded hammer size reach nearby targets without striking behind', () => {
+  for (const sizeLevel of [0, 2]) for (const distance of [.9, 1.1, 2.3]) {
+    arena(); api.levels.size = sizeLevel; api.applyStats(); api.poseHero(1);
     const front = stationaryEnemy('brute', 0, distance), rear = stationaryEnemy('brute', 0, -1.1);
     const hp = front.hp;
-    api.primeSwing(charge); api.beginSwing();
+    api.primeSwing(0); api.beginSwing();
     const strike = api.swing;
     playerSteps(.55, 1 / 240);
-    assert.equal(front.hp, hp - strike.damage, `Charge ${charge} missed a target ${distance} metres in front`);
-    assert.equal(rear.hp, rear.maxHp, 'A forward swing must not become a circular attack');
+    assert.equal(front.hp, hp - strike.damage, `Hammer size level ${sizeLevel} missed a target ${distance} metres in front`);
+    assert.equal(rear.hp, rear.maxHp, 'A normal forward swing must not become a circular attack');
   }
 });
 
@@ -359,31 +383,36 @@ test('a second short Space tap during recovery executes once after the current s
   assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2, 'The buffer must not repeat itself');
 });
 
-test('holding Space during recovery carries its charge forward and waits for release', () => {
+test('holding Space during recovery transitions into a continuous spin and stops on release', () => {
   arena();
-  const before = audioEvents.filter(e => e.name === 'swing').length;
   key('Space', true); key('Space', false); playerSteps(.2);
-  key('Space', true); playerSteps(.72);
-  assert.equal(api.charge, 1); assert.equal(api.swing, null);
-  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 1,
-    'A queued held input must charge instead of firing automatically');
+  assert.ok(api.swing);
+  key('Space', true); playerSteps(.15);
+  assert.equal(api.spin, null, 'The hold threshold must distinguish a quick tap');
+  playerSteps(.06);
+  assert.ok(api.spin); assert.equal(api.swing, null);
+  const heldSpin = api.spin;
+  playerSteps(1.5);
+  assert.equal(api.spin, heldSpin, 'Holding must continue the same rotation beyond one full turn');
   key('Space', false);
-  assert.ok(api.swing?.charged); assert.equal(api.swing.q, 1);
-  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2);
+  assert.equal(api.spin, null); assert.equal(api.swing, null);
+  playerSteps(.7);
+  assert.equal(api.spin, null); assert.equal(api.swing, null, 'Release must not trigger the former charged attack');
 });
 
-test('an early short tap during the longer charged swing survives until that swing finishes', () => {
+test('an early second tap survives normal swing recovery without becoming a held spin', () => {
   arena();
   const before = audioEvents.filter(e => e.name === 'swing').length;
-  key('Space', true); playerSteps(.72); key('Space', false);
-  const charged = api.swing; assert.ok(charged?.charged);
+  key('Space', true); key('Space', false);
+  const first = api.swing; assert.ok(first);
   playerSteps(.04); key('Space', true); key('Space', false);
   let followup = null;
   playerSteps(.9, 1 / 240, () => {
-    if (api.swing && api.swing !== charged) followup = api.swing;
+    if (api.swing && api.swing !== first) followup = api.swing;
+    assert.equal(api.spin, null, 'Time waiting for recovery is not time holding the key');
   });
-  assert.ok(followup, 'The short tap must survive the remaining charged-animation recovery');
-  assert.equal(followup.q, 0, 'Waiting in the input buffer must not turn a tap into a charged attack');
+  assert.ok(followup, 'The short tap must survive the current animation recovery');
+  assert.equal(followup.q, 0);
   assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2);
 });
 
@@ -456,17 +485,185 @@ test('all four illustrated WASD buttons move continuously and release on pointer
   }
 });
 
-test('the illustrated attack, charge and combined smash buttons execute their pictured actions', () => {
+test('the illustrated attack, held spin and combined smash buttons execute their pictured actions', () => {
   arena();
   pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
-  assert.ok(api.swing); assert.equal(api.swing.charged, false);
+  assert.ok(api.swing); assert.equal(api.swing.charged, false); assert.equal(api.spin, null);
   arena();
-  pointerEvent('chargeButton', 'pointerdown'); playerSteps(.72);
-  assert.equal(api.charge, 1); assert.equal(api.swing, null);
-  pointerEvent('chargeButton', 'pointerup'); assert.ok(api.swing?.charged);
+  pointerEvent('chargeButton', 'pointerdown');
+  assert.ok(api.spin, 'The pictured spin button starts its action immediately');
+  playerSteps(1.4);
+  assert.ok(api.spin); assert.equal(api.swing, null);
+  pointerEvent('chargeButton', 'pointerup');
+  assert.equal(api.spin, null); assert.equal(api.swing, null);
+  playerSteps(.4); assert.equal(api.swing, null, 'Releasing the spin button must not charge or swing');
   arena();
   pointerEvent('slamButton', 'pointerdown'); pointerEvent('slamButton', 'pointerup');
   assert.ok(api.leap); assert.equal(api.leap.slam, true);
+});
+
+test('held Space continuously rotates the whole warrior and extended hammer through more than two full turns', () => {
+  arena(); api.poseHero(1);
+  key('Space', true); playerSteps(.24);
+  assert.ok(api.spin); assert.equal(api.swing, null);
+  let bodyAngle = api.hero.rotation.y, headAngle = headAzimuth();
+  let bodyTravel = 0, headTravel = 0, largestStep = 0, minimumRadius = Infinity;
+  const poses = new Set();
+  playerSteps(2.1, 1 / 120, () => {
+    const nextBody = api.hero.rotation.y, nextHead = headAzimuth();
+    const bodyStep = angleStep(bodyAngle, nextBody);
+    bodyTravel += bodyStep; headTravel += angleStep(headAngle, nextHead);
+    largestStep = Math.max(largestStep, Math.abs(bodyStep)); bodyAngle = nextBody; headAngle = nextHead;
+    const head = worldPosition(api.hero.userData.hammerHead);
+    minimumRadius = Math.min(minimumRadius, Math.hypot(head.x - api.player.x, head.z - api.player.z));
+    poses.add([nextBody, head.x, head.y, head.z].map(n => n.toFixed(3)).join(','));
+    close(worldPosition(api.hero.userData.rightGrip).distanceTo(worldPosition(api.hero.userData.rightGripAnchor)), 0);
+  });
+  assert.ok(bodyTravel > Math.PI * 4, `The body rotated only ${(bodyTravel / Math.PI / 2).toFixed(2)} turns`);
+  close(bodyTravel, 2.1 / .62 * Math.PI * 2, .025);
+  close(headTravel, bodyTravel, .15);
+  assert.ok(minimumRadius > 1.8, 'The hammer must extend visibly out from the spinning warrior');
+  assert.ok(poses.size > 180 && largestStep < .15, 'Body and hammer need continuous poses, not a frame swap');
+  assert.ok(api.spin, 'The spin must not stop automatically after a fixed number of turns');
+  key('Space', false);
+});
+
+test('WASD remains directional and continuous while the warrior spins independently', () => {
+  arena(); api.poseHero(1);
+  pointerEvent('chargeButton', 'pointerdown'); playerSteps(.15);
+  const start = { x: api.player.x, z: api.player.z }, direction = core.screenMovement(1, 0);
+  key('KeyD', true); playerSteps(1); key('KeyD', false);
+  const dx = api.player.x - start.x, dz = api.player.z - start.z;
+  close(dx * direction.z - dz * direction.x, 0, .001);
+  close(Math.hypot(dx, dz), api.stats.speed * .84, .01);
+  assert.ok(api.spin, 'Changing walking direction must not cancel the held spin');
+  pointerEvent('chargeButton', 'pointerup');
+});
+
+test('a sustained spin hits real targets on every side no more than once per revolution', () => {
+  arena(); api.poseHero(1);
+  key('Space', true); playerSteps(.24);
+  const targets = [[0, 2.1], [2.1, 0], [0, -2.1], [-2.1, 0]].map(([x, z]) => {
+    const enemy = stationaryEnemy('brute', x, z); enemy.hp = enemy.maxHp = 1000; return enemy;
+  });
+  const events = targets.map(() => []), previousHP = targets.map(e => e.hp);
+  const damage = Math.round(api.stats.power * .9);
+  let t = 0;
+  playerSteps(2.3, 1 / 240, dt => {
+    t += dt;
+    targets.forEach((enemy, index) => {
+      if (enemy.hp !== previousHP[index]) {
+        assert.equal(previousHP[index] - enemy.hp, damage);
+        events[index].push(t); previousHP[index] = enemy.hp;
+      }
+    });
+    if (t < .04) assert.ok(events.some(hits => hits.length === 0), 'The entire circle must not be damaged instantly');
+  });
+  events.forEach((hits, index) => {
+    assert.ok(hits.length >= 3 && hits.length <= 4, `Side ${index} received ${hits.length} hits over 2.3 seconds`);
+    for (let i = 1; i < hits.length; i++) {
+      assert.ok(hits[i] - hits[i - 1] >= .62 - 1 / 240 - 1e-7, 'A target must not be hit twice at the turn boundary');
+      assert.ok(hits[i] - hits[i - 1] <= .66, 'Each subsequent physical revolution should reconnect');
+    }
+    assert.ok(targets[index].stagger > 0 && Math.hypot(targets[index].vx, targets[index].vz) > 1);
+  });
+  key('Space', false);
+});
+
+test('spinning strikes scenery but cannot hit through a surviving wall, outside reach, or above the hammer', () => {
+  arena(); api.poseHero(1);
+  const wall = placeObject('wall', 0, 1.7, { w: 5, d: .08, h: 3, hp: 1000, maxHp: 1000 });
+  const behindWall = stationaryEnemy('brute', 0, 2.9), rear = stationaryEnemy('brute', 0, -2.1);
+  const distant = stationaryEnemy('brute', 9, 0), elevated = stationaryEnemy('brute', -2.1, 0);
+  for (const enemy of [behindWall, rear, distant, elevated]) enemy.hp = enemy.maxHp = 1000;
+  elevated.y = 12; elevated.mesh.position.y = 12;
+  key('Space', true); playerSteps(2.2);
+  assert.ok(api.spin, 'Wall contact must not silently stop a held spin');
+  assert.ok(wall.hp < wall.maxHp && rear.hp < rear.maxHp, 'The rotating weapon must damage both scenery and an exposed rear target');
+  assert.equal(behindWall.hp, behindWall.maxHp);
+  assert.equal(distant.hp, distant.maxHp); assert.equal(elevated.hp, elevated.maxHp);
+  key('Space', false);
+});
+
+test('releasing Space stops rotation and damage immediately without a charged follow-up', () => {
+  arena(); api.poseHero(1);
+  key('Space', true); playerSteps(.9);
+  assert.ok(api.spin);
+  const head = worldPosition(api.hero.userData.hammerHead), stoppedAngle = api.hero.rotation.y;
+  const enemy = stationaryEnemy('brute', head.x, head.z); enemy.hp = enemy.maxHp = 1000;
+  const events = audioEvents.filter(e => e.name === 'swing').length;
+  key('Space', false);
+  assert.equal(api.spin, null); assert.equal(api.swing, null);
+  playerSteps(.8);
+  close(angleStep(stoppedAngle, api.hero.rotation.y), 0, .001);
+  assert.equal(enemy.hp, enemy.maxHp, 'The recovery pose must have no residual damage');
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length, events);
+  key('Space', true); key('Space', false);
+  assert.ok(api.swing, 'A fresh tap after release must still work');
+});
+
+test('a second spin input preserves the active turn and its per-target contact cooldown', () => {
+  arena(); key('Space', true); playerSteps(.3);
+  const activeSpin = api.spin; assert.ok(activeSpin);
+  const head = worldPosition(api.hero.userData.hammerHead);
+  const enemy = stationaryEnemy('brute', head.x, head.z); enemy.hp = enemy.maxHp = 1000;
+  playerSteps(.01);
+  assert.equal(enemy.hp, 1000 - Math.round(api.stats.power * .9));
+  const afterContact = enemy.hp, startedAt = activeSpin.time;
+  for (let request = 0; request < 3; request++) {
+    pointerEvent('chargeButton', 'pointerdown'); playerSteps(.05);
+    assert.equal(api.spin, activeSpin, 'A second input source must not reset the existing spin');
+    assert.equal(enemy.hp, afterContact, 'Repeated start requests must not bypass the revolution cooldown');
+  }
+  assert.ok(activeSpin.time >= startedAt + .15 - 1e-7);
+  pointerEvent('chargeButton', 'pointerup'); key('Space', false);
+  assert.equal(api.spin, null); assert.equal(api.swing, null);
+});
+
+test('Q, E, R and Z cancel a held spin and carry out their own actions without restarting it', () => {
+  for (const action of ['KeyQ', 'KeyE', 'KeyR', 'KeyZ']) {
+    arena(); key('Space', true); playerSteps(.3); assert.ok(api.spin);
+    key(action, true); api.updatePlayer(.01);
+    assert.equal(api.spin, null, `${action} must cancel the old spin`);
+    if (action === 'KeyQ') assert.equal(api.guarding, true);
+    if (action === 'KeyE') { assert.ok(api.leap); assert.equal(api.leap.slam, true, 'E inherits the held attack as an armed smash'); }
+    if (action === 'KeyR') assert.ok(api.throwWindup || api.throwFlight);
+    if (action === 'KeyZ') assert.equal(api.stanceTarget, 1);
+    key(action, false); playerSteps(.3);
+    assert.equal(api.spin, null, 'A cancelled held key must not restart after the overriding action');
+    key('Space', false); playerSteps(.5);
+    assert.equal(api.spin, null); assert.equal(api.swing, null, 'Release after cancellation must not add a ground swing');
+  }
+});
+
+test('pause, blur and pointer cancellation stop a spin and clear held input on resume', () => {
+  for (const action of ['pause', 'blur', 'pointercancel']) {
+    arena(); pointerEvent('chargeButton', 'pointerdown'); playerSteps(.4); assert.ok(api.spin);
+    if (action === 'pointercancel') pointerEvent('chargeButton', 'pointercancel');
+    else if (action === 'pause') { key('Escape', true); key('Escape', false); }
+    else emit('blur');
+    assert.equal(api.spin, null);
+    if (action !== 'pointercancel') { assert.equal(api.phase, 'paused'); elements.get('resumeButton').click(); }
+    playerSteps(.8);
+    assert.equal(api.spin, null); assert.equal(api.swing, null);
+    assert.equal(elements.get('chargeButton').classList.contains('active'), false);
+  }
+});
+
+test('two-handed spin keeps both hands attached and carries the stance damage bonus', () => {
+  arena(); key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
+  assert.equal(api.stance, 1);
+  const enemy = stationaryEnemy('brute', 0, 2.1); enemy.hp = enemy.maxHp = 1000;
+  pointerEvent('chargeButton', 'pointerdown');
+  playerSteps(.7, 1 / 120, () => {
+    for (const side of ['left', 'right']) {
+      close(worldPosition(api.hero.userData[side + 'Grip']).distanceTo(worldPosition(api.hero.userData[side + 'GripAnchor'])), 0);
+    }
+    assert.equal(api.hero.userData.shieldStored, true);
+  });
+  const damage = enemy.maxHp - enemy.hp, expected = Math.round(api.stats.power * .9 * 1.25);
+  assert.ok(damage >= expected && damage <= expected * 2); assert.equal(damage % expected, 0);
+  pointerEvent('chargeButton', 'pointerup');
 });
 
 test('Q aims a vertical frontal propeller with the mouse, blocks the front and leaves the rear exposed', () => {
@@ -494,10 +691,10 @@ test('Q reflects a frontal robot bolt back into an enemy without hurting the war
   key('KeyQ', true); api.updatePlayer(.05);
   const robot = stationaryEnemy('robot', 0, 5), hp = api.player.hp, robotHP = robot.hp;
   api.shoot(robot);
-  for (let i = 0; i < 60 && !api.bolts[0]?.reflected; i++) api.updateEnemies(1 / 120);
+  for (let i = 0; i < 120 && !api.bolts[0]?.reflected; i++) api.updateEnemies(1 / 120);
   assert.equal(api.bolts.length, 1); assert.equal(api.bolts[0].reflected, true);
   assert.ok(api.bolts[0].vz > 0); assert.equal(api.player.hp, hp);
-  for (let i = 0; i < 60 && api.bolts.length; i++) api.updateEnemies(1 / 120);
+  for (let i = 0; i < 120 && api.bolts.length; i++) api.updateEnemies(1 / 120);
   assert.equal(api.bolts.length, 0); assert.ok(robot.hp < robotHP); assert.equal(api.player.hp, hp);
   key('KeyQ', false);
 });
@@ -550,7 +747,7 @@ test('airborne Space arms a large smash whose damage happens only on landing', (
 test('Space held before E reliably arms the impact, and releasing later does not add a ground swing', () => {
   arena();
   key('Space', true); playerSteps(.12);
-  assert.ok(api.charge > 0);
+  assert.equal(api.spin, null, 'Space is held but still below the spin threshold');
   key('KeyE', true); key('KeyE', false);
   assert.ok(api.leap); assert.equal(api.leap.slam, true, 'Held Space must survive the jump input');
   assert.equal(api.swing, null);
@@ -696,7 +893,9 @@ test('zombies telegraph then leap, while a hammer hit interrupts their windup', 
   const enemy = api.enemies.at(-1); enemy.timer = -1;
   api.updateEnemies(.01);
   assert.equal(enemy.state, 'windup'); assert.ok(enemy.telegraph);
-  api.updateEnemies(.53);
+  api.updateEnemies(enemy.windup * .5);
+  assert.equal(enemy.state, 'windup', 'The opening attack grants a readable warning');
+  api.updateEnemies(enemy.windup * .5 + .01);
   assert.equal(enemy.state, 'lunge'); assert.ok(enemy.vy > 0);
   const before = Math.hypot(enemy.x - api.player.x, enemy.z - api.player.z);
   api.updateEnemies(.06);
