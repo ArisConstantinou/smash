@@ -65,8 +65,12 @@ class Element {
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 for (const [, tag, id] of html.matchAll(/<([a-z0-9-]+)\b[^>]*\bid="([^"]+)"/gi)) elements.set(id, new Element(tag, id));
 const dataKeys = new Map();
-for (const [, key] of html.matchAll(/data-key="([^"]+)"/g)) {
-  const el = new Element('kbd'); el.dataset.key = key; dataKeys.set(key, el);
+for (const [, tag, attrs] of html.matchAll(/<([a-z0-9-]+)\b([^>]*)>/gi)) {
+  const key = attrs.match(/\bdata-key="([^"]+)"/)?.[1];
+  if (!key) continue;
+  const id = attrs.match(/\bid="([^"]+)"/)?.[1];
+  const el = (id && elements.get(id)) || new Element(tag);
+  el.dataset.key = key; dataKeys.set(key, el);
 }
 const document = {
   body: new Element('body'), activeElement: null, hidden: false,
@@ -144,8 +148,10 @@ export const __integration = {
 };`;
 const game = new vm.SourceTextModule(original + testingExports, { context: sandbox, identifier: 'game.js with test-only exports' });
 await game.link(specifier => {
-  assert.ok(imports.has(specifier), `Unstubbed external dependency ${specifier}`);
-  return imports.get(specifier);
+  // Production uses versioned local module URLs to invalidate browser caches.
+  const localModule = specifier.split('?')[0];
+  assert.ok(imports.has(localModule), `Unstubbed external dependency ${specifier}`);
+  return imports.get(localModule);
 });
 await game.evaluate();
 await Promise.resolve();
@@ -155,6 +161,13 @@ function emit(name, props = {}) {
   for (const fn of listeners.get(name) || []) fn(event);
 }
 const key = (code, down) => emit(down ? 'keydown' : 'keyup', { code });
+function pointerEvent(id, type, props = {}) {
+  const element = elements.get(id);
+  assert.ok(element, `The actual HTML contains ${id}`);
+  const event = { pointerId: 1, pointerType: 'touch', clientX: 70, clientY: 70,
+    target: element, currentTarget: element, preventDefault() {}, ...props };
+  for (const handler of element.events.get(type) || []) handler(event);
+}
 function advance(seconds, step = 1 / 60) {
   for (let remaining = seconds; remaining > 1e-8; remaining -= step) {
     time += Math.min(step, remaining) * 1000;
@@ -217,14 +230,16 @@ test('actual keyboard movement selects facing and released charged Space hits a 
   key('KeyD', true); advance(.12); key('KeyD', false);
   const before = { x: api.player.x, z: api.player.z }, facing = { ...api.facing };
   assert.ok(before.x > 0 && before.z < 0);
-  key('Space', true); advance(1.31);
+  key('Space', true); advance(.72);
   assert.equal(api.charge, 1); assert.equal(api.swing, null, 'Holding must charge without auto-swinging');
   const enemy = stationaryEnemy('brute', before.x + facing.x * 3.5, before.z + facing.z * 3.5);
   key('Space', false);
   assert.ok(api.swing?.charged);
-  advance(.19);
+  advance(.025);
   assert.equal(enemy.hp, enemy.maxHp, 'Windup must not apply the complete arc as an instantaneous hit');
-  for (let frame = 0; enemy.hp === enemy.maxHp && frame < 60; frame++) advance(1 / 60);
+  let contactTime = .025;
+  for (; enemy.hp === enemy.maxHp && contactTime < .18; contactTime += 1 / 120) advance(1 / 120);
+  assert.ok(contactTime <= .17, `Charged forward contact took ${contactTime.toFixed(3)} seconds after release`);
   assert.equal(enemy.dead, false);
   assert.equal(enemy.hp, 25);
   assert.ok(enemy.flash > 0 && enemy.stagger > 0);
@@ -276,18 +291,182 @@ test('a continuous swing crosses many poses and damages a target only once', () 
   let changes = 0, previousHp = hp, previousHead = worldPosition(api.hero.userData.hammerHead);
   let maximumStep = 0;
   const poses = new Set();
-  for (let frame = 0; api.swing && frame < 150; frame++) {
-    api.updatePlayer(1 / 120);
+  for (let frame = 0; api.swing && frame < 240; frame++) {
+    api.updatePlayer(1 / 480);
     const head = worldPosition(api.hero.userData.hammerHead);
     maximumStep = Math.max(maximumStep, head.distanceTo(previousHead)); previousHead = head;
     poses.add(head.toArray().map(n => n.toFixed(3)).join(','));
     if (enemy.hp !== previousHp) { changes++; previousHp = enemy.hp; }
-    if (strike.time / strike.duration < .22) assert.equal(enemy.hp, hp);
+    if (strike.time / strike.duration < .08) assert.equal(enemy.hp, hp);
   }
   assert.equal(api.swing, null); assert.equal(changes, 1);
   assert.equal(enemy.hp, hp - strike.damage); assert.ok(strike.hits.has(enemy));
   assert.ok(poses.size > 45, `Expected many evolving hammer poses, got ${poses.size}`);
-  assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 120 Hz step`);
+  assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 480 Hz sample`);
+});
+
+test('a quick Space tap connects promptly and completes its whole swing in under 300 ms', () => {
+  arena(); api.poseHero(1);
+  const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
+  key('Space', true); key('Space', false);
+  let contactTime = null, duration = 0;
+  while (api.swing && duration < .5) {
+    api.updatePlayer(1 / 240); duration += 1 / 240;
+    if (contactTime === null && enemy.hp < hp) contactTime = duration;
+  }
+  assert.notEqual(contactTime, null, 'A tap must connect with the forward target');
+  assert.ok(contactTime <= .12, `Tap contact took ${contactTime.toFixed(3)} seconds`);
+  assert.ok(duration <= .3, `The full tap animation took ${duration.toFixed(3)} seconds`);
+  assert.equal(api.swing, null);
+});
+
+test('normal and charged swings reach nearby targets without striking behind the warrior', () => {
+  for (const charge of [0, 1]) for (const distance of [.9, 1.1, 2.3]) {
+    arena(); api.poseHero(1);
+    const front = stationaryEnemy('brute', 0, distance), rear = stationaryEnemy('brute', 0, -1.1);
+    const hp = front.hp;
+    api.primeSwing(charge); api.beginSwing();
+    const strike = api.swing;
+    playerSteps(.55, 1 / 240);
+    assert.equal(front.hp, hp - strike.damage, `Charge ${charge} missed a target ${distance} metres in front`);
+    assert.equal(rear.hp, rear.maxHp, 'A forward swing must not become a circular attack');
+  }
+});
+
+test('the wider near-body sweep still stops at a surviving wall before the enemy behind it', () => {
+  arena(); api.poseHero(1);
+  const wall = placeObject('wall', 0, 1.7, { w: 5, d: .08, h: 3, hp: 1000, maxHp: 1000 });
+  const enemy = stationaryEnemy('brute', 0, 2.9);
+  key('Space', true); key('Space', false);
+  const strike = api.swing;
+  playerSteps(.55, 1 / 240);
+  assert.equal(wall.hp, 1000 - strike.damage);
+  assert.equal(enemy.hp, enemy.maxHp, 'Improved close-range detection must not damage through a solid wall');
+  assert.equal(strike.blocked, true);
+});
+
+test('a second short Space tap during recovery executes once after the current swing', () => {
+  arena();
+  const before = audioEvents.filter(e => e.name === 'swing').length;
+  key('Space', true); key('Space', false); playerSteps(.2);
+  assert.ok(api.swing, 'The second tap is made while the first animation is still recovering');
+  key('Space', true); key('Space', false);
+  playerSteps(.8);
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2,
+    'Both taps must produce exactly one swing, including the tap made during recovery');
+  assert.equal(api.swing, null);
+  playerSteps(.5);
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2, 'The buffer must not repeat itself');
+});
+
+test('holding Space during recovery carries its charge forward and waits for release', () => {
+  arena();
+  const before = audioEvents.filter(e => e.name === 'swing').length;
+  key('Space', true); key('Space', false); playerSteps(.2);
+  key('Space', true); playerSteps(.72);
+  assert.equal(api.charge, 1); assert.equal(api.swing, null);
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 1,
+    'A queued held input must charge instead of firing automatically');
+  key('Space', false);
+  assert.ok(api.swing?.charged); assert.equal(api.swing.q, 1);
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2);
+});
+
+test('an early short tap during the longer charged swing survives until that swing finishes', () => {
+  arena();
+  const before = audioEvents.filter(e => e.name === 'swing').length;
+  key('Space', true); playerSteps(.72); key('Space', false);
+  const charged = api.swing; assert.ok(charged?.charged);
+  playerSteps(.04); key('Space', true); key('Space', false);
+  let followup = null;
+  playerSteps(.9, 1 / 240, () => {
+    if (api.swing && api.swing !== charged) followup = api.swing;
+  });
+  assert.ok(followup, 'The short tap must survive the remaining charged-animation recovery');
+  assert.equal(followup.q, 0, 'Waiting in the input buffer must not turn a tap into a charged attack');
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2);
+});
+
+test('guarding or cancelling a held button clears the pending attack', () => {
+  for (const cancelWithGuard of [true, false]) {
+    arena();
+    const before = audioEvents.filter(e => e.name === 'swing').length;
+    key('Space', true); key('Space', false); playerSteps(.2);
+    if (cancelWithGuard) {
+      key('Space', true); key('Space', false);
+      key('KeyQ', true); playerSteps(.1); key('KeyQ', false);
+    } else {
+      pointerEvent('chargeButton', 'pointerdown'); playerSteps(.02);
+      pointerEvent('chargeButton', 'pointercancel');
+    }
+    playerSteps(.8);
+    assert.equal(api.charge, 0); assert.equal(api.swing, null);
+    assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 1,
+      'A cancelled queued press must not return after its cancellation');
+  }
+});
+
+test('pausing clears a pending attack so it cannot fire on resume', () => {
+  arena();
+  const before = audioEvents.filter(e => e.name === 'swing').length;
+  key('Space', true); key('Space', false); playerSteps(.2);
+  key('Space', true); key('Space', false);
+  key('Escape', true); key('Escape', false);
+  assert.equal(api.phase, 'paused');
+  elements.get('resumeButton').click(); advance(.8);
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 1);
+});
+
+test('render cadences down to 10 Hz preserve real movement speed and simulation time', () => {
+  for (const fps of [60, 30, 20, 15, 10]) {
+    arena();
+    const start = { x: api.player.x, z: api.player.z, elapsed: api.elapsed };
+    key('KeyD', true); advance(1, 1 / fps); key('KeyD', false);
+    close(api.elapsed - start.elapsed, 1, .009);
+    close(Math.hypot(api.player.x - start.x, api.player.z - start.z), api.stats.speed, .055);
+  }
+});
+
+test('a fast swing still hits exactly once between sparse rendered frames', () => {
+  for (const fps of [15, 10]) {
+    arena(); api.poseHero(1);
+    const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
+    key('Space', true); key('Space', false);
+    const damage = api.swing.damage;
+    advance(.4, 1 / fps);
+    assert.equal(enemy.hp, hp - damage, `The ${fps} Hz animation must not skip through the target`);
+  }
+});
+
+test('all four illustrated WASD buttons move continuously and release on pointer cancellation', () => {
+  for (const [id, code, horizontal, vertical] of [
+    ['moveUpButton', 'KeyW', 0, -1], ['moveLeftButton', 'KeyA', -1, 0],
+    ['moveDownButton', 'KeyS', 0, 1], ['moveRightButton', 'KeyD', 1, 0],
+  ]) {
+    arena();
+    const direction = core.screenMovement(horizontal, vertical), start = { x: api.player.x, z: api.player.z };
+    pointerEvent(id, 'pointerdown'); playerSteps(.1);
+    const dx = api.player.x - start.x, dz = api.player.z - start.z;
+    assert.ok(dx * direction.x + dz * direction.z > .5, `${code} must move in its pictured screen direction`);
+    close(dx * direction.z - dz * direction.x, 0);
+    pointerEvent(id, 'pointercancel');
+    const stopped = { x: api.player.x, z: api.player.z }; playerSteps(.1);
+    close(api.player.x, stopped.x); close(api.player.z, stopped.z);
+    assert.equal(api.keys.has(code), false);
+  }
+});
+
+test('the illustrated attack, charge and combined smash buttons execute their pictured actions', () => {
+  arena();
+  pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
+  assert.ok(api.swing); assert.equal(api.swing.charged, false);
+  arena();
+  pointerEvent('chargeButton', 'pointerdown'); playerSteps(.72);
+  assert.equal(api.charge, 1); assert.equal(api.swing, null);
+  pointerEvent('chargeButton', 'pointerup'); assert.ok(api.swing?.charged);
+  arena();
+  pointerEvent('slamButton', 'pointerdown'); pointerEvent('slamButton', 'pointerup');
+  assert.ok(api.leap); assert.equal(api.leap.slam, true);
 });
 
 test('Q aims a vertical frontal propeller with the mouse, blocks the front and leaves the rear exposed', () => {
@@ -323,19 +502,27 @@ test('Q reflects a frontal robot bolt back into an enemy without hurting the war
   key('KeyQ', false);
 });
 
-test('E makes a high forward leap and ordinary landing does not trigger area damage', () => {
+test('E makes a high forward leap and damages nearby targets once on its ordinary landing', () => {
   arena();
   const direction = core.screenMovement(1, 0);
-  const enemy = stationaryEnemy('brute', direction.x * 13 - direction.z * 2.3, direction.z * 13 + direction.x * 2.3);
+  const enemy = stationaryEnemy('brute', direction.x * 10.8 - direction.z * 1.7, direction.z * 10.8 + direction.x * 1.7);
+  const distant = stationaryEnemy('brute', direction.x * 10.8 - direction.z * 6, direction.z * 10.8 + direction.x * 6);
   const hp = enemy.hp;
   key('KeyD', true); key('KeyE', true); key('KeyE', false); key('KeyD', false);
   assert.ok(api.leap); assert.equal(api.leap.slam, false);
-  let apex = 0;
-  for (let i = 0; api.leap && i < 300; i++) { api.updatePlayer(1 / 120); apex = Math.max(apex, api.player.y); }
-  assert.equal(api.leap, null); assert.ok(apex > 6, `Expected a clearly visible jump; apex was ${apex}`);
-  assert.ok(api.player.x * direction.x + api.player.z * direction.z > 10);
+  let apex = 0, flightTime = 0;
+  for (; api.leap && flightTime < 2; flightTime += 1 / 120) {
+    api.updatePlayer(1 / 120); apex = Math.max(apex, api.player.y);
+    if (api.leap) assert.equal(enemy.hp, hp, 'The leap damages the ground on landing, not while airborne');
+  }
+  assert.equal(api.leap, null); assert.ok(apex > 7.5, `Expected a clearly visible high jump; apex was ${apex}`);
+  assert.ok(flightTime <= 1.65, `The high jump took ${flightTime.toFixed(2)} seconds to land`);
+  assert.ok(api.player.x * direction.x + api.player.z * direction.z > 9);
   close(api.player.x * direction.z - api.player.z * direction.x, 0);
-  close(api.player.y, 0); assert.equal(enemy.hp, hp);
+  close(api.player.y, 0); assert.ok(enemy.hp < hp, 'An ordinary jump must still land with damage');
+  assert.ok(hp - enemy.hp < api.stats.power * 2, 'The ordinary landing stays weaker than an armed smash');
+  assert.equal(distant.hp, distant.maxHp);
+  const after = enemy.hp; playerSteps(.4); assert.equal(enemy.hp, after, 'One landing applies damage once');
 });
 
 test('airborne Space arms a large smash whose damage happens only on landing', () => {
@@ -358,6 +545,62 @@ test('airborne Space arms a large smash whose damage happens only on landing', (
   assert.equal(distant.hp, distant.maxHp);
   const after = targets.map(t => t.hp); playerSteps(.45);
   assert.deepEqual(targets.map(t => t.hp), after, 'The one landing must not repeatedly apply its area damage');
+});
+
+test('Space held before E reliably arms the impact, and releasing later does not add a ground swing', () => {
+  arena();
+  key('Space', true); playerSteps(.12);
+  assert.ok(api.charge > 0);
+  key('KeyE', true); key('KeyE', false);
+  assert.ok(api.leap); assert.equal(api.leap.slam, true, 'Held Space must survive the jump input');
+  assert.equal(api.swing, null);
+  for (let i = 0; api.leap && (api.leap.vy >= 0 || api.player.y > .55) && i < 480; i++) api.updatePlayer(1 / 240);
+  assert.ok(api.leap, 'The fixture is introduced before the descending warrior touches the ground');
+  const enemy = stationaryEnemy('brute', api.player.x + 1.5, api.player.z), hp = enemy.hp;
+  for (let i = 0; api.leap && i < 120; i++) {
+    api.updatePlayer(1 / 240);
+    if (api.leap) assert.equal(enemy.hp, hp);
+  }
+  assert.equal(api.leap, null);
+  assert.ok(hp - enemy.hp > api.stats.power * 2, 'The held-key combination must cause the large smash');
+  const after = enemy.hp, swingEvents = audioEvents.filter(e => e.name === 'swing').length;
+  key('Space', false); playerSteps(.5);
+  assert.equal(enemy.hp, after);
+  assert.equal(audioEvents.filter(e => e.name === 'swing').length, swingEvents);
+});
+
+test('Space pressed just before touchdown upgrades that landing to a huge smash exactly once', () => {
+  arena(); key('KeyE', true); key('KeyE', false);
+  for (let i = 0; api.leap && (api.leap.vy >= 0 || api.player.y > .45) && i < 480; i++) api.updatePlayer(1 / 240);
+  assert.ok(api.leap); assert.equal(api.leap.slam, false);
+  const near = stationaryEnemy('brute', api.player.x + 1.6, api.player.z);
+  const outer = stationaryEnemy('brute', api.player.x + 4.1, api.player.z);
+  const before = [near.hp, outer.hp];
+  key('Space', true); key('Space', false);
+  assert.equal(api.leap.slam, true);
+  assert.deepEqual([near.hp, outer.hp], before);
+  for (let i = 0; api.leap && i < 120; i++) {
+    api.updatePlayer(1 / 240);
+    if (api.leap) assert.deepEqual([near.hp, outer.hp], before);
+  }
+  assert.equal(api.leap, null);
+  assert.ok(before[0] - near.hp > api.stats.power * 2);
+  assert.ok(outer.hp < before[1], 'An armed landing also damages beyond the ordinary jump radius');
+  const after = [near.hp, outer.hp]; playerSteps(.5);
+  assert.deepEqual([near.hp, outer.hp], after);
+});
+
+test('E immediately interrupts a recovering swing and lands with damage', () => {
+  arena();
+  key('Space', true); key('Space', false); playerSteps(.2);
+  assert.ok(api.swing);
+  key('KeyE', true); key('KeyE', false);
+  assert.ok(api.leap, 'Jump must respond during swing recovery');
+  assert.equal(api.swing, null);
+  for (let i = 0; api.leap && (api.leap.vy >= 0 || api.player.y > .5) && i < 240; i++) api.updatePlayer(1 / 120);
+  const enemy = stationaryEnemy('brute', api.player.x + 1.4, api.player.z), hp = enemy.hp;
+  for (let i = 0; api.leap && i < 120; i++) api.updatePlayer(1 / 120);
+  assert.equal(api.leap, null); assert.ok(enemy.hp < hp);
 });
 
 test('R uses mouse aim, sweeps into the first thin wall, and returns the only visible hammer', () => {

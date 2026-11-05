@@ -51,10 +51,153 @@ kbd.cooldown{opacity:.42;border-color:#6f8170;box-shadow:none}
   .upgrade-card>.upgrade-level{font-size:5px;padding-top:7px;gap:4px}
 }
 
-/* Combat update: compact stance and ability status beside the existing HUD. */
-.combat-hints{display:flex;flex-wrap:wrap;gap:9px 15px;margin-top:12px;color:#c3d2c9;font:10px monospace}.combat-hints>span{display:flex;align-items:center;gap:6px}.combat-hints kbd{height:22px;min-width:23px;font-size:10px}.air-hint{font:9px/1.5 monospace;color:#a9bdb2;margin:9px 0 0}.air-hint b{color:#ffcf8b}.ability-controls{position:absolute;left:50%;bottom:124px;transform:translateX(-50%);width:480px;padding:10px 13px;background:rgba(12,25,28,.91);border:1px solid rgba(232,194,126,.25);box-shadow:0 4px 0 rgba(5,14,16,.35);pointer-events:none}.stance-control{display:flex;align-items:center;gap:9px;padding-bottom:8px;border-bottom:1px solid #34443f}.stance-control kbd,.ability-row kbd{min-width:27px;height:27px;font-size:12px}.stance-control strong{font:700 10px monospace;color:#ffcf8b}.stance-control>small{margin-left:auto;font:7px monospace;color:#8fa99d;letter-spacing:.6px}.ability-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding-top:9px}.ability-row>div{display:flex;gap:8px;align-items:center}.ability-row span{display:flex;flex-direction:column;gap:5px}.ability-row b{font:700 8px monospace;color:#d4e0d3;letter-spacing:.25px}.ability-row small{font:8px monospace;color:#ffcd83}.ability-controls>p{margin:8px 0 0;font:7px monospace;color:#8fa99d;text-align:center}.ability-controls i{margin:0 8px;color:#a98750}.combat-help{margin-top:18px;text-align:left;border-top:1px solid #425049;padding-top:13px;font:10px/1.6 monospace}.combat-help summary{cursor:pointer;color:#f5c682;font-weight:bold;letter-spacing:1px}.combat-help dl{display:grid;grid-template-columns:80px 1fr;gap:9px 12px;margin:15px 0}.combat-help dt{font-weight:bold;color:#efc78c}.combat-help dd{margin:0;color:#c6d0c5}.combat-help p{font-size:9px;color:#93ada3}.pause-panel{max-height:calc(100dvh - 40px);overflow-y:auto}.touch-actions{display:grid;grid-template-columns:repeat(2,54px);grid-template-rows:repeat(3,48px);gap:7px}.touch-actions button,.touch-actions #attackButton,.touch-actions #dashButton{width:54px;height:48px;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:rgba(16,35,38,.92);border:1px solid #748677;color:#e3dfc5;touch-action:none}.touch-actions button b{font:700 16px monospace}.touch-actions button span,.touch-actions #attackButton>span{font:700 6px monospace}.touch-actions #attackButton{background:#dfad62;color:#142323;border-color:#fbd79e}.touch-actions #attackButton svg,.touch-actions #dashButton svg{width:22px;height:22px}.touch-actions button:active,.touch-actions button.active{background:#8bbeb5;color:#0c2023}
-@media(max-width:1200px) and (min-width:751px){.ability-controls{left:auto;right:22px;transform:none;width:455px;bottom:116px}.combat-controls{left:auto;right:22px;transform:none}}
-@media(max-width:750px){.ability-controls{left:14px;right:14px;bottom:298px;transform:none;width:auto;padding:8px 10px}.ability-row{gap:6px}.ability-row b{font-size:7px}.ability-row small{font-size:7px}.ability-controls>p{font-size:6px}.stance-control>small{font-size:6px}.stance-control strong{font-size:9px}.combat-hints{font-size:8px;gap:6px 10px}.combat-hints kbd{min-width:20px;height:20px;font-size:9px}.air-hint{font-size:8px}.touch-actions{right:18px;bottom:25px}.loadout-panel{bottom:187px}}
-@media(pointer:coarse) and (min-width:751px){.ability-controls{left:24px;right:auto;bottom:295px;transform:none;width:380px}.loadout-panel{bottom:178px}.touch-actions{bottom:25px}}
-@media(max-width:540px){.ability-controls{left:11px;right:11px;bottom:289px}.ability-row>div{gap:5px}.ability-row kbd,.stance-control kbd{min-width:23px;height:23px;font-size:10px}.ability-controls>p{font-size:6px}.stance-control>small{display:none}.combat-hints{margin-top:8px;gap:5px 9px}.air-hint{margin-top:6px;font-size:7px}.hero-content h2{margin-bottom:10px}.hero-description{margin-bottom:20px}.combat-help dl{grid-template-columns:65px 1fr;font-size:9px}.touch-actions{right:17px;bottom:24px}.loadout-panel{bottom:187px}.toasts{bottom:188px}}
-@media(orientation:landscape) and (max-height:500px){.ability-controls{left:50%;right:auto;transform:translateX(-50%);bottom:14px;top:auto;width:285px;padding:6px 8px}.stance-control{padding-bottom:5px;gap:6px}.stance-control strong{font-size:8px}.stance-control>small{display:none}.ability-row{padding-top:6px;gap:5px}.ability-row kbd{height:20px;min-width:20px;font-size:9px}.ability-row b{font-size:6px}.ability-row small{font-size:6px}.ability-row>div{gap:4px}.ability-controls>p{font-size:5px;margin-top:5px}.combat-hints{margin-top:7px;font-size:7px;gap:6px 12px}.combat-hints kbd{height:18px;min-width:18px;font-size:8px}.air-hint{display:none}.touch-actions{right:18px;bottom:15px;gap:5px;grid-template-columns:repeat(2,47px);grid-template-rows:repeat(3,40px)}.touch-actions button,.touch-actions #attackButton,.touch-actions #dashButton{width:47px;height:40px}.touch-actions button b{font-size:12px}.touch-actions button span{font-size:5px}.touch-actions #attackButton svg,.touch-actions #dashButton svg{width:19px;height:19px}.toasts{bottom:116px}.loadout-panel{bottom:auto}}
+/* One illustrated combat dock: the same controls work with keyboard, mouse and touch. */
+:root { --combat-dock-space: 150px; }
+.combat-hints { display:flex; flex-wrap:wrap; gap:9px 15px; margin-top:12px; color:#c3d2c9; font:10px monospace; }
+.combat-hints>span { display:flex; align-items:center; gap:6px; }
+.combat-hints kbd { height:22px; min-width:23px; font-size:10px; }
+.air-hint { font:9px/1.5 monospace; color:#a9bdb2; margin:9px 0 0; }
+.air-hint b { color:#ffcf8b; }
+.combat-help { margin-top:18px; text-align:left; border-top:1px solid #425049; padding-top:13px; font:10px/1.6 monospace; }
+.combat-help summary { cursor:pointer; color:#f5c682; font-weight:bold; letter-spacing:1px; }
+.combat-help dl { display:grid; grid-template-columns:80px 1fr; gap:9px 12px; margin:15px 0; }
+.combat-help dt { font-weight:bold; color:#efc78c; }
+.combat-help dd { margin:0; color:#c6d0c5; }
+.combat-help p { font-size:9px; color:#93ada3; }
+.pause-panel { max-height:calc(100dvh - 40px); overflow-y:auto; }
+#combatDock {
+  position:fixed; z-index:9; left:50%; bottom:max(14px,env(safe-area-inset-bottom)); transform:translateX(-50%);
+  width:min(1020px,calc(100vw - 32px)); padding:8px 10px 7px; pointer-events:auto;
+  background:linear-gradient(180deg,rgba(31,48,50,.97),rgba(12,26,30,.97));
+  border:1px solid #7d8468; border-top:2px solid #c5ac72; border-radius:11px;
+  box-shadow:0 5px 0 #0b191f,0 11px 30px #07181b66,inset 0 1px 0 #eac87b16;
+  user-select:none; -webkit-user-select:none; touch-action:none;
+}
+#combatDock::before,#combatDock::after { content:''; position:absolute; top:5px; width:4px; height:4px; background:#c6ab70; border:1px solid #202f31; transform:rotate(45deg); }
+#combatDock::before { left:5px; } #combatDock::after { right:5px; }
+#combatDock .dock-main { display:flex; gap:9px; align-items:stretch; }
+#combatDock .movement-pad { width:104px; flex:0 0 104px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:5px 3px; border:1px solid #526466; background:#10252b; border-radius:7px; }
+#combatDock .pictured-keys { display:grid; grid-template-columns:repeat(3,30px); grid-template-rows:repeat(2,31px); gap:2px; }
+#combatDock .move-key { min-width:0; width:30px; height:31px; padding:0; margin:0; border:0; border-radius:5px; background:transparent; color:#f0ead1; touch-action:none; box-shadow:none; transition:transform .06s,color .06s; }
+#combatDock .move-key:first-child { grid-column:2; }
+#combatDock .move-key:nth-child(2) { grid-column:1; grid-row:2; }
+#combatDock .move-key:nth-child(3) { grid-column:2; grid-row:2; }
+#combatDock .move-key:nth-child(4) { grid-column:3; grid-row:2; }
+#combatDock .move-key svg { display:block; width:100%; height:100%; overflow:visible; }
+#combatDock .move-key text { font:900 20px 'Courier New',monospace; fill:currentColor; }
+#combatDock .move-key.active,#combatDock .move-key:active { --key-face:#edbd71; --key-edge:#ffe3ae; --key-mark:#3c6570; color:#173039; transform:translateY(2px); }
+#combatDock .movement-caption { color:#c4d2c4; font:700 8px/1.25 var(--mono); letter-spacing:1.2px; }
+#combatDock .movement-directions { width:51px; height:11px; color:#769c9a; }
+#combatDock .dock-actions { flex:1; min-width:0; display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:6px; }
+#combatDock .action-tile {
+  position:relative; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:0;
+  width:100%; height:104px; min-width:0; padding:5px 3px 5px; margin:0; color:#f3ead2;
+  background:linear-gradient(155deg,#29464d,#172d35 72%); border:1px solid #526a6b; border-bottom:3px solid #0b2029;
+  border-radius:7px; cursor:pointer; overflow:hidden; touch-action:none;
+  box-shadow:inset 0 1px 0 #d4e6db14; transition:background .08s,border-color .08s,transform .06s;
+}
+#combatDock .action-tile:hover { background:linear-gradient(155deg,#36545a,#203d43); border-color:#c6b378; }
+#combatDock .action-tile.active,#combatDock .action-tile:active { background:linear-gradient(155deg,#59604d,#364c44); border-color:#ffcf83; transform:translateY(2px); box-shadow:inset 0 0 15px #ffc77827; }
+#combatDock .action-tile:disabled,#combatDock .action-tile.cooldown { opacity:.58; border-color:#435a5e; }
+#combatDock .action-tile:disabled { cursor:default; }
+#combatDock .action-tile:focus-visible,#combatDock .move-key:focus-visible { outline:2px solid #ffe0a3; outline-offset:2px; }
+#combatDock .action-key { position:absolute; top:5px; right:5px; z-index:1; min-width:20px; width:auto; height:17px; padding:1px 4px; margin:0; display:flex; align-items:center; justify-content:center; border:1px solid #879284; border-bottom:2px solid #111e25; border-radius:3px; color:#f3e5bd; background:#152a32ed; font:700 8px/1 var(--mono); letter-spacing:.3px; box-shadow:none; }
+#combatDock .action-picture { flex:0 0 auto; display:block; width:76px; max-width:100%; height:63px; margin:5px 0 1px; overflow:visible; pointer-events:none; }
+#combatDock .action-name { display:block; width:100%; margin-top:1px; color:#f3e6c5; text-align:center; white-space:nowrap; font:700 8px/12px var(--mono); letter-spacing:.25px; }
+#combatDock .action-status { display:block; width:100%; min-height:11px; color:#8fc3b6; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:7px/11px var(--mono); letter-spacing:0; }
+#combatDock #attackButton { border-color:#a88650; background:linear-gradient(155deg,#564d37,#263a37); }
+#combatDock #slamButton { border-color:#90704a; }
+#combatDock #chargeButton .action-status { color:#ddbe7e; }
+#combatDock:has(.charge-track.charged) #chargeButton { border-color:#ffe0a4; box-shadow:inset 0 0 22px #ffce7838; }
+#combatDock .dock-status { display:grid; grid-template-columns:1fr 1.15fr .85fr; align-items:center; gap:14px; min-height:21px; margin-top:6px; padding:4px 3px 0; border-top:1px solid #49615b; font:7px/1.3 var(--mono); }
+#combatDock .dock-stance,#combatDock .dock-aim { display:flex; align-items:center; gap:6px; min-width:0; color:#c5cbbb; }
+#combatDock .dock-stance strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:8px; font-weight:700; color:#e4c88c; }
+#combatDock .dock-stance svg,#combatDock .dock-aim svg { flex:0 0 13px; width:13px; height:13px; color:#d5b877; }
+#combatDock .dock-aim { justify-content:flex-end; color:#8db7ae; letter-spacing:.35px; }
+#combatDock .dock-charge { display:flex; align-items:center; justify-content:center; gap:8px; min-width:0; }
+#combatDock #chargeText { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d5c39f; font-size:7px; }
+#combatDock .charge-track { flex:0 0 79px; width:79px; height:5px; margin:0; border-color:#826641; }
+#hud .loadout-panel { bottom:calc(var(--combat-dock-space) + 29px); }
+#hud .hud-corner-note { display:none; }
+#touchControls .joystick { bottom:calc(var(--combat-dock-space) + 23px); }
+@media (min-width:1700px) { #hud .loadout-panel { bottom:30px; } }
+@media (max-width:1000px) and (min-width:721px) {
+  #combatDock { width:calc(100vw - 24px); padding:7px; }
+  #combatDock .dock-main { gap:6px; }
+  #combatDock .movement-pad { width:90px; flex-basis:90px; }
+  #combatDock .pictured-keys { grid-template-columns:repeat(3,27px); grid-template-rows:repeat(2,29px); }
+  #combatDock .move-key { width:27px; height:29px; }
+  #combatDock .dock-actions { gap:4px; }
+  #combatDock .action-picture { height:60px; }
+  #combatDock .action-name { font-size:7px; letter-spacing:0; }
+  #combatDock .action-status { font-size:6px; }
+  #combatDock .action-key { font-size:7px; right:3px; }
+}
+@media (max-width:720px) {
+  :root { --combat-dock-space: 189px; }
+  #combatDock { width:calc(100vw - 16px); bottom:max(8px,env(safe-area-inset-bottom)); padding:6px 6px 5px; border-radius:9px; }
+  #combatDock .dock-main { gap:6px; }
+  #combatDock .movement-pad { width:82px; flex-basis:82px; padding:5px 0; border-radius:6px; }
+  #combatDock .pictured-keys { grid-template-columns:repeat(3,25px); grid-template-rows:repeat(2,29px); gap:1px; }
+  #combatDock .move-key { width:25px; height:29px; }
+  #combatDock .movement-caption { font-size:7px; margin-top:4px; }
+  #combatDock .movement-directions { width:45px; margin-top:4px; }
+  #combatDock .dock-actions { grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
+  #combatDock .action-tile { height:74px; border-radius:5px; border-bottom-width:2px; padding:2px 2px 3px; }
+  #combatDock .action-picture { width:58px; height:47px; margin:1px 0 0; }
+  #combatDock .action-key { top:3px; right:3px; height:13px; min-width:15px; padding:1px 3px; border-bottom-width:1px; font-size:6px; }
+  #combatDock .action-name { font-size:6px; line-height:10px; margin:0; letter-spacing:0; }
+  #combatDock .action-status { font-size:5.5px; line-height:9px; min-height:9px; }
+  #combatDock .dock-status { grid-template-columns:1fr 1fr; min-height:20px; margin-top:5px; gap:5px; padding-top:4px; }
+  #combatDock .dock-stance { gap:4px; }
+  #combatDock .dock-stance strong { font-size:6px; }
+  #combatDock .dock-stance svg { width:11px; height:11px; flex-basis:11px; }
+  #combatDock .dock-aim { display:none; }
+  #combatDock .dock-charge { gap:4px; justify-content:flex-end; }
+  #combatDock #chargeText { font-size:5.5px; }
+  #combatDock .charge-track { width:38px; flex-basis:38px; height:4px; }
+  #hud .loadout-panel { bottom:calc(var(--combat-dock-space) + 151px); width:158px; }
+  #touchControls .joystick { width:104px; height:104px; left:17px; bottom:calc(var(--combat-dock-space) + 24px); }
+  .toasts { bottom:calc(var(--combat-dock-space) + 24px); top:auto; }
+  .combat-hints { font-size:8px; gap:5px 9px; margin-top:8px; }
+  .combat-hints kbd { min-width:20px; height:20px; font-size:9px; }
+  .air-hint { margin-top:6px; font-size:7px; }
+  .combat-help dl { grid-template-columns:65px 1fr; font-size:9px; }
+}
+@media (max-width:359px) {
+  #combatDock .movement-pad { width:68px; flex-basis:68px; }
+  #combatDock .pictured-keys { grid-template-columns:repeat(3,21px); grid-template-rows:repeat(2,26px); }
+  #combatDock .move-key { width:21px; height:26px; }
+  #combatDock .action-name { font-size:5.5px; }
+  #combatDock .action-status { font-size:5px; }
+}
+@media (pointer:coarse) and (min-width:721px) { #touchControls .joystick { bottom:calc(var(--combat-dock-space) + 24px); } }
+@media (orientation:landscape) and (max-height:500px) {
+  :root { --combat-dock-space: 101px; }
+  #combatDock { width:min(850px,calc(100vw - 205px)); bottom:max(9px,env(safe-area-inset-bottom)); padding:5px 6px; }
+  #combatDock .dock-main { gap:5px; }
+  #combatDock .movement-pad { width:64px; flex-basis:64px; padding:2px 0; gap:2px; }
+  #combatDock .pictured-keys { grid-template-columns:repeat(3,19px); grid-template-rows:repeat(2,23px); gap:1px; }
+  #combatDock .move-key { width:19px; height:23px; }
+  #combatDock .movement-caption { font-size:5px; margin:0; }
+  #combatDock .movement-directions { display:none; }
+  #combatDock .dock-actions { grid-template-columns:repeat(8,minmax(0,1fr)); gap:3px; }
+  #combatDock .action-tile { height:72px; padding:2px 1px; border-bottom-width:2px; }
+  #combatDock .action-picture { width:55px; height:45px; margin:3px 0 0; }
+  #combatDock .action-key { height:12px; padding:1px 2px; min-width:13px; font-size:5px; top:2px; right:2px; }
+  #combatDock .action-name { font-size:5.5px; line-height:9px; letter-spacing:0; }
+  #combatDock .action-status { font-size:5px; line-height:8px; min-height:8px; }
+  #combatDock .dock-status { grid-template-columns:1fr 1fr; min-height:15px; padding-top:3px; margin-top:4px; gap:6px; }
+  #combatDock .dock-stance strong { font-size:5.5px; }
+  #combatDock .dock-stance svg { width:9px; height:9px; flex-basis:9px; }
+  #combatDock .dock-charge { gap:5px; justify-content:flex-end; }
+  #combatDock #chargeText { font-size:5px; }
+  #combatDock .charge-track { width:40px; flex-basis:40px; height:4px; }
+  #combatDock .dock-aim { display:none; }
+  #hud .loadout-panel { bottom:auto; top:99px; }
+  #touchControls .joystick { width:82px; height:82px; left:10px; bottom:max(12px,env(safe-area-inset-bottom)); }
+  #touchControls .joystick-knob { width:34px; height:34px; margin:-17px 0 0 -17px; }
+  .toasts { bottom:calc(var(--combat-dock-space) + 15px); }
+  .combat-hints { margin-top:7px; font-size:7px; gap:6px 12px; }
+  .air-hint { display:none; }
+}
