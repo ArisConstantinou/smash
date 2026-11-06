@@ -1,0 +1,59 @@
+name: Validate and prepare kick6 publication
+on:
+  push:
+    branches: [prepare/kick6-publish-20261106]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply exact validated release without touching main
+        run: python3 .release/apply-kick6.py
+      - name: Run all regression tests
+        working-directory: candidate
+        run: npm test | tee ../release-evidence/tests.log
+      - name: Check JavaScript syntax and whitespace
+        working-directory: candidate
+        run: |
+          for file in audio.js core.js game.js hammer-motion.js kick-physics.js models.js world.js; do node --check "$file"; done
+          git diff --check
+      - name: Install isolated browser test dependency
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Render desktop, phone and tablet with software WebGL
+        run: node .release/verify-kick6.mjs
+      - name: Commit verified candidate only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,json,subprocess
+          root=Path.cwd();work=root/'candidate';expected=json.loads((root/'release-evidence/expected-hashes.json').read_text())
+          for path,digest in expected.items():
+              assert hashlib.sha256((work/path).read_bytes()).hexdigest()==digest,path
+          def git(*args):return subprocess.check_output(['git',*args],cwd=work,text=True).strip()
+          assert git('rev-parse','HEAD')=='e7b64e42854eea335738057d28dbbef6eb8250ee'
+          git('add','--',*expected.keys())
+          changed=set(git('diff','--cached','--name-only').splitlines())
+          assert changed==set(expected),repr(changed)
+          git('-c','user.name=github-actions[bot]','-c','user.email=41898282+github-actions[bot]@users.noreply.github.com','commit','-m','Prepare tested kick6 source: corrected arms, mass-aware kicks and varied attacks')
+          sha=git('rev-parse','HEAD');tree=git('rev-parse','HEAD^{tree}')
+          git('push','origin','HEAD:refs/heads/release/kick6-publish-20261106')
+          result={'commit':sha,'tree':tree,'base':'e7b64e42854eea335738057d28dbbef6eb8250ee','files':expected,'tests':'315 passed','browser':'desktop, phone, tablet software WebGL smoke checks passed'}
+          (root/'release-evidence/candidate.json').write_text(json.dumps(result,indent=2))
+          print(json.dumps(result,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kick6-release-evidence
+          path: release-evidence/
+          retention-days: 7
