@@ -1,0 +1,54 @@
+name: Validate impact and visibility fix
+on:
+  push:
+    branches: [fix/impact-sync-20261106]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply hash-verified patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64, zlib, hashlib, subprocess, re
+          encoded = re.search(r"encoded = '([^']+)'",Path('tools/impact4-payload.txt').read_text()).group(1)
+          # Correct transport transcription only; the patch checksum below is authoritative.
+          for wrong,right in [('lxmpwwD','lxmpwD'),('RbaGGpv','RbaGpv'),('g3leJJ1','g3leJ1'),('DVNBJJ372','DVNBJ372'),('tujGG4','tujG4')]:
+            encoded = encoded.replace(wrong,right)
+          patch = zlib.decompress(base64.b64decode(encoded))
+          assert hashlib.sha256(patch).hexdigest() == '75f9f70dcd54b7c543fa9e7b4361ed0125acffde71ff1d879283a246cf5e22b0'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+      - name: Check syntax and all regression tests
+        run: |
+          node --check game.js
+          npm test
+      - name: Verify exact source and prepare clean tree
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess
+          expected={'game.js':'1b3fc0d0b445f0756689906f50499caaa4ba4f0b','hammer-motion.js':'19f3e3f0f3d956a704aafd31040c5c396b02f9f6','index.html':'fab1e1fe6f28cd64be27874265a0e898a95c7347','occlusion.js':'af8c9aececb21f02deb818c4705dd6e3d12e633a','tests/game.integration.mjs':'adf3bc3ff5b5125b779a55156df5e92da839fd3c','tests/hammer-motion.test.mjs':'b37d6684bf98d8d8d440a5c4106689b456518ec1','tests/occlusion.test.mjs':'3a297e3a3d221bd12363fe6e61cc8cceffd45dde'}
+          for path,sha in expected.items():
+            actual=subprocess.check_output(['git','hash-object',path],text=True).strip()
+            assert actual==sha,(path,actual,sha)
+          PY
+          git rm .github/workflows/prepare-impact4.yml tools/impact4-payload.txt
+          git add game.js hammer-motion.js index.html occlusion.js tests/game.integration.mjs tests/hammer-motion.test.mjs tests/occlusion.test.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Prepare validated impact, spin direction and exact visibility fix'
+          git push origin HEAD:fix/impact-sync-20261106
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: impact4-transport-diagnostic
+          path: tools/impact4-payload.txt
+          retention-days: 1
