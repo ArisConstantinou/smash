@@ -1,0 +1,46 @@
+name: Prepare and render kick6
+on:
+  push:
+    branches: [prepare/kick6-20261106]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reconstruct validated source
+        run: |
+          command -v zstd || (sudo apt-get update && sudo apt-get install -y zstd)
+          python3 .prepare/apply-kick6.py
+      - name: Run regression tests
+        run: npm test > tests-kick6.log 2>&1
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Render actual gameplay and inspect rigs
+        run: node tools/verify-kick6.mjs
+      - name: Store validated source on staging branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python3 -c "import json,subprocess;subprocess.run(['git','add','--',*json.load(open('/tmp/kick6-paths.json'))],check=True)"
+          git diff --cached --quiet || git commit -m 'Validate articulated arms, mass-aware kicks and varied air combat [skip ci]'
+          git push origin HEAD:prepare/kick6-20261106
+          git rev-parse HEAD > browser-evidence/source-commit.txt
+          git ls-tree -r HEAD > browser-evidence/source-tree.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kick6-browser-evidence
+          path: |
+            browser-evidence/
+            tests-kick6.log
+          retention-days: 3
