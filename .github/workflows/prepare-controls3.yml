@@ -1,0 +1,50 @@
+name: Validate responsive combat controls
+on:
+  push:
+    branches: [controls-input-readability-20261106]
+    paths:
+      - _prepare_controls.py
+      - _prepare_controls_tests.py
+      - .github/workflows/prepare-controls3.yml
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply the validated source and regression updates
+        run: |
+          python3 _prepare_controls.py
+          python3 _prepare_controls_tests.py
+          node --check game.js
+          cat > /tmp/expected.sha256 <<'HASHES'
+          516211796d3b6b128a3d6e56cdd4c275214ab6a91649a1495719940baa7dbde8  game.js
+          a357c9d9751c90b482b0a8a84e55ed646f2296e5d6bc4cb4a408054af7793d26  index.html
+          13e0e2929b84f4c254644a1d6ad39e9a2f920801beba6a02df738ddc6e16e073  occlusion.js
+          0f16ec838c5d25d448a0ffd022ec35edfaa8fa99d9ebe908673b9d833ef50167  controls.css
+          4ecc0e6c589eada8a4377ae3818ea68bbd0d3b4631f87b2fef7901a9b1d471d8  tests/game.integration.mjs
+          c194c8fe4c2bac4196fe917edfd1180b6c848a1e302add140dc79e61b2a1c424  tests/occlusion.test.mjs
+          HASHES
+          sha256sum --check /tmp/expected.sha256
+      - name: Run all combat, audio, geometry and input regression tests
+        run: npm test --silent | tee controls-validation.log
+      - name: Save tested source on preparation branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add game.js index.html occlusion.js controls.css tests/game.integration.mjs tests/occlusion.test.mjs
+          git diff --cached --check
+          git commit -m "Validated immediate attacks, desktop illustrations and touch icons"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "Tested commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tested tree: $(git rev-parse HEAD^{tree})" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: controls-validation
+          path: controls-validation.log
