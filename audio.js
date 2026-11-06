@@ -368,6 +368,11 @@ export class GameAudio {
     const key = name === 'hit' || name === 'break' ? name + ':' + material : name;
     if (!this._allow(key, SPACING[name] ?? .04)) return false;
     switch (name) {
+      case 'kick': {
+        this._noise(.20,.095,650,'bandpass',0,1800,.008);
+        if(d.exert!==false&&this._allow('exert'))this._vocal('exert',.2,'player',false,0);
+        break;
+      }
       case 'swing': {
         const overhead = /overhead|slam/.test(d.variant || ''), diagonal = /diagonal|cross|chop|cleave/.test(d.variant || '');
         const reverse = /backhand/.test(d.variant || '');

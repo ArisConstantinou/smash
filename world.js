@@ -129,9 +129,10 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   const spatial=new Map(),spatialCell=22;
   const bucketKey=(x,z)=>`${x},${z}`;
   function indexObject(o){
+    o.spatialKeys=[];
     const x0=Math.floor((o.x-o.w/2)/spatialCell),x1=Math.floor((o.x+o.w/2)/spatialCell),z0=Math.floor((o.z-o.d/2)/spatialCell),z1=Math.floor((o.z+o.d/2)/spatialCell);
     for(let z=z0;z<=z1;z++)for(let x=x0;x<=x1;x++){
-      const key=bucketKey(x,z);if(!spatial.has(key))spatial.set(key,[]);spatial.get(key).push(o);
+      const key=bucketKey(x,z);if(!spatial.has(key))spatial.set(key,[]);spatial.get(key).push(o);o.spatialKeys.push(key);
     }
   }
   function nearObjects(x,z,r,{includeDead=false}={}){
@@ -335,6 +336,17 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     for(const chunk of chunks.values())chunk.mesh.visible=Math.hypot(chunk.x-px,chunk.z-pz)<viewRadius+chunkSize*.72;
   }
   function rebuildSpatialIndex(){spatial.clear();objects.forEach(indexObject);navigation.invalidateNavigation();}
+  function relocateObject(o,x,z,invalidate=true){
+    if(!o||o.dead||![x,z].every(Number.isFinite))return false;
+    for(const key of o.spatialKeys||[]){
+      const bucket=spatial.get(key);if(!bucket)continue;
+      const i=bucket.indexOf(o);if(i>=0)bucket.splice(i,1);
+      if(!bucket.length)spatial.delete(key);
+    }
+    o.x=x;o.z=z;o.mesh.position.x=x;o.mesh.position.z=z;indexObject(o);
+    if(invalidate)navigation.invalidateNavigation();return true;
+  }
+
 
   function update(dt,time,player,weather) {
     const px=player?.x??player?.position?.x??0,pz=player?.z??player?.position?.z??0;
@@ -443,7 +455,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   updateVisibility({x:0,z:0});
   update(0,0,{x:0,z:0},'rain');
   return {
-    group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,
+    group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,
     buildingCount:buildingObjects.length,buildingObjects,
     getChaseDirection:navigation.getChaseDirection,
