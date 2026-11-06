@@ -1,0 +1,18 @@
+{
+  "README.md": "adb36885d0a00074f2511d0c2632792eb37eef3b575150be4806556949874243",
+  "audio.js": "8000d1e75c8d599c1313cb3146bbc89060716d3f7c0464fec627eab5d5d3d342",
+  "character-progression.js": "377512aa1abe61f5770627f500ab4a796b6de0f5bb779782935d4279ff23e3a9",
+  "combat-feedback.js": "b12d6fdf7ea3a13b6afaca23d407582dfeff61f3de62e4f37e90f77ace0ca738",
+  "combat-visibility.js": "c1281e7e6b102a658425320adf69949add1cfa543299a4abf54aab35eb8850ea",
+  "docs/portrait-qa.json": "a8109b4b0c1b943d40b6a7d8ffdfd6822ef6a2e1c6940052eddad8319fe93773",
+  "game.js": "8dc683a7c142f1cfff40844839e9e5c3be755037fe1d229ea815e0583d2b63c8",
+  "hammer-motion.js": "b2db4cf7ed3a2a3ba5a11ed81ca1d1957de374e37caba4a36562d3e95867b42a",
+  "index.html": "861445ccc927979f8c7585db2714890e9c6a67f844c6ee61c8e76741203c9960",
+  "mobile-hud.css": "6fe3b3b7fb477b47aa6707220caaec8c172ab266f397354e1ee316ec2396133d",
+  "models.js": "b48913a45e2111b8cc47476776ff70b4a355de4a128314d5160a0d3fee133ea5",
+  "tests/audio.test.mjs": "098d76f2d8dfb4e6792e3ce3bfb9a03397b666749604109005625267c65444b9",
+  "tests/combat-feedback.test.mjs": "3abf6e4324022eda202efe64812be971eb02f7d35006cfd6f6651d539076ba0d",
+  "tests/game.integration.mjs": "77bc6225b658f34b8e296b5c90bd38aac61ac136047656d11fb32171069dc885",
+  "tests/hammer-motion.test.mjs": "07a4332cb5267247ea016849946cdff51d30e9eff763aa673dec4120b683269b",
+  "tests/models.test.mjs": "acdfec467a791e08f5aac7b86d9f7b9ae0344457143cbc47f9768cc0ce8cc84e"
+}
