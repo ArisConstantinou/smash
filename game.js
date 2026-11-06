@@ -1,12 +1,12 @@
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261106-motion1';
-import {makeCityEnemy} from './enemy-models.js?v=20261105-city1';
+import {makeCityEnemy} from './enemy-models.js?v=20261106-storm2';
 import {createWorld} from './world.js?v=20261105-city1';
 import {GameAudio} from './audio.js';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-combos1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261105-city1';
-import {HAMMER_COMBOS,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-combos1';
+import {HAMMER_COMBOS,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-storm2';
 
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
@@ -20,7 +20,7 @@ const audio = new GameAudio();
 audio.setVolume(settings.volume);
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
-let enemies=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
+let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
 let boss=null,bossSpawned=false,spawnCounter=0,lootCounter=0,announcementTimer=0;
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeFeedback='';
 let shake=0,hitStop=0,redFlash=0,combo=0,comboTimer=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
@@ -32,6 +32,8 @@ let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,si
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0;
+const THROW_CHAIN_RADIUS=9,THROW_MAX_HITS=5,HAMMER_LIGHTNING_SECONDS=2.8;
+let hammerLightning=0,hammerAura=null,hammerMaterials=[];
 let hpEchoes=[],aimPreview=null,nearbyTargets=[],focusedTarget=null,guardRing,landingMarker,groundShadow;
 const pointer={active:false,x:0,y:0},aim={x:-.585491,z:-.810679};
 const raycaster=new THREE.Raycaster(),aimPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-1.2);
@@ -85,7 +87,7 @@ function setPhase(next){
   $('menu').hidden=next!=='menu';$('hud').hidden=next==='menu';
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
-  if(next!=='playing'){clearInput();if(guardRing)guardRing.visible=false;}
+  if(next!=='playing'){clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
   syncTouchControls();
 }
@@ -141,20 +143,81 @@ function makeTelegraph(x,z,radius,tint=0xff665b){
 function removeEffect(mesh){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();}
 function weaponTrail(a,b,width=.3,tint=0xffc473){
   if(a.distanceToSquared(b)<.00001)return;
-  const positions=[a.x,a.y-width,a.z,a.x,a.y+width,a.z,b.x,b.y+width,b.z,a.x,a.y-width,a.z,b.x,b.y+width,b.z,b.x,b.y-width,b.z];
+  // A camera-facing ribbon has width even on a vertical overhead stroke.
+  // Offsetting only along world Y collapses that stroke into a zero-area line.
+  const side=new THREE.Vector3().subVectors(b,a).cross(new THREE.Vector3().subVectors(camera.position,a));
+  if(side.lengthSq()<1e-8)side.set(1,0,0);side.normalize().multiplyScalar(width);
+  const positions=[a.x-side.x,a.y-side.y,a.z-side.z,a.x+side.x,a.y+side.y,a.z+side.z,b.x+side.x,b.y+side.y,b.z+side.z,
+    a.x-side.x,a.y-side.y,a.z-side.z,b.x+side.x,b.y+side.y,b.z+side.z,b.x-side.x,b.y-side.y,b.z-side.z];
   const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:tint,transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
   scene.add(mesh);arcs.push({mesh,life:.16,max:.16});
+}
+function createHammerAura(){
+  // Keep visual energy outside the hammer hierarchy: it must never enlarge
+  // collision bounds or get cloned into a thrown weapon.
+  const root=new THREE.Group();root.name='Hammer lightning aura';root.visible=false;
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=64;
+  const context=canvas.getContext('2d'),gradient=context.createRadialGradient(32,32,1,32,32,32);
+  gradient.addColorStop(0,'rgba(255,255,255,.95)');gradient.addColorStop(.19,'rgba(170,240,255,.6)');
+  gradient.addColorStop(.48,'rgba(80,195,255,.18)');gradient.addColorStop(1,'rgba(40,120,255,0)');
+  context.fillStyle=gradient;context.fillRect(0,0,64,64);
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),color:0x77dfff,
+    transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+  glow.scale.set(2.7,2.7,1);root.add(glow);
+  // A fixed pool of short, jagged arcs. No new geometry, lights, or materials
+  // are allocated while a charge/catch is active, including on phones.
+  const positions=new Float32Array(8*5*2*3),geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.BufferAttribute(positions,3).setUsage(THREE.DynamicDrawUsage));
+  const bolts=new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({color:0xb5f5ff,
+    transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false}));
+  bolts.frustumCulled=false;root.add(bolts);scene.add(root);
+  return {root,glow,bolts,positions,lastPattern:-1};
+}
+function updateHammerAura(){
+  if(!hammerAura)return;
+  const channeling=!!touchThrowAim?.channeling,airReady=!!leap&&!leap.slam;
+  const held=hero.userData.weaponHeld,active=phase==='playing'&&held&&(hammerLightning>0||channeling||airReady||leap?.slam);
+  hammerAura.root.visible=!!active;
+  if(!active)return;
+  const electric=hammerLightning>0,fade=electric?Math.min(1,hammerLightning/.45):1;
+  const energy=electric?1:channeling?.5:leap?.slam?.72:.38;
+  const clock=electric?HAMMER_LIGHTNING_SECONDS-hammerLightning:touchThrowAim?.channelTime||leap?.time||0;
+  const shimmer=.88+Math.sin(clock*23)*.12,tint=electric||channeling?0x80deff:leap?.slam?0x9bfff0:0xffd977;
+  hero.userData.hammerHead.getWorldPosition(hammerAura.root.position);
+  hero.userData.hammerHead.getWorldQuaternion(hammerAura.root.quaternion);
+  hammerAura.root.scale.setScalar(stats.size);
+  hammerAura.glow.material.color.setHex(tint);hammerAura.glow.material.opacity=energy*fade*shimmer*.66;
+  hammerAura.bolts.material.color.setHex(electric?0xc9f6ff:tint);hammerAura.bolts.material.opacity=energy*fade;
+  // Apply after player hurt flashing, on separately owned hammer materials.
+  for(const m of hammerMaterials)if(m.emissive)m.emissive.lerp(cachedColor(tint),energy*fade*(.42+shimmer*.12));
+  const pattern=Math.floor(clock*18);
+  if(pattern===hammerAura.lastPattern)return;hammerAura.lastPattern=pattern;
+  const a=hammerAura.positions;
+  for(let bolt=0;bolt<8;bolt++){
+    const angle=bolt*Math.PI/4+pattern*.31;
+    let px=Math.cos(angle)*.55,py=Math.sin(angle)*.23,pz=(bolt%2?1:-1)*.37;
+    for(let step=1;step<=5;step++){
+      const t=step/5,jitter=Math.sin((pattern+1)*17+bolt*11+step*23)*.13*Math.sin(t*Math.PI);
+      const x=Math.cos(angle+t*.9)*(.58+t*.48)+jitter,y=Math.sin(angle+t*.9)*(.25+t*.50)+jitter;
+      const z=(bolt%2?1:-1)*(.37+t*.24)+Math.cos(step*7+pattern)*.09;
+      const offset=(bolt*5+step-1)*6;a[offset]=px;a[offset+1]=py;a[offset+2]=pz;a[offset+3]=x;a[offset+4]=y;a[offset+5]=z;
+      px=x;py=y;pz=z;
+    }
+  }
+  hammerAura.bolts.geometry.attributes.position.needsUpdate=true;
 }
 function resetWorld(keepUpgrades=false){
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
   swingComboSteps.fill(0);
   upgradePanelOpen=false;nearbyTargets=[];focusedTarget=null;
   for(const e of enemies){if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);}enemies=[];if(boss){if(boss.telegraph)removeEffect(boss.telegraph);disposeInstance(boss);}boss=null;
+  for(const e of enemyFalls)disposeInstance(e);enemyFalls=[];
   for(const d of drops){scene.remove(d.mesh);disposeModelGeometry(d.mesh);}drops=[];
   for(const b of bolts){scene.remove(b.mesh);b.mesh.geometry.dispose();b.mesh.material.dispose();}bolts=[];
   for(const e of [...rings,...arcs])removeEffect(e.mesh);rings=[];arcs=[];
   if(throwFlight){disposeInstance(throwFlight);throwFlight=null;}
+  hammerLightning=0;if(hammerAura){hammerAura.root.visible=false;hammerAura.lastPattern=-1;}
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
   world?.dispose();
@@ -243,7 +306,7 @@ function beginSwing(){
   const q=charge,details=attackStats(stats,q);
   const twoHanded=stance>.9,comboIndex=twoHanded?1:0,chain=twoHanded?HAMMER_COMBOS.twoHanded:HAMMER_COMBOS.oneHanded;
   const variant=chain[swingComboSteps[comboIndex]];
-  swing={time:0,q,...details,twoHanded,variant,duration:details.duration,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
+  swing={time:0,q,...details,twoHanded,variant,duration:getHammerSwingDuration(variant)+q*.10,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
   swingComboSteps[comboIndex]=(swingComboSteps[comboIndex]+1)%chain.length;
   chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q);
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);
@@ -301,19 +364,46 @@ function spinImpact(from,to){
 }
 function hitEnemy(e,damage,dir,strength,lift){
   if(e.dead)return;
-  e.hp-=damage;e.flash=.16;e.stagger=Math.max(e.stagger||0,.23+strength*.013);e.vx=dir.x*strength;e.vz=dir.z*strength;e.vy=lift;e.hurtTimer=2.4;
-  if(e.state==='windup'){e.state='walk';e.timer=.6;if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}}
+  const force=clamp(Number.isFinite(strength)?strength:0,0,18);
+  const mass=e.type==='siegeMech'?10:e.miniBoss?8:e.type==='mech'?4:e.type==='brute'?3:e.type==='mutant'?2.6:e.type==='robot'?1.5:e.type==='crawler'?.9:1;
+  let direction=normalize(dir?.x||0,dir?.z||0);
+  if(!direction.x&&!direction.z)direction=normalize(e.x-player.x,e.z-player.z);
+  if(!direction.x&&!direction.z)direction={x:0,z:1};
+  const duration=.40+Math.min(force/18,1)*.08,impulse=Math.min(force*1.05,6.4)/mass**.75;
+  e.facingYaw??=e.mesh.rotation.y;
+  e.impact={time:0,duration,dirX:direction.x,dirZ:direction.z,mass,
+    amplitude:(.38+Math.min(force/18,1)*.13)/mass**.35,bounced:false,
+    axis:new THREE.Vector3(direction.z,0,-direction.x),rotation:new THREE.Quaternion(),fromRotation:e.mesh.quaternion.clone()};
+  e.hp-=damage;e.flash=.16;e.stagger=Math.max(e.stagger||0,duration);
+  // A normal hit moves a light enemy about .7m, not an unlimited launch.
+  // Heavy bodies keep a clear flinch while resisting most of the displacement.
+  e.vx=direction.x*impulse;e.vz=direction.z*impulse;
+  e.vy=force>0?clamp((Number.isFinite(lift)?lift:0)*1.12+.15,2.2,4.1)/Math.sqrt(mass):Math.min(e.vy||0,0);
+  e.hurtTimer=2.4;
+  if(e.state==='windup'||e.state==='lunge'||e.state==='shoot'){
+    e.state='walk';e.timer=Math.max(.6,duration+.1);e.navTimer=0;
+    if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
+  }
   flashMaterials(e,1);
   showHitPoints(e,damage);
   fragments.add(e.x,e.y+1,e.z,8,e.palette==='organic'?[0x8fbea2,0xb6d5b4,0x83ceaa]:[0xffc271,0xf9e5b1,0x7eacb9],4,.07);
   if(e.hp<=0)killEnemy(e);
 }
 function killEnemy(e){
+  if(e.dead)return;
   e.dead=true;guardHits.delete(e);enemies=enemies.filter(n=>n!==e);kills++;combo++;comboTimer=3.8;score+=e.miniBoss?420:25*(e.xp||1);
   if(e.waveNumber===wave?.number)wave.defeated++;
   nearbyTargets=nearbyTargets.filter(t=>t!==e);if(focusedTarget===e)focusedTarget=null;
   fragments.add(e.x,1,e.z,e.miniBoss?35:e.radius>.65?19:12,e.palette==='metal'?[0x6c91a0,0xa5bec3,0xff9864]:[0x679378,0x9eaf83,0x4a6265],5,e.miniBoss?.38:e.radius>.65?.24:.16,true);
-  if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);gainXP(e.xp||1);
+  if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
+  // Remove combat participation immediately, but let the struck body visibly
+  // recoil and fall before releasing its existing, instance-owned resources.
+  if(e.impact){
+    e.state='dead';e.deathTime=0;e.deathDuration=e.miniBoss?.8:.65;enemyFalls.push(e);
+    const fallLimit=settings.quality==='low'?20:32;
+    while(enemyFalls.length>fallLimit)disposeInstance(enemyFalls.shift());
+  }else disposeInstance(e);
+  gainXP(e.xp||1);
   if(e.miniBoss){spawnDrop(e.x,e.z,'relic');spawnDrop(e.x+.5,e.z,'heart');}
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
   if(combo===10||combo===25)toast(combo+' ΣΤΗ ΣΕΙΡΑ','Συνέχισε την κατεδάφιση!');
@@ -335,12 +425,16 @@ function hurtObject(o,damage,q=0){
 function hitBoss(damage,dir,strength=5){
   if(!boss||boss.dead)return;
   boss.hp-=damage;boss.flash=.15;boss.stagger=.12;boss.vx=dir.x*strength*.13;boss.vz=dir.z*strength*.13;
+  boss.impact={time:0,duration:.32,dirX:dir.x,dirZ:dir.z};
   flashMaterials(boss,1);showHitPoints(boss,damage);fragments.add(boss.x,2,boss.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
   if(boss.hp<=0)defeatBoss();
 }
 function checkGoal(){if(phase==='playing'&&!bossSpawned&&destructionPercent(world.objects)>=GOAL)spawnBoss();}
 function impact(from=headPrevious,to=headNow){
   const s=swing;if(!s||s.blocked)return;
+  // The load behind a shoulder/crown is anticipation. Normal cuts deal
+  // damage across the forward arc; the separate held spin owns rear hits.
+  if(sampleHammerSwing(s.time/s.duration,{variant:s.variant,charge:s.q}).directionZ<.04)return;
   const radius=.52*stats.size,shaftRadius=.30*stats.size;
   const grip=hero.userData.hammerPivot.getWorldPosition(new THREE.Vector3());
   const objects=nearbyObjects(player.x,player.z,stats.range+stats.size+2).filter(o=>!s.hits.has(o));
@@ -349,6 +443,7 @@ function impact(from=headPrevious,to=headNow){
   let hits=0,breaks=0;
   for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
     if(s.hits.has(e))continue;
+    if((e.x-player.x)*s.fx+(e.z-player.z)*s.fz<0)continue;
     // The moving head and the physical shaft both make contact. This removes
     // the dead zone that let enemies touching the warrior survive every swing.
     const headContact=firstHammerHit(from,to,[e],radius),shaftContact=firstHammerHit(grip,to,[e],shaftRadius);
@@ -449,11 +544,13 @@ function landLeap(){
   shake=slam?.38:.1;hitStop=slam?.022:.005;audio.play(slam?'break':'hit',slam?1:.2);checkGoal();
 }
 function canThrow(){return phase==='playing'&&!throwFlight&&!throwWindup&&throwCooldown<=0&&!swing&&!leap&&Math.abs(stance-stanceTarget)<=.005;}
-function startThrow(direction=null){
+function startThrow(direction=null,channelAngle=null){
   if(!canThrow())return false;
   if(direction){const d=normalize(direction.x,direction.z);aim.x=d.x;aim.z=d.z;}else updateAim();
   const launchDirection={...aim};
-  cancelAttack();spinRecovery=null;throwWindup={time:0,dir:launchDirection,fromRotation:hero.userData.weaponRig.quaternion.clone()};
+  const rig=hero.userData.weaponRig;
+  cancelAttack();spinRecovery=null;throwWindup={time:0,dir:launchDirection,channelAngle,
+    fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};
   const move=movementDirection();facing=move.x||move.z?move:{...aim};guardHeld=false;guarding=false;
   return true;
 }
@@ -465,27 +562,101 @@ function releaseHammer(){
   const {x,y,z}=origin,quaternion=hero.userData.hammerPivot.getWorldQuaternion(new THREE.Quaternion());
   mesh.position.copy(origin);mesh.quaternion.copy(quaternion);scene.add(mesh);
   const materials=new Set();mesh.traverse(n=>{if(n.material)for(const m of Array.isArray(n.material)?n.material:[n.material])materials.add(m);});
-  throwFlight={mesh,materials:[...materials],x,y,z,dir,quaternion,spinAxis:new THREE.Vector3(dir.z,0,-dir.x),radius:mesh.userData.radius,speed:23,distance:0,returning:false,life:0};
+  throwFlight={mesh,materials:[...materials],x,y,z,dir:{...dir},quaternion,
+    spinAxis:new THREE.Vector3(dir.z,0,-dir.x),radius:mesh.userData.radius,speed:23,distance:0,
+    legDistance:0,returning:false,life:0,returnTime:0,hits:new Set(),hitCount:0,bounces:0,chainTarget:null,
+    damage:Math.round(stats.power*2.2*stancePower()),trailTime:0};
+  hammerLightning=0;if(hammerAura)hammerAura.root.visible=false;
   hero.userData.setWeaponVisible(false);throwWindup=null;throwCooldown=1.25;audio.play('swing',1);
+}
+function throwTargetPoint(target){
+  return {x:target.x,y:(target.y||0)+Math.min(1.35,(target.height||target.h||2)*.6),z:target.z};
+}
+function validChainTarget(h,target){
+  return target&&!target.dead&&!h.hits.has(target)&&(target===boss||enemies.includes(target));
+}
+function nextThrowTarget(h){
+  if(h.hitCount>=THROW_MAX_HITS)return null;
+  let nearest=null,bestDistance=THROW_CHAIN_RADIUS;
+  for(const target of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+    if(!validChainTarget(h,target))continue;
+    const point=throwTargetPoint(target),distance=Math.hypot(point.x-h.x,point.y-h.y,point.z-h.z);
+    if(distance>bestDistance||distance<.001)continue;
+    // The bouncing weapon respects the same full-size swept collider as the
+    // initial throw. A target behind a building is never selected through it.
+    if(firstHammerHit(h,point,segmentObjects(h,point,h.radius),h.radius))continue;
+    bestDistance=distance;nearest=target;
+  }
+  return nearest;
+}
+function returnHammer(h){h.returning=true;h.chainTarget=null;h.returnTime=0;}
+function catchHammer(h){
+  if(throwFlight!==h)return;
+  disposeInstance(h);throwFlight=null;hero.userData.setWeaponVisible(true);
+  hammerLightning=HAMMER_LIGHTNING_SECONDS;
+  if(hammerAura)hammerAura.lastPattern=-1;
+  audio.play('pickup',.7);pulse(player.x,player.z,1.15,0x9cecff,.27).position.y=player.y+.06;
+  const head=hero.userData.hammerHead.getWorldPosition(new THREE.Vector3());
+  fragments.add(head.x,head.y,head.z,12,[0xecffff,0x82e8ff,0x5ab9ff],3.2,.055);
 }
 function updateThrownHammer(dt){
   if(!throwFlight)return;const h=throwFlight;h.life+=dt;
   const from=new THREE.Vector3(h.x,h.y,h.z);
+  if(!h.returning&&(h.life>3.2||h.distance>52))returnHammer(h);
   if(h.returning){
-    const target=new THREE.Vector3(player.x,player.y+1.25,player.z),delta=target.sub(from),distance=delta.length();
-    if(distance<.75||distance<29*dt){disposeInstance(h);throwFlight=null;hero.userData.setWeaponVisible(true);audio.play('pickup',.2);pulse(player.x,player.z,.9,color.teal,.2);return;}
-    delta.multiplyScalar(29*dt/distance);h.x+=delta.x;h.y+=delta.y;h.z+=delta.z;
+    h.returnTime+=dt;
+    // The projectile is centered on its balance point, so home to the held
+    // weapon's balance point too. This follows the actual moving hand pose.
+    hero.updateMatrixWorld(true);
+    const target=hero.userData.getThrowCenterWorld(new THREE.Vector3()),delta=target.clone().sub(from),distance=delta.length();
+    const step=(29+Math.min(12,h.returnTime*4))*dt;
+    if(distance<=Math.max(.1,step)){
+      h.mesh.position.copy(target);h.mesh.quaternion.copy(hero.userData.hammerPivot.getWorldQuaternion(new THREE.Quaternion()));
+      catchHammer(h);return;
+    }
+    delta.multiplyScalar(step/distance);h.x+=delta.x;h.y+=delta.y;h.z+=delta.z;
+    if(distance<2.5)h.mesh.quaternion.slerp(hero.userData.hammerPivot.getWorldQuaternion(new THREE.Quaternion()),1-Math.exp(-dt*26));
+    else h.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,dt*22));
   }else{
-    const to={x:h.x+h.dir.x*h.speed*dt,y:h.y,z:h.z+h.dir.z*h.speed*dt};
-    const hit=firstHammerHit(from,to,[...segmentObjects(from,to,h.radius),...enemies,...(boss&&!boss.dead?[boss]:[])],h.radius);
-    h.x=hit?hit.x:to.x;h.z=hit?hit.z:to.z;h.distance+=h.speed*dt;
-    if(hit){const target=hit.target,damage=Math.round(stats.power*2.2*stancePower());
-      if(target===boss)hitBoss(damage,h.dir,11);else if(target.w!==undefined)hurtObject(target,damage,.7);else hitEnemy(target,damage,h.dir,11,3.2);
-      h.returning=true;fragments.add(h.x,h.y,h.z,16,[0xffd992,0xbbe0dc],6,.1);pulse(h.x,h.z,1.7,color.gold,.25);shake=Math.max(shake,.18);audio.play('hit',.7);checkGoal();
-    }else if(h.distance>17||Math.abs(h.x)>BOUNDS||Math.abs(h.z)>BOUNDS)h.returning=true;
+    if(h.chainTarget&&!validChainTarget(h,h.chainTarget)){
+      h.chainTarget=nextThrowTarget(h);h.legDistance=0;
+      if(!h.chainTarget)returnHammer(h);
+    }
+    if(!h.returning){
+      let dy=0;
+      if(h.chainTarget){
+        const point=throwTargetPoint(h.chainTarget),delta=new THREE.Vector3(point.x-h.x,point.y-h.y,point.z-h.z).normalize();
+        h.dir={x:delta.x,z:delta.z};dy=delta.y;h.spinAxis.set(delta.z,0,-delta.x).normalize();
+      }
+      const to={x:h.x+h.dir.x*h.speed*dt,y:h.y+dy*h.speed*dt,z:h.z+h.dir.z*h.speed*dt};
+      const targets=[...segmentObjects(from,to,h.radius),...enemies,...(boss&&!boss.dead?[boss]:[])].filter(target=>!h.hits.has(target));
+      const hit=firstHammerHit(from,to,targets,h.radius);
+      h.x=hit?hit.x:to.x;h.y=hit?hit.y:to.y;h.z=hit?hit.z:to.z;
+      const traveled=Math.hypot(h.x-from.x,h.y-from.y,h.z-from.z);h.distance+=traveled;h.legDistance+=traveled;
+      if(hit){
+        const target=hit.target;h.hits.add(target);
+        if(target===boss)hitBoss(h.damage,h.dir,11);
+        else if(target.w!==undefined)hurtObject(target,h.damage,.7);
+        else hitEnemy(target,h.damage,h.dir,11,3.2);
+        if(target.w===undefined){
+          h.hitCount++;h.chainTarget=nextThrowTarget(h);h.legDistance=0;
+          if(h.chainTarget){h.bounces++;h.speed=26;}
+          else returnHammer(h);
+        }else returnHammer(h);
+        fragments.add(h.x,h.y,h.z,14,[0xffd992,0xecffff,0x83dfff],5,.09);
+        pulse(h.x,h.z,1.5,h.hitCount>1?0x8ae8ff:color.gold,.23).position.y=Math.max(.08,h.y-.5);
+        shake=Math.max(shake,.13);audio.play('hit',.7);checkGoal();
+      }else if((!h.chainTarget&&h.distance>=17)||h.legDistance>12&&h.chainTarget||Math.abs(h.x)>BOUNDS||Math.abs(h.z)>BOUNDS)returnHammer(h);
+      // Integrating rotation preserves the visible pose when a bounce changes
+      // its spin axis, unlike rebuilding from total lifetime on each new axis.
+      h.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,dt*22));
+    }
   }
-  h.mesh.position.set(h.x,h.y,h.z);h.mesh.quaternion.copy(h.quaternion).premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,h.life*20));
-  weaponTrail(from,new THREE.Vector3(h.x,h.y,h.z),.24,h.returning?0x8ce4d8:0xffc473);
+  h.mesh.position.set(h.x,h.y,h.z);
+  if(h.life-h.trailTime>=1/60){
+    weaponTrail(h.trailFrom||from,new THREE.Vector3(h.x,h.y,h.z),h.returning?.18:.26,h.returning?0x9dedff:h.hitCount?0x77dcff:0xffc473);
+    h.trailFrom=new THREE.Vector3(h.x,h.y,h.z);h.trailTime=h.life;
+  }
 }
 
 function beginWave(number=1){
@@ -590,14 +761,67 @@ function shoot(e){
   }
 }
 function updateEnemies(dt){
+  function advanceBody(e){
+    const oldY=e.y,speed=Math.hypot(e.vx,e.vz);
+    // Use one height threshold for both the wall and roof support, including
+    // actors knocked off a roof. Crossing an edge must never eject a body
+    // toward the far side of the building beneath it.
+    const walls=nearbyObjects(e.x,e.z,e.radius+speed*dt+.1).filter(o=>o.h>oldY+SUPPORT_EPSILON);
+    moveCircle(e,e.vx*dt,e.vz*dt,walls,e.radius);
+    const damp=Math.exp(-8*dt);e.vx*=damp;e.vz*=damp;
+    e.vy-=18*dt;e.y+=e.vy*dt;
+    let floor=0;
+    for(const o of nearbyObjects(e.x,e.z,e.radius))if(o.h<=oldY+SUPPORT_EPSILON&&circleOverlaps(e.x,e.z,e.radius,o))floor=Math.max(floor,o.h);
+    e.supportY=floor;
+    if(e.vy<=0&&e.y<=floor){
+      e.y=floor;
+      if(e.impact&&!e.impact.bounced&&e.vy< -1.8){e.vy=Math.min(1,-e.vy*.2);e.impact.bounced=true;}
+      else e.vy=0;
+    }
+    if(e.impact)e.impact.time+=dt;
+  }
+  function poseBody(e,falling=false){
+    const u=e.mesh.userData,i=e.impact;
+    e.facingYaw??=e.mesh.rotation.y;
+    e.mesh.position.set(e.x,e.y,e.z);e.mesh.rotation.set(0,e.facingYaw,0);
+    if(u.leftLeg){u.leftLeg.rotation.x=Math.sin(e.walk)*.5;u.leftLeg.rotation.z=0;}
+    if(u.rightLeg){u.rightLeg.rotation.x=-Math.sin(e.walk)*.5;u.rightLeg.rotation.z=0;}
+    if(u.body){u.body.rotation.x=e.state==='windup'?-.22:Math.sin(e.walk*2)*.03;u.body.rotation.z=0;}
+    if(u.leftArm){u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;u.leftArm.rotation.z=0;}
+    if(u.rightArm){u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;u.rightArm.rotation.z=0;}
+    u.animate?.(e,dt,visualTime);
+    if(!i)return;
+    const kick=smooth(i.time/.05),recover=1-smooth((i.time-.08)/(i.duration-.08));
+    const recoil=kick*recover,fall=falling?smooth(e.deathTime/(e.deathDuration*.85)):0;
+    const tilt=i.amplitude*recoil+fall*1.27;
+    i.rotation.setFromAxisAngle(i.axis,tilt);
+    // Apply AFTER every species' walking/weapon animation. Tilting the whole
+    // articulated rig keeps shoulders, hands and feet attached during recoil.
+    e.mesh.quaternion.premultiply(i.rotation);
+    if(i.time<.045)e.mesh.quaternion.slerpQuaternions(i.fromRotation,e.mesh.quaternion.clone(),smooth(i.time/.045));
+    e.mesh.position.y+=Math.sin(tilt)*Math.min(.3,e.radius*.45);
+    const localX=i.dirX*Math.cos(e.facingYaw)-i.dirZ*Math.sin(e.facingYaw);
+    const localZ=i.dirX*Math.sin(e.facingYaw)+i.dirZ*Math.cos(e.facingYaw);
+    const pose=Math.max(recoil,fall*.75);
+    if(u.leftArm){u.leftArm.rotation.x-=pose*(.55+localZ*.15);u.leftArm.rotation.z-=pose*(.32+localX*.12);}
+    if(u.rightArm){u.rightArm.rotation.x-=pose*(.68+localZ*.15);u.rightArm.rotation.z+=pose*(.32-localX*.12);}
+    const legs=u.legs||[u.leftLeg,u.rightLeg];
+    for(let n=0;n<legs.length;n++)if(legs[n]){
+      const side=legs.length>2?(n<legs.length/2?-1:1):(n===0?-1:1);
+      legs[n].rotation.x+=pose*(-localZ*.25+side*.17);
+      legs[n].rotation.z+=side*pose*.16;
+    }
+    if(!falling&&i.time>=i.duration)e.impact=null;
+  }
   for(const e of [...enemies]){
+    if(e.dead)continue;
+    e.facingYaw??=e.mesh.rotation.y;
     e.flash=Math.max(0,e.flash-dt);e.stagger=Math.max(0,e.stagger-dt);e.hurtTimer=Math.max(0,e.hurtTimer-dt);
     flashMaterials(e,e.flash/.16);
     const dx=player.x-e.x,dz=player.z-e.z,dist=Math.hypot(dx,dz),dir=normalize(dx,dz);
-    moveCircle(e,e.vx*dt,e.vz*dt,nearbyObjects(e.x,e.z,e.radius+Math.hypot(e.vx,e.vz)*dt+.1),e.radius);const damp=Math.exp(-7*dt);e.vx*=damp;e.vz*=damp;
-    e.vy-=16*dt;e.y+=e.vy*dt;if(e.y<0){e.y=0;if(e.vy<-4)e.vy=-e.vy*.19;else e.vy=0;}
+    advanceBody(e);
     e.timer-=dt;
-    if(e.stagger<=0&&(e.y<.2||e.state==='lunge')){
+    if(e.stagger<=0&&(e.y-e.supportY<.2||e.state==='lunge')){
       if(e.state==='walk'){
         e.navTimer-=dt;
         if(e.navTimer<=0){e.navTimer=.18;e.navDirection=world.getChaseDirection?.(e.x,e.z,player.x,player.z,e.radius)||dir;}
@@ -606,9 +830,9 @@ function updateEnemies(dt){
         for(const other of enemies){if(other===e)continue;const ox=e.x-other.x,oz=e.z-other.z,dd=ox*ox+oz*oz;if(dd>.01&&dd<1.65){const repel=(1.3-Math.sqrt(dd))*.55;separation.x+=ox/Math.sqrt(dd)*repel;separation.z+=oz/Math.sqrt(dd)*repel;}}
         const clearShot=e.attackKind==='ranged'&&dist<12&&(world.hasLineOfSight?.(e.x,e.z,player.x,player.z,.18)??true);
         const stop=clearShot&&dist<6.5?0:1;
-        const delta=moveCircle(e,(mx*e.speed*stop+separation.x)*dt,(mz*e.speed*stop+separation.z)*dt,nearbyObjects(e.x,e.z,e.radius+e.speed*dt+1),e.radius);
+        const delta=moveCircle(e,(mx*e.speed*stop+separation.x)*dt,(mz*e.speed*stop+separation.z)*dt,nearbyObjects(e.x,e.z,e.radius+e.speed*dt+1).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
         e.walk+=Math.hypot(delta.x,delta.z)*6;
-        e.mesh.rotation.y=Math.atan2(dir.x,dir.z);
+        e.facingYaw=Math.atan2(dir.x,dir.z);
         if(e.timer<=0&&((e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5))){
           e.state='windup';e.timer=e.windup;e.attackDir=dir;
           e.telegraph=makeTelegraph(e.x,e.z,e.attackKind==='slam'?e.attackRadius:e.attackKind==='ranged'?e.radius+.3:1.05,e.attackKind==='ranged'?0xff8d62:0xef6863);
@@ -623,20 +847,22 @@ function updateEnemies(dt){
           }else{e.state='lunge';e.timer=.27;e.vy=3.4;}
         }
       }else if(e.state==='lunge'){
-        moveCircle(e,e.attackDir.x*e.lungeSpeed*dt,e.attackDir.z*e.lungeSpeed*dt,nearbyObjects(e.x,e.z,e.radius+e.lungeSpeed*dt+.2),e.radius);
+        moveCircle(e,e.attackDir.x*e.lungeSpeed*dt,e.attackDir.z*e.lungeSpeed*dt,nearbyObjects(e.x,e.z,e.radius+e.lungeSpeed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
         if(dist<e.radius+player.radius+.2)hurtPlayer(e.damage,e.attackDir.x,e.attackDir.z);
         if(e.timer<=0){e.state='walk';e.timer=e.attackRecovery;}
       }
     }
     // Damage belongs to the telegraphed lunge, slam or projectile; merely
     // touching a walking enemy must not drain health between its attacks.
-    e.mesh.position.set(e.x,e.y,e.z);const u=e.mesh.userData;
-    if(u.leftLeg)u.leftLeg.rotation.x=Math.sin(e.walk)*.5;
-    if(u.rightLeg)u.rightLeg.rotation.x=-Math.sin(e.walk)*.5;
-    if(u.body){u.body.rotation.x=e.state==='windup'?-.22:e.stagger>0?-.32:Math.sin(e.walk*2)*.03;u.body.rotation.z=e.stagger>0?Math.sin(e.stagger*45)*.13:0;}
-    if(u.leftArm)u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;
-    if(u.rightArm)u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;
-    u.animate?.(e,dt,visualTime);
+    poseBody(e);
+  }
+  for(let n=enemyFalls.length-1;n>=0;n--){
+    const e=enemyFalls[n];e.deathTime+=dt;
+    if(e.deathTime>=e.deathDuration){disposeInstance(e);enemyFalls.splice(n,1);continue;}
+    advanceBody(e);poseBody(e,true);
+    e.flash=Math.max(0,e.flash-dt);flashMaterials(e,e.flash/.16);
+    const opacity=1-smooth((e.deathTime-(e.deathDuration-.18))/.18);
+    if(opacity<1)for(const m of e.materials||[]){m.transparent=true;m.opacity=opacity;m.depthWrite=false;}
   }
   for(let i=bolts.length-1;i>=0;i--){
     const b=bolts[i],from={x:b.x,y:1,z:b.z},to={x:b.x+b.vx*dt,y:1,z:b.z+b.vz*dt};b.life-=dt;
@@ -719,6 +945,14 @@ function updateBoss(dt){
   if(u.leftArm)u.leftArm.rotation.x=b.state==='slamWindup'?-2.4:b.state==='recover'?.65:Math.sin(b.walk)*.15;
   if(u.rightArm)u.rightArm.rotation.x=b.state==='slamWindup'?-2.4:b.state==='recover'?.65:-Math.sin(b.walk)*.15;
   if(u.body)u.body.rotation.x=b.state==='charge'?.25:b.stagger>0?-.1:0;
+  if(b.impact){
+    const hit=b.impact;hit.time+=dt;
+    const envelope=Math.sin(Math.min(1,hit.time/.055)*Math.PI/2)*(1-smooth(hit.time/hit.duration));
+    const yaw=b.mesh.rotation.y,lateral=hit.dirX*Math.cos(yaw)-hit.dirZ*Math.sin(yaw),forward=hit.dirX*Math.sin(yaw)+hit.dirZ*Math.cos(yaw);
+    b.mesh.rotation.x=forward*envelope*.075;b.mesh.rotation.z=-lateral*envelope*.075;
+    if(u.body)u.body.rotation.x+=forward*envelope*.12;
+    if(hit.time>=hit.duration)b.impact=null;
+  }else{b.mesh.rotation.x=0;b.mesh.rotation.z=0;}
 }
 function defeatBoss(){
   if(!boss||boss.dead)return;boss.dead=true;if(boss.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}
@@ -745,6 +979,7 @@ function guardDimensions(){const reach=Math.max(.35,1.05-(stats.size-1)*.42),rad
 const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
 function updatePlayer(dt){
   player.invincible=Math.max(0,player.invincible-dt);player.hurtAgo+=dt;
+  hammerLightning=Math.max(0,hammerLightning-dt);
   dashCooldown=Math.max(0,dashCooldown-dt);attackCooldown=Math.max(0,attackCooldown-dt);leapCooldown=Math.max(0,leapCooldown-dt);throwCooldown=Math.max(0,throwCooldown-dt);landingRecovery=Math.max(0,landingRecovery-dt);
   if(player.hurtAgo>8&&player.hp<player.maxHp)player.hp=Math.min(player.maxHp,player.hp+1.25*dt);
   if(stance!==stanceTarget){const step=dt/1.05;stance=Math.abs(stance-stanceTarget)<=step?stanceTarget:stance+Math.sign(stanceTarget-stance)*step;}
@@ -798,8 +1033,17 @@ function updatePlayer(dt){
     }
   }
   if(swing)swing.time+=dt;
-  if(throwWindup){throwWindup.time+=dt;if(throwWindup.time>=.28)releaseHammer();}
+  if(touchThrowAim){
+    const g=touchThrowAim;g.time+=dt;
+    g.channeling=canThrow()&&!guardHeld;
+    if(g.channeling){
+      if(!g.channelFromRotation){g.channelFromRotation=hero.userData.weaponRig.quaternion.clone();g.channelFromPosition=hero.userData.weaponRig.position.clone();g.channelFromReach=hero.userData.reachScale;}
+      g.channelTime+=dt;g.channelAngle=-.7+g.channelTime*10;
+    }
+  }
+  if(throwWindup)throwWindup.time+=dt;
   poseHero(dt,moving);
+  if(throwWindup?.time>=.28)releaseHammer();
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headNow);
   if(swing){const progress=swing.time/swing.duration;
     if(progress>=SWING_CONTACT_START&&progress<=SWING_CONTACT_END&&!swing.blocked){
@@ -814,6 +1058,9 @@ function updatePlayer(dt){
   }else if(guarding){
     weaponTrail(headPrevious,headNow,.16,0x8ce4d8);
     for(const e of [...enemies])if((guardHits.get(e)||0)<elapsed&&facingCoverage(facing,e,player,Math.PI*.42)&&firstHammerHit(headPrevious,headNow,[e],.45*stats.size)){guardHits.set(e,elapsed+.38);hitEnemy(e,Math.round(stats.power*.3),normalize(e.x-player.x,e.z-player.z),6,1.5);}
+  }else if(touchThrowAim?.channeling&&touchThrowAim.channelTime>.10){
+    const g=touchThrowAim;
+    if(g.channelTime-g.trailTime>=1/45){weaponTrail(g.trailFrom||headPrevious,headNow,.13,0x8aeaff);g.trailTime=g.channelTime;g.trailFrom=headNow.clone();}
   }
   headPrevious.copy(headNow);
   updateThrownHammer(dt);
@@ -826,6 +1073,7 @@ function updatePlayer(dt){
   }
   for(const hazard of world.hazards)if(player.y<.4&&Math.hypot(player.x-hazard.x,player.z-hazard.z)<hazard.r)hurtPlayer((hazard.damage||10)*.65,0,0,false);
   updateAim();
+  updateHammerAura();
 }
 function poseHero(dt,moving=false){
   const u=hero.userData,walk=moving&&!leap&&!spin?Math.sin(player.walk):0;
@@ -860,8 +1108,9 @@ function poseHero(dt,moving=false){
       rig.quaternion.copy(swing.blockRotation).premultiply(new THREE.Quaternion().setFromAxisAngle(shaftUp,bounce)).slerp(restQuaternion,recover);
       rig.position.lerpVectors(swing.blockPosition,new THREE.Vector3(rp.x,rp.y,rp.z),recover);rig.position.y+=Math.sin(blocked*Math.PI)*.055;
     }else{
-      const direction=poseDirection.set(Math.sin(motion.yaw),motion.elevation,Math.cos(motion.yaw)).normalize();
+      const direction=poseDirection.set(motion.directionX,motion.directionY,motion.directionZ);
       const strikeQuaternion=new THREE.Quaternion().setFromUnitVectors(shaftUp,direction);
+      strikeQuaternion.multiply(new THREE.Quaternion().setFromAxisAngle(shaftUp,motion.shaftTwist||0));
       rig.quaternion.copy(swing.fromRotation).slerp(strikeQuaternion,motion.windup).slerp(restQuaternion,motion.recovery);
       rig.position.lerpVectors(swing.fromPosition,new THREE.Vector3(motion.gripX,motion.gripY,motion.gripZ),motion.windup);
       rig.position.lerp(new THREE.Vector3(rp.x,rp.y,rp.z),motion.recovery);
@@ -874,14 +1123,49 @@ function poseHero(dt,moving=false){
   }else if(guarding){const g=guardDimensions();u.setReach?.(g.reach);rig.position.set(0,g.height,.95);rig.rotation.set(0,0,guardAngle);}
   else if(leap){rig.position.set(stance>.9?0:.22,leap.diving?1.1:1.65,.55);rig.rotation.set(leap.diving?2.12:-.55,0,leap.diving?0:-.25);}
   else if(throwWindup){
-    const t=throwWindup.time/.28,relativeYaw=Math.atan2(throwWindup.dir.x,throwWindup.dir.z)-hero.rotation.y;
+    const t=clamp(throwWindup.time/.28,0,1),relativeYaw=Math.atan2(throwWindup.dir.x,throwWindup.dir.z)-hero.rotation.y;
+    // Keep the compact orbit length while the head passes below the wrist;
+    // extend for release only on the final upward/forward part of the turn.
+    const extend=throwWindup.channelAngle!==null?smooth((t-.7)/.3):smooth(t);
+    u.setReach?.(lerp(throwWindup.fromReach,u.reachScale,extend));
     const turn=new THREE.Quaternion().setFromAxisAngle(shaftUp,relativeYaw);
-    rig.position.set(lerp(.4,0,smooth(t)),lerp(1.4,1.2,smooth(t)),.55).applyQuaternion(turn);
-    const target=new THREE.Quaternion().setFromEuler(new THREE.Euler(t<.35?-1.15:lerp(-1.15,Math.PI/2,smooth((t-.35)/.65)),0,0)).premultiply(turn);
+    let angle;
+    if(throwWindup.channelAngle!==null){
+      const start=throwWindup.channelAngle,end=Math.PI/2+Math.ceil((start-Math.PI/2+.35)/(Math.PI*2))*Math.PI*2;
+      angle=lerp(start,end,smooth(t));
+    }else angle=t<.35?-1.15:lerp(-1.15,Math.PI/2,smooth((t-.35)/.65));
+    const target=new THREE.Quaternion().setFromEuler(new THREE.Euler(angle,0,0)).premultiply(turn);
     rig.quaternion.copy(throwWindup.fromRotation).slerp(target,smooth(t/.35));
+    const gripCenter=stance>.9?.255:.43,shaftDirection=new THREE.Vector3(0,1,0).applyQuaternion(rig.quaternion);
+    const wrist=new THREE.Vector3(0,gripCenter,0).applyQuaternion(throwWindup.fromRotation).add(throwWindup.fromPosition)
+      .lerp(new THREE.Vector3(stance>.9?0:.52,1.3,.40),smooth(t));
+    const sideY=new THREE.Vector3(1,0,0).applyQuaternion(rig.quaternion).y;
+    const depthY=new THREE.Vector3(0,0,1).applyQuaternion(rig.quaternion).y;
+    const headExtent=(.725*Math.abs(sideY)+.365*(Math.abs(shaftDirection.y)+Math.abs(depthY)))*stats.size;
+    const lowestHead=(.43+u.reachScale-gripCenter)*shaftDirection.y-headExtent;
+    const lowestHandle=Math.min((-.21-gripCenter)*shaftDirection.y,(.52-gripCenter)*shaftDirection.y)-.10;
+    wrist.y=Math.max(wrist.y,.08-Math.min(lowestHead,lowestHandle));
+    rig.position.copy(wrist).addScaledVector(shaftDirection,-gripCenter);
+  }
+  else if(touchThrowAim?.channeling){
+    const g=touchThrowAim,relativeYaw=Math.atan2(aim.x,aim.z)-hero.rotation.y;
+    const turn=new THREE.Quaternion().setFromAxisAngle(shaftUp,relativeYaw),blend=smooth(g.channelTime/.12);
+    // Rotate in the vertical plane along the throw direction. The free arm
+    // and feet keep their normal ownership while the wrist winds the weapon.
+    const orbitReach=Math.max(.35,.8-(stats.size-1)*.55),twoHanded=stance>.9,gripCenter=twoHanded?.255:.43;
+    u.setReach?.(lerp(g.channelFromReach,orbitReach,blend));
+    const shaftDirection=new THREE.Vector3(0,Math.cos(g.channelAngle),Math.sin(g.channelAngle)).applyQuaternion(turn);
+    const orbitRadius=Math.hypot(.43+orbitReach-gripCenter+.365*stats.size,.365*stats.size);
+    // Turn around the gripping hand(s), not around the torso. This keeps the
+    // elbows within reach when the joystick and aiming thumb point apart.
+    const targetPosition=new THREE.Vector3(twoHanded?0:.59,Math.max(twoHanded?1.48:1.42,orbitRadius+.08),.22)
+      .addScaledVector(shaftDirection,-gripCenter);
+    rig.position.lerpVectors(g.channelFromPosition,targetPosition,blend);
+    const target=new THREE.Quaternion().setFromEuler(new THREE.Euler(g.channelAngle,0,0)).premultiply(turn);
+    rig.quaternion.copy(g.channelFromRotation).slerp(target,blend);
   }
   else if(landingRecovery>0){rig.rotation.set(2.0,0,-.05);rig.position.set(0,.9,.7);}
-  else if(spinRecovery){const t=smooth(spinRecovery.time/.12);rig.position.lerpVectors(spinRecovery.fromPosition,new THREE.Vector3(rp.x,rp.y,rp.z),t);rig.quaternion.copy(spinRecovery.fromRotation).slerp(restQuaternion,t);}
+  else if(spinRecovery){const t=smooth(spinRecovery.time/.12);if(spinRecovery.fromReach!==undefined)u.setReach?.(lerp(spinRecovery.fromReach,u.reachScale,t));rig.position.lerpVectors(spinRecovery.fromPosition,new THREE.Vector3(rp.x,rp.y,rp.z),t);rig.quaternion.copy(spinRecovery.fromRotation).slerp(restQuaternion,t);}
   u.updateGrip?.();
   flashMaterials(player,player.invincible>0&&player.hurtAgo<1?(Math.sin(visualTime*30)*.5+.5)*.55:0,0xff8b71);
   chargeRing.visible=!!spin;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(stats.range*.88);chargeRing.material.opacity=spin?.12+Math.sin(spin.rotation*2)*.04:0;chargeRing.material.color.setHex(0xffcb7d);
@@ -960,7 +1244,7 @@ function updateHUD(force=false){
   for(const id of ['stanceButton','mobileStanceButton'])$(id)?.setAttribute('aria-pressed',String(stanceTarget===1));
   if($('guardValue'))$('guardValue').textContent=guarding?'ΠΡΟΣΤΑΣΙΑ ΜΠΡΟΣΤΑ':throwFlight?'ΧΩΡΙΣ ΣΦΥΡΙ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
   if($('leapValue'))$('leapValue').textContent=leap?(leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΠΑΤΑ ΣΦΥΡΙΑ':'ΑΡ. ΚΛΙΚ: ΣΥΝΤΡΙΒΗ'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
-  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.dragged?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
+  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.channeling?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   const attackButton=$('attackButton');
   attackButton?.classList.toggle('active',!!swing||!!leap?.slam);
@@ -968,6 +1252,7 @@ function updateHUD(force=false){
   attackButton?.classList.toggle('air-smash-armed',!!leap?.slam);
   $('attackIcon')?.setAttribute('href',leap?'#a-slam':'#a-swing');
   if($('attackName'))$('attackName').textContent=leap?(leap.slam?'ΟΠΛΙΣΜΕΝΗ':'ΣΥΝΤΡΙΒΗ'):'ΣΦΥΡΙΑ';
+  if($('attackValue'))$('attackValue').textContent=leap?(leap.slam?'ΕΤΟΙΜΗ!':'ΠΑΤΑ ΤΩΡΑ'):'ΓΡΗΓΟΡΟ ΧΤΥΠΗΜΑ';
   const attackLabel=leap?(leap.slam?'Η μεγάλη συντριβή είναι οπλισμένη για την προσγείωση.':'Πάτησε τώρα, στον αέρα, για μεγάλη συντριβή στην προσγείωση.'):touchLayout?attackButton?.dataset.touchLabel:attackButton?.dataset.desktopLabel;
   if(attackLabel){attackButton.setAttribute('aria-label',attackLabel);attackButton.setAttribute('title',attackLabel);}
   $('chargeButton')?.classList.toggle('active',chargeHeld||!!spin);
@@ -978,6 +1263,8 @@ function updateHUD(force=false){
   $('throwButton')?.classList.toggle('aiming',!!touchThrowAim?.dragged);
   $('throwButton')?.classList.toggle('returning',!!throwFlight?.returning);
   $('throwButton')?.classList.toggle('queued',!!touchThrowQueued);
+  $('throwButton')?.classList.toggle('channeling',!!touchThrowAim?.channeling);
+  $('throwButton')?.classList.toggle('lightning-ready',hammerLightning>0&&!throwFlight);
   for(const [id,remaining] of [['leapButton',leapCooldown],['throwButton',throwCooldown],['dashButton',dashCooldown]]){
     const button=$(id);if(button)button.dataset.cooldown=remaining>0?remaining.toFixed(1):'';
   }
@@ -1139,7 +1426,8 @@ function beginTouchThrow(e){
   // gesture. Aim can start now; only release commits an available throw.
   if(phase!=='playing'||leap||Math.abs(stance-stanceTarget)>.005)return;
   cancelAttack();guardHeld=false;guarding=false;pointer.active=false;
-  touchThrowAim={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,dx:0,dy:0,dragged:false};
+  touchThrowAim={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,dx:0,dy:0,dragged:false,
+    time:0,channelTime:0,channelAngle:-.7,channeling:false,trailTime:0};
 }
 function moveTouchThrow(e){
   const g=touchThrowAim;if(!g||g.pointerId!==e.pointerId||phase!=='playing')return;
@@ -1163,14 +1451,18 @@ function releaseTouchThrow(e){
     updateAim();
   }
   const direction={...aim};
+  const channelAngle=touchThrowAim.channeling?touchThrowAim.channelAngle:null;
   touchThrowAim=null;pointer.active=false;
-  if(phase==='playing'&&!leap&&Math.abs(stance-stanceTarget)<=.005&&!startThrow(direction)){
+  if(phase==='playing'&&!leap&&Math.abs(stance-stanceTarget)<=.005&&!startThrow(direction,channelAngle)){
     // Preserve a release made just before recovery ends, with its original
     // direction. Never leave a delayed throw waiting indefinitely.
     touchThrowQueued={dir:direction,life:TOUCH_THROW_BUFFER_SECONDS};
   }
 }
-function cancelTouchThrow(){touchThrowAim=null;touchThrowQueued=null;pointer.active=false;$('throwButton')?.classList.remove('aiming','queued');}
+function cancelTouchThrow(){
+  if(touchThrowAim?.channeling&&!swing&&!leap&&!throwFlight){const rig=hero.userData.weaponRig;spinRecovery={time:0,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};}
+  touchThrowAim=null;touchThrowQueued=null;pointer.active=false;$('throwButton')?.classList.remove('aiming','queued','channeling');
+}
 function initInput(){
   $('startButton').onclick=startGame;$('retryButton').onclick=startGame;$('restartButton').onclick=startGame;
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
@@ -1334,6 +1626,7 @@ async function init(){
   sun=new THREE.DirectionalLight(0xffdfb1,2.25);sun.position.set(-15,28,8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-23;sun.shadow.camera.right=23;sun.shadow.camera.top=23;sun.shadow.camera.bottom=-23;sun.shadow.camera.far=75;sun.shadow.normalBias=.04;sun.shadow.bias=-.0002;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight(0x80c7dd,1.15);rim.position.set(8,14,-18);scene.add(rim);
   hero=makeWarrior();scene.add(hero);player.materials=prepareMaterials(hero);
+  hammerMaterials=prepareMaterials(hero.userData.hammerPivot);player.materials.push(...hammerMaterials);hammerAura=createHammerAura();
   chargeRing=new THREE.Mesh(new THREE.RingGeometry(.93,1,48),new THREE.MeshBasicMaterial({color:color.gold,side:THREE.DoubleSide,transparent:true,opacity:.5,depthWrite:false}));chargeRing.rotation.x=-Math.PI/2;chargeRing.visible=false;scene.add(chargeRing);
   const arrowGeo=new THREE.BufferGeometry();arrowGeo.setAttribute('position',new THREE.Float32BufferAttribute([-.19,0,-.1,.19,0,-.1,0,0,.25],3));
   directionMarker=new THREE.Mesh(arrowGeo,new THREE.MeshBasicMaterial({color:0xf6cf8a,side:THREE.DoubleSide,transparent:true,opacity:.64,depthWrite:false}));scene.add(directionMarker);

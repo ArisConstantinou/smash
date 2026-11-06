@@ -179,7 +179,7 @@ const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
   get phase(){return phase;}, get player(){return player;}, get world(){return world;},
-  get enemies(){return enemies;}, get drops(){return drops;}, get boss(){return boss;},
+  get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
   get charge(){return charge;}, get swing(){return swing;}, get spin(){return spin;}, get facing(){return facing;},
   get elapsed(){return elapsed;}, get round(){return round;}, get relics(){return relics;},
@@ -194,6 +194,7 @@ export const __integration = {
   get guarding(){return guarding;}, get aim(){return aim;}, get aimPreview(){return aimPreview;},
   get leap(){return leap;}, get throwWindup(){return throwWindup;}, get throwFlight(){return throwFlight;},
   get throwCooldown(){return throwCooldown;},
+  get hammerLightning(){return hammerLightning;}, get hammerAura(){return hammerAura;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
   updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnDrop, hitEnemy,
@@ -341,6 +342,26 @@ function catchShortTouchThrow() {
   assert.equal(api.hero.userData.weaponHeld, true);
   assert.ok(api.throwCooldown > .5, 'A near-wall catch leaves time to test the next gesture during recovery');
   return { wall, projectile };
+}
+function finishThrow(afterStep = () => {}, step = 1 / 120) {
+  let projectile = api.throwFlight, returning = false;
+  for (let time = 0; (api.throwWindup || api.throwFlight) && time < 5; time += step) {
+    api.updatePlayer(step);
+    if (api.throwFlight) {
+      projectile ||= api.throwFlight;
+      assert.equal(api.throwFlight, projectile, 'Bounces must steer one physical projectile');
+      returning ||= projectile.returning;
+      assert.ok([projectile.x, projectile.y, projectile.z].every(Number.isFinite));
+      assert.equal(api.hero.userData.weaponHeld, false);
+    }
+    afterStep(projectile, step);
+  }
+  assert.ok(projectile && returning, 'The throw must enter a real return flight');
+  assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null);
+  assert.equal(api.hero.userData.weaponHeld, true);
+  assert.equal(projectile.mesh.parent, null);
+  assert.equal(api.scene.children.filter(child => child.userData.kind === 'hammer-projectile').length, 0);
+  return projectile;
 }
 function aimAt(x, z) {
   const p = api.screenPoint(x, api.player.y + 1.2, z);
@@ -585,18 +606,20 @@ test('a continuous swing crosses many poses and damages a target only once', () 
   assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 480 Hz sample`);
 });
 
-test('a quick left-click connects promptly and completes its weighted swing within 350 ms', () => {
+test('a quick left-click connects during acceleration and completes its readable 360 ms forehand', () => {
   arena(); api.poseHero(1);
   const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
   mouseAttack(true); mouseAttack(false);
+  const plannedDuration = api.swing.duration;
+  close(plannedDuration, .36);
   let contactTime = null, duration = 0;
   while (api.swing && duration < .5) {
     api.updatePlayer(1 / 240); duration += 1 / 240;
     if (contactTime === null && enemy.hp < hp) contactTime = duration;
   }
   assert.notEqual(contactTime, null, 'A tap must connect with the forward target');
-  assert.ok(contactTime <= .14, `Tap contact took ${contactTime.toFixed(3)} seconds`);
-  assert.ok(duration <= .35, `The full tap animation took ${duration.toFixed(3)} seconds`);
+  assert.ok(contactTime <= plannedDuration * .4 + 1 / 240, `Tap contact took ${contactTime.toFixed(3)} seconds`);
+  close(duration, plannedDuration, 1 / 240 + 1e-6);
   assert.equal(api.swing, null);
 });
 
@@ -655,7 +678,8 @@ test('each hand mode cycles its own three-stroke combo and a new run resets both
     pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
     assert.ok(api.swing); assert.equal(api.swing.variant, expected);
     assert.equal(api.swing.twoHanded, api.stance > .9);
-    playerSteps(.4);
+    playerSteps(api.swing.duration + .04);
+    assert.equal(api.swing, null, 'Changing hand modes waits for the actual stroke to finish');
   };
   for (let i = 0; i < 4; i++) {
     attack(chains.oneHanded[i % 3]);
@@ -691,6 +715,10 @@ test('an active combo stroke stays fixed and rejected recovery inputs do not ski
 });
 
 test('every combo stroke hits close and forward enemies promptly once without damaging enemies behind', () => {
+  const durations = {
+    'one-forehand': .36, 'one-backhand': .38, 'one-diagonal': .42,
+    'two-broadside': .44, 'two-cross': .46, 'two-overhead': .50,
+  };
   for (const twoHanded of [false, true]) for (const sizeLevel of [0, 2]) for (const distance of [.9, 2.3]) {
     arena();
     if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
@@ -702,17 +730,20 @@ test('every combo stroke hits close and forward enemies promptly once without da
       const before = front.hp; let previousHp = before, changes = 0, contactTime = null, duration = 0;
       mouseAttack(true); mouseAttack(false);
       const strike = api.swing; assert.equal(strike?.variant, variant);
-      while (api.swing && duration < .5) {
+      close(strike.duration, durations[variant]);
+      while (api.swing && duration < .65) {
         api.updatePlayer(1 / 240); duration += 1 / 240;
         assert.equal(strike.variant, variant);
+        assert.equal(rear.hp, rear.maxHp,
+          `${variant}, size ${sizeLevel}: rear contact at normalized time ${(strike.time / strike.duration).toFixed(3)}`);
         if (front.hp !== previousHp) { previousHp = front.hp; changes++; contactTime ??= duration; }
       }
       const label = `${variant}, size ${sizeLevel}, range ${distance}`;
       assert.equal(api.swing, null, label); assert.equal(changes, 1, `${label}: the stroke must connect exactly once`);
       assert.equal(front.hp, before - strike.damage, label);
       assert.equal(rear.hp, rear.maxHp, `${label}: a normal stroke must not become a full-circle attack`);
-      assert.ok(contactTime <= .14, `${label}: contact took ${contactTime} seconds`);
-      assert.ok(duration <= .35, `${label}: the new angle must retain the quick swing timing`);
+      assert.ok(contactTime <= durations[variant] * .4 + 1 / 120, `${label}: contact took ${contactTime} seconds`);
+      close(duration, durations[variant], 1 / 240 + 1e-6);
       playerSteps(.04);
     }
   }
@@ -1287,17 +1318,205 @@ test('a mobile throw blocked beside the warrior damages the close wall once and 
   });
 });
 
-test('a mobile throw respects target height and hits the ground enemy beyond an elevated one', () => {
+test('a mobile throw passes below elevated enemies before a physical ground hit can begin an upward bounce', () => {
   touchArena(() => {
     api.setFacing(0, 1); api.poseHero(1);
     const high = stationaryEnemy('brute', 0, 5), ground = stationaryEnemy('brute', 0, 9);
     high.y = 8; high.mesh.position.y = 8;
+    const unreachable = stationaryEnemy('brute', -4, 6);
+    unreachable.y = 24; unreachable.mesh.position.y = 24;
     const hp = ground.hp;
     api.updateAim(); assert.equal(api.aimPreview.contact?.target, ground);
-    throwTouch('pointerdown'); throwTouch('pointerup'); playerSteps(2);
-    assert.equal(high.hp, high.maxHp);
+    throwTouch('pointerdown'); throwTouch('pointerup');
+    const hits = [], priorHP = new Map([[ground, ground.hp], [high, high.hp]]);
+    finishThrow(() => {
+      for (const enemy of [ground, high]) if (enemy.hp !== priorHP.get(enemy)) {
+        hits.push(enemy); priorHP.set(enemy, enemy.hp);
+      }
+      if (ground.hp === hp) assert.equal(high.hp, high.maxHp, 'The first straight leg must pass below the elevated collider');
+    });
+    assert.deepEqual(hits, [ground, high], 'Only a completed ground hit may redirect the weapon upward');
     assert.equal(ground.hp, hp - Math.round(api.stats.power * 2.2));
+    assert.equal(high.hp, high.maxHp - Math.round(api.stats.power * 2.2));
+    assert.equal(unreachable.hp, unreachable.maxHp, 'An enemy outside the 3D chain reach must not receive an automatic hit');
     assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
+test('a mobile throw bends through three distinct enemies once and returns the same hammer', () => {
+  touchArena(() => {
+    api.setFacing(0, 1); api.poseHero(1);
+    const targets = [[0, 6], [4, 8], [-2, 11]].map(([x, z]) => stationaryEnemy('brute', x, z));
+    const hp = targets.map(enemy => enemy.hp), changes = targets.map(() => 0), priorHP = [...hp];
+    const contactOrder = [], headings = [];
+    throwTouch('pointerdown'); throwTouch('pointerup');
+    const projectile = finishThrow(h => {
+      for (const [i, enemy] of targets.entries()) if (enemy.hp !== priorHP[i]) {
+        changes[i]++; priorHP[i] = enemy.hp; contactOrder.push(enemy);
+      }
+      if (api.throwFlight && !h.returning) headings.push(Math.atan2(h.dir.x, h.dir.z));
+    });
+    assert.deepEqual(changes, [1, 1, 1]);
+    assert.equal(new Set(contactOrder).size, 3); assert.equal(contactOrder[0], targets[0]);
+    const damage = Math.round(api.stats.power * 2.2);
+    assert.deepEqual(targets.map(enemy => enemy.hp), hp.map(value => value - damage));
+    assert.ok(Math.max(...headings) - Math.min(...headings) > 1,
+      'Enemies off the original ray must be reached by visibly different flight headings');
+    assert.equal(projectile.hitCount, 3); assert.equal(projectile.bounces, 2);
+    const caughtHP = targets.map(enemy => enemy.hp); playerSteps(.5);
+    assert.deepEqual(targets.map(enemy => enemy.hp), caughtHP, 'Returning and catching cannot repeat outbound damage');
+  });
+});
+
+test('a ricochet stops after five distinct hits even when more living enemies are within reach', () => {
+  arena(); api.poseHero(1);
+  const targets = [[0, 6], [4, 7], [7, 10], [4, 13], [0, 13], [-4, 10], [-4, 6]]
+    .map(([x, z]) => stationaryEnemy('brute', x, z));
+  targets.forEach(enemy => { enemy.hp = enemy.maxHp = 1000; });
+  const priorHP = targets.map(enemy => enemy.hp), changes = targets.map(() => 0);
+  aimAt(0, 12); key('KeyR', true); key('KeyR', false);
+  const projectile = finishThrow(() => {
+    targets.forEach((enemy, i) => {
+      if (enemy.hp !== priorHP[i]) { changes[i]++; priorHP[i] = enemy.hp; }
+    });
+  });
+  assert.equal(targets.filter(enemy => enemy.hp < enemy.maxHp).length, 5);
+  assert.equal(targets.filter(enemy => enemy.hp === enemy.maxHp).length, 2);
+  assert.ok(changes.every(count => count === 0 || count === 1), 'No visited enemy may consume a second chain hit');
+  for (const enemy of targets.filter(enemy => enemy.hp < enemy.maxHp)) {
+    assert.equal(enemy.maxHp - enemy.hp, Math.round(api.stats.power * 2.2));
+  }
+  assert.equal(projectile.hitCount, 5); assert.equal(projectile.bounces, 4);
+});
+
+test('a surviving wall prevents a chain from acquiring the enemy on its far side', () => {
+  arena(); api.poseHero(1);
+  const first = stationaryEnemy('brute', 0, 6), screened = stationaryEnemy('brute', 5, 6);
+  const wall = placeObject('wall', 2.8, 6, { w: .08, d: 7, h: 4, hp: 1000, maxHp: 1000 });
+  aimAt(0, 12); assert.equal(api.aimPreview.contact?.target, first);
+  key('KeyR', true); key('KeyR', false);
+  const projectile = finishThrow();
+  assert.equal(first.hp, first.maxHp - Math.round(api.stats.power * 2.2));
+  assert.equal(screened.hp, screened.maxHp, 'The bounce must not damage through a blocking wall');
+  assert.equal(wall.hp, wall.maxHp, 'Rejecting a blocked bounce must not create a distant wall impact');
+  assert.equal(projectile.hitCount, 1); assert.equal(projectile.bounces, 0);
+});
+
+test('a dead ricochet target is replaced when possible and otherwise causes a clean return', () => {
+  for (const hasReplacement of [true, false]) {
+    arena(); api.poseHero(1);
+    const first = stationaryEnemy('brute', 0, 6), doomed = stationaryEnemy('brute', 3, 8);
+    const replacement = hasReplacement ? stationaryEnemy('brute', -3, 10) : null;
+    aimAt(0, 12); key('KeyR', true); key('KeyR', false);
+    for (let i = 0; (!api.throwFlight || api.throwFlight.hitCount === 0) && i < 240; i++) api.updatePlayer(1 / 120);
+    const projectile = api.throwFlight;
+    assert.ok(projectile); assert.equal(projectile.chainTarget, doomed);
+    api.hitEnemy(doomed, 99999, { x: 0, z: 1 }, 0, 0);
+    assert.equal(doomed.dead, true);
+    const completed = finishThrow(); assert.equal(completed, projectile);
+    assert.equal(first.hp, first.maxHp - Math.round(api.stats.power * 2.2));
+    assert.equal(projectile.hits.has(doomed), false, 'Removing a target must not count as a projectile hit');
+    assert.equal(projectile.hitCount, hasReplacement ? 2 : 1);
+    if (replacement) assert.equal(replacement.hp, replacement.maxHp - Math.round(api.stats.power * 2.2));
+  }
+});
+
+test('a returning hammer catches the moving hand without changing the player position or duplicating the weapon', () => {
+  arena(); api.poseHero(1); aimAt(0, 16);
+  key('KeyR', true); key('KeyR', false);
+  for (let i = 0; !api.throwFlight?.returning && i < 240; i++) api.updatePlayer(1 / 120);
+  const projectile = api.throwFlight; assert.ok(projectile?.returning);
+  const start = { x: api.player.x, z: api.player.z }, direction = core.screenMovement(1, 0);
+  key('KeyD', true);
+  let priorPlayer = { ...start }, moved = 0, catchDistance = null;
+  const completed = finishThrow((h, dt) => {
+    const step = Math.hypot(api.player.x - priorPlayer.x, api.player.z - priorPlayer.z);
+    close(step, api.stats.speed * dt, .0001);
+    assert.ok((api.player.x - priorPlayer.x) * direction.x + (api.player.z - priorPlayer.z) * direction.z > 0);
+    moved += step; priorPlayer = { x: api.player.x, z: api.player.z };
+    if (!api.throwFlight) catchDistance = h.mesh.position.distanceTo(api.hero.userData.getThrowCenterWorld(new THREE.Vector3()));
+  });
+  key('KeyD', false);
+  assert.equal(completed, projectile); assert.ok(moved > 1);
+  close(catchDistance, 0, 1e-6);
+  assert.equal(api.hero.userData.hammerPivot.visible, true);
+  close(worldPosition(api.hero.userData.rightGrip).distanceTo(worldPosition(api.hero.userData.rightGripAnchor)), 0);
+});
+
+test('a successful catch lights only the hammer, expires cleanly, and never expands weapon collision bounds', () => {
+  arena(); api.poseHero(1);
+  const u = api.hero.userData;
+  const materials = root => {
+    const found = new Set();
+    root.traverse(node => {
+      if (node.material) for (const material of Array.isArray(node.material) ? node.material : [node.material]) found.add(material);
+    });
+    return [...found];
+  };
+  const weapon = materials(u.hammerPivot), body = materials(u.body), baseline = new Map();
+  for (const material of [...weapon, ...body]) if (material.emissive) baseline.set(material, material.emissive.clone());
+  assert.ok(weapon.every(material => !body.includes(material)), 'Weapon emission needs materials independent of the armor');
+  const radius = u.getThrowRadius(), aura = api.hammerAura, geometry = aura.bolts.geometry;
+  assert.equal(aura.root.parent, api.scene); assert.equal(aura.root.visible, false);
+  aimAt(0, 16); key('KeyR', true); key('KeyR', false);
+  let projectileVisuals = null;
+  const projectile = finishThrow(h => {
+    if (h && !projectileVisuals) {
+      projectileVisuals = []; h.mesh.traverse(node => projectileVisuals.push(node));
+    }
+  });
+  assert.ok(projectileVisuals.every(node => !node.isSprite && !node.isLine), 'The thrown weapon must not clone its aura');
+  close(projectile.radius, radius); close(u.getThrowRadius(), radius);
+  assert.ok(api.hammerLightning > 2); assert.equal(aura.root.visible, true);
+  assert.ok(aura.glow.material.opacity > 0 && aura.bolts.material.opacity > 0);
+  assert.ok(weapon.some(material => material.emissive && !material.emissive.equals(baseline.get(material))));
+  for (const material of body) if (material.emissive) assert.ok(material.emissive.equals(baseline.get(material)));
+  const firstPattern = Array.from(aura.bolts.geometry.attributes.position.array);
+  advance(.15);
+  assert.notDeepEqual(Array.from(aura.bolts.geometry.attributes.position.array), firstPattern,
+    'Lightning must animate through the actual frame loop');
+  assert.equal(aura.bolts.geometry, geometry, 'Catch effects must reuse the fixed geometry pool');
+  close(u.getThrowRadius(), radius);
+  advance(3);
+  assert.equal(api.hammerLightning, 0); assert.equal(aura.root.visible, false);
+  for (const material of weapon) if (material.emissive) assert.ok(material.emissive.equals(baseline.get(material)), 'The glow must restore its material baseline');
+  aimAt(0, 16); key('KeyR', true); key('KeyR', false); playerSteps(.3);
+  assert.ok(api.throwFlight);
+  const interrupted = api.throwFlight; api.startGame(); api.updateHUD();
+  assert.equal(interrupted.mesh.parent, null); assert.equal(api.hammerLightning, 0);
+  assert.equal(aura.root.visible, false); assert.equal(elements.get('throwButton').classList.contains('lightning-ready'), false);
+});
+
+test('holding a mobile throw spins vertically along aim while walking and cancels without a stale release', () => {
+  touchArena(() => {
+    moveStick('pointerdown', 1, 0, 101);
+    throwTouch('pointerdown'); throwTouch('pointermove', -60, 0);
+    const direction = { ...api.aim }, u = api.hero.userData, samples = [];
+    const firstPosition = new THREE.Vector3(api.player.x, api.player.y, api.player.z);
+    playerSteps(.85, 1 / 120, () => {
+      assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null);
+      if (api.touchThrowAim.channelTime > .15) {
+        const vector = worldPosition(u.hammerHead).sub(worldPosition(u.hammerPivot));
+        samples.push({ y: vector.y, along: vector.x * direction.x + vector.z * direction.z });
+        close(vector.x * direction.z - vector.z * direction.x, 0, .0001);
+      }
+      close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
+    });
+    assert.ok(api.touchThrowAim?.channeling);
+    assert.ok(new THREE.Vector3(api.player.x, api.player.y, api.player.z).distanceTo(firstPosition) > 3);
+    assert.ok(Math.max(...samples.map(p => p.y)) > .9 && Math.min(...samples.map(p => p.y)) < -.9,
+      'The shaft must visibly pass both above and below the wrist');
+    assert.ok(Math.max(...samples.map(p => p.along)) > .9 && Math.min(...samples.map(p => p.along)) < -.9,
+      'Channeling must complete a vertical orbit instead of rocking between two poses');
+    assert.equal(api.hammerAura.root.visible, true); assert.equal(api.hammerLightning, 0);
+    throwTouch('pointercancel', -60, 0); playerSteps(.15);
+    assert.equal(api.touchThrowAim, null); assert.equal(api.hammerAura.root.visible, false);
+    assert.ok(api.touch.x > .99, 'Cancelling the throw must preserve the movement thumb');
+    throwTouch('pointerup', -60, 0); playerSteps(.5);
+    assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null); assert.equal(api.hammerLightning, 0);
+    close(u.weaponRig.quaternion.angleTo(new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(u.weaponRest.x, u.weaponRest.y, u.weaponRest.z))), 0, 1e-6);
+    moveStick('pointerup', 0, 0, 101);
   });
 });
 
@@ -2214,12 +2433,85 @@ test('lethal damage opens defeat and retry resets score, upgrades and sector', (
   advance(.1); assert.deepEqual(browserErrors, []);
 });
 
-test('permanent enemy removal releases its instance-owned geometry', () => {
-  reset(); api.spawnEnemy('robot', { x: 0, z: 5 });
-  const enemy = api.enemies.at(-1), geometries = new Set();
+test('real enemy rigs visibly flinch and hop a short distance away from a hammer hit, with heavier enemies moving less', () => {
+  const travel = new Map();
+  for (const type of ['zombie', 'crawler', 'brute', 'mech']) {
+    arena();
+    const enemy = stationaryEnemy(type, 0, 6);
+    enemy.hp = enemy.maxHp = 1000;
+    api.updateEnemies(.01);
+    const startX = enemy.x, startZ = enemy.z;
+    api.hitEnemy(enemy, 10, { x: 1, z: 0 }, 5.4, 2.3);
+    let maxHeight = 0, maxTilt = 0;
+    for (let i = 0; i < 120; i++) {
+      api.updateEnemies(1 / 120);
+      maxHeight = Math.max(maxHeight, enemy.y);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(enemy.mesh.quaternion);
+      maxTilt = Math.max(maxTilt, Math.acos(Math.max(-1, Math.min(1, up.y))));
+      assert.ok(enemy.x >= startX - 1e-6, `${type}: the impact must push away from its source`);
+      close(enemy.z, startZ, 1e-6);
+    }
+    const distance = enemy.x - startX; travel.set(type, distance);
+    assert.ok(distance > .1 && distance < 1.1, `${type}: expected a short bounce back, moved ${distance} metres`);
+    assert.ok(maxHeight > .015 && maxHeight < .4, `${type}: expected a small impact hop, reached ${maxHeight}`);
+    assert.ok(maxTilt > .06, `${type}: the actual rig must recoil visibly after its species animation runs`);
+    close(enemy.mesh.rotation.x, 0, .001); close(enemy.mesh.rotation.z, 0, .001);
+    close(enemy.y, 0, .001); assert.equal(enemy.dead, false); assert.equal(enemy.hp, 990);
+  }
+  assert.ok(travel.get('brute') < travel.get('zombie') * .8, 'Heavy bodies must absorb more of the same hit');
+  assert.ok(travel.get('mech') < travel.get('crawler') * .8, 'The species animation must preserve metal enemy mass');
+});
+
+test('hammer knockback stops at the near face of solid scenery without teleporting an enemy through it', () => {
+  arena();
+  const enemy = stationaryEnemy('zombie', 0, 6);
+  enemy.hp = enemy.maxHp = 1000;
+  const wall = placeObject('wall', .9, 6, { w: .1, d: 3, h: 3, hp: 1000, maxHp: 1000 });
+  api.hitEnemy(enemy, 10, { x: 1, z: 0 }, 12, 3);
+  let maximumX = enemy.x;
+  for (let i = 0; i < 120; i++) {
+    api.updateEnemies(1 / 120); maximumX = Math.max(maximumX, enemy.x);
+    assert.ok(enemy.x <= wall.x - wall.w / 2 - enemy.radius + .001,
+      'Every impact step must stay on the original side of the wall');
+    close(enemy.z, 6, 1e-6);
+  }
+  assert.ok(maximumX > .15, 'The fixture must exercise actual recoil movement before the wall stops it');
+});
+
+test('a lethal hit removes enemy gameplay immediately, shows a falling body, then releases its geometry exactly once', () => {
+  arena();
+  const enemy = stationaryEnemy('robot', 0, 5), geometries = new Set();
   enemy.mesh.traverse(o => { if (o.isMesh) geometries.add(o.geometry); });
   let disposals = 0;
   for (const geometry of geometries) geometry.addEventListener('dispose', () => disposals++);
-  api.hitEnemy(enemy, 9999, { x: 0, z: 1 }, 5, 2);
-  assert.equal(disposals, geometries.size, 'Every dead enemy must release its non-shared model geometry');
+  const beforeKills = api.kills, beforeHP = api.player.hp;
+  api.hitEnemy(enemy, 9999, { x: 1, z: 0 }, 5, 2);
+  assert.equal(enemy.dead, true); assert.equal(api.enemies.includes(enemy), false);
+  assert.equal(api.kills, beforeKills + 1); assert.equal(api.enemyFalls.includes(enemy), true);
+  assert.equal(enemy.mesh.parent, api.scene, 'The fatal reaction must be visible before cleanup');
+  assert.equal(disposals, 0, 'A visible falling body must retain its instance geometry');
+  const deadHP = enemy.hp; api.hitEnemy(enemy, 9999, { x: 1, z: 0 }, 5, 2);
+  assert.equal(enemy.hp, deadHP); assert.equal(api.kills, beforeKills + 1, 'A falling body cannot score a second kill');
+  api.updateEnemies(.08);
+  assert.ok(Math.abs(enemy.mesh.rotation.x) + Math.abs(enemy.mesh.rotation.z) > .04,
+    'The body must visibly tip in the direction of its fatal hit');
+  for (let i = 0; i < 120; i++) api.updateEnemies(1 / 120);
+  assert.equal(enemy.mesh.parent, null); assert.equal(api.enemyFalls.includes(enemy), false);
+  assert.equal(disposals, geometries.size, 'Every completed death must release its instance-owned geometry');
+  assert.equal(api.player.hp, beforeHP, 'Falling enemies must not retain attack behavior');
+  api.updateEnemies(.3); assert.equal(disposals, geometries.size, 'Finished corpses must not be disposed repeatedly');
+});
+
+test('a new run cleans an unfinished enemy fall and cannot revive its old combat state', () => {
+  arena();
+  const enemy = stationaryEnemy('crawler', 0, 5), geometries = new Set();
+  enemy.mesh.traverse(o => { if (o.isMesh) geometries.add(o.geometry); });
+  let disposals = 0;
+  for (const geometry of geometries) geometry.addEventListener('dispose', () => disposals++);
+  api.hitEnemy(enemy, 9999, { x: 1, z: 0 }, 5, 2);
+  api.updateEnemies(.05); assert.equal(enemy.mesh.parent, api.scene);
+  api.startGame();
+  assert.equal(enemy.mesh.parent, null); assert.equal(api.enemyFalls.length, 0); assert.equal(api.enemies.length, 0);
+  assert.equal(disposals, geometries.size); assert.equal(api.kills, 0);
+  advance(.5); assert.equal(disposals, geometries.size); assert.equal(api.enemies.includes(enemy), false);
 });

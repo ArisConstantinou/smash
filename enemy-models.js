@@ -281,7 +281,7 @@ export function makeCityEnemy(type='mutant'){
     const legs=[];for(const side of ['left','right'])for(let i=0;i<3;i++)legs.push(root.getObjectByName(side+'Scuttle'+i));
     u.leftLeg=legs[2];u.rightLeg=legs[5];u.legs=legs;
     u.animate=(enemy,dt,time=0)=>{
-      const walking=enemy.state==='walk'||enemy.state==='lunge',step=walking?enemy.walk*1.7:time*2;
+      const walking=!enemy.dead&&!(enemy.stagger>0)&&(enemy.state==='walk'||enemy.state==='lunge'),step=walking?enemy.walk*1.7:time*2;
       legs.forEach((leg,i)=>{const side=i<3?-1:1,phase=step+(i%3)*Math.PI*.68+(i>=3?Math.PI:0);leg.rotation.x=Math.sin(phase)*(walking?.25:.06);leg.rotation.z=side*Math.max(0,Math.cos(phase))*(walking?.17:.025);});
       u.leftArm.rotation.set(0,enemy.state==='windup'?-.38:Math.sin(time*8)*.08,0);
       u.rightArm.rotation.set(0,enemy.state==='windup'?.38:-Math.sin(time*8)*.08,0);
@@ -290,7 +290,7 @@ export function makeCityEnemy(type='mutant'){
   }else if(resolved==='mech'){
     const barrel=root.getObjectByName('rotaryBarrel');u.barrel=barrel;
     u.animate=(enemy,dt,time=0)=>{
-      const active=enemy.state==='windup'||enemy.state==='shoot';
+      const active=!enemy.dead&&!(enemy.stagger>0)&&(enemy.state==='windup'||enemy.state==='shoot');
       barrel.rotation.z+=(dt||0)*(active?18:2.2);
       u.rightArm.rotation.x=active?-.12:.08+Math.sin(enemy.walk)*.12;
       u.body.position.y=Math.abs(Math.sin(enemy.walk))*.025;
@@ -299,7 +299,7 @@ export function makeCityEnemy(type='mutant'){
     const guns=[root.getObjectByName('leftSiegeGun'),root.getObjectByName('rightSiegeGun')];u.guns=guns;
     u.muzzles=[u.muzzle,root.getObjectByName('muzzleRight')];
     u.animate=(enemy,dt,time=0)=>{
-      const windup=enemy.state==='windup';
+      const windup=!enemy.dead&&!(enemy.stagger>0)&&enemy.state==='windup';
       guns.forEach((gun,i)=>{gun.rotation.x=windup?-.09:Math.sin(time*1.5+i)*.015;gun.position.z=.25+(enemy.state==='shoot'?Math.sin(time*24+i*Math.PI)*.08:0);});
       u.leftArm.rotation.x=.10+Math.sin(enemy.walk)*.12;u.rightArm.rotation.x=.10-Math.sin(enemy.walk)*.12;
     };

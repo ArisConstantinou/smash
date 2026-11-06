@@ -106,8 +106,6 @@ kbd.cooldown{opacity:.42;border-color:#6f8170;box-shadow:none}
 #combatDock .action-name { display:block; width:100%; margin-top:1px; color:#f3e6c5; text-align:center; white-space:nowrap; font:700 8px/12px var(--mono); letter-spacing:.25px; }
 #combatDock .action-status { display:block; width:100%; min-height:11px; color:#8fc3b6; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:7px/11px var(--mono); letter-spacing:0; }
 #combatDock #attackButton { border-color:#a88650; background:linear-gradient(155deg,#564d37,#263a37); }
-#combatDock #attackButton.air-smash-ready { border-color:#ffcf83; box-shadow:inset 0 0 12px #ffc77827,0 0 8px #f7c57a29; }
-#combatDock #attackButton.air-smash-armed { border-color:#b3e2ca; box-shadow:inset 0 0 14px #a5d6b82e; }
 #combatDock #leapButton.airborne { border-color:#b3e2ca; box-shadow:inset 0 0 10px #a5d6b822; }
 #combatDock #chargeButton .action-status { color:#ddbe7e; }
 #combatDock:has(.charge-track.spinning) #chargeButton { border-color:#b9ebd4; box-shadow:inset 0 0 22px #86dfc732; }
@@ -745,4 +743,79 @@ body[data-touch-controls="true"] .combat-help p { font-size:11px; line-height:1.
   body:not([data-touch-controls]) #combatDock .movement-pad,
   body:not([data-touch-controls]) #combatDock .action-key,
   body:not([data-touch-controls]) .upgrades-toggle>kbd { display:none!important; }
+}
+
+/* The short airborne input window needs a distinct visual state. Keep the
+   six touch targets fixed; colour, a contained rim and the icon do the work. */
+#combatDock #attackButton.air-smash-ready {
+  z-index:1; opacity:1; border-color:#ffe49b;
+  background:radial-gradient(ellipse at 20% 8%,#70eced5c,transparent 68%),linear-gradient(140deg,#166a7b 4%,#284c77 48%,#8d5b2a);
+  box-shadow:0 0 0 1px #79edf0b3,0 0 19px #4edee769,inset 0 0 17px #ffd57826;
+}
+#combatDock #attackButton.air-smash-ready::before {
+  content:''; position:absolute; inset:2px; border:1px solid #b8ffff;
+  border-radius:4px; opacity:.48; pointer-events:none;
+  box-shadow:inset 0 0 9px #63ebff70;
+  animation:air-smash-rim .78s ease-in-out infinite alternate;
+}
+#combatDock #attackButton.air-smash-ready .action-picture {
+  filter:saturate(1.35) brightness(1.14) drop-shadow(0 0 3px #68f5ffb3);
+  animation:air-smash-icon .78s ease-in-out infinite alternate;
+}
+#combatDock #attackButton.air-smash-ready .action-name { color:#f4ffff; text-shadow:0 1px 2px #092f3c; }
+#combatDock #attackButton.air-smash-ready .action-status {
+  display:block!important; position:relative; width:auto; max-width:100%;
+  min-height:12px; padding:0 4px; border-radius:3px;
+  background:#092b3ed9; color:#ffe59d;
+  font:900 8px/12px var(--body); letter-spacing:.2px; text-overflow:clip;
+}
+#combatDock #attackButton.air-smash-armed {
+  border-color:#aaf2d1; background:linear-gradient(145deg,#235e58,#193f45 70%);
+  box-shadow:inset 0 0 0 1px #aaf2d148,0 0 9px #70e3bf40;
+}
+#combatDock #attackButton.air-smash-armed .action-name { color:#d4ffe8; }
+#combatDock #attackButton.air-smash-armed .action-picture { filter:drop-shadow(0 0 3px #98f2cc5c); }
+#combatDock #attackButton.air-smash-armed .action-status {
+  display:block!important; min-height:12px; color:#aef7d7;
+  font:800 8px/12px var(--body); letter-spacing:.2px;
+}
+#combatDock #attackButton:is(.air-smash-ready,.air-smash-armed) .action-picture {
+  flex-shrink:1; min-height:0;
+}
+body[data-touch-controls="true"] #combatDock #attackButton:is(.air-smash-ready,.air-smash-armed) .action-picture {
+  width:45px; height:32px; margin:0;
+}
+body[data-touch-controls="true"] #combatDock #attackButton:is(.air-smash-ready,.air-smash-armed) .action-name {
+  font-size:8px; line-height:10px;
+}
+body[data-touch-controls="true"] #combatDock #attackButton:is(.air-smash-ready,.air-smash-armed) .action-status {
+  min-height:11px; font-size:7.5px; line-height:11px;
+}
+@keyframes air-smash-rim { from { opacity:.38; } to { opacity:.95; } }
+@keyframes air-smash-icon { from { transform:translateY(0) scale(1); } to { transform:translateY(-1px) scale(1.045); } }
+
+/* Throw charging and the completed catch share the hammer's electric cyan,
+   while the stronger gold/cyan aerial prompt remains the primary cue. */
+#combatDock #throwButton.channeling {
+  border-color:#a2f1e9; background:linear-gradient(145deg,#245e66,#173f50);
+  box-shadow:inset 0 0 0 1px #a2f1e954,0 0 12px #62d8e333;
+}
+#combatDock #throwButton.channeling .action-picture { filter:drop-shadow(0 0 3px #88f2f294); }
+#combatDock #throwButton.lightning-ready {
+  border-color:#bcf7ff; background:linear-gradient(145deg,#2b617b,#1a3a57);
+  box-shadow:inset 0 0 12px #69deff26,0 0 12px #76e6ff52;
+}
+#combatDock #throwButton.lightning-ready::before {
+  content:''; position:absolute; top:5px; left:5px; width:9px; height:17px;
+  background:#d9ffff; clip-path:polygon(54% 0,4% 57%,42% 57%,27% 100%,100% 37%,61% 37%,76% 0);
+  pointer-events:none;
+}
+#combatDock #throwButton.lightning-ready .action-picture { filter:brightness(1.1) drop-shadow(0 0 3px #6feaff); }
+#combatDock #throwButton.lightning-ready .action-name { color:#d8faff; }
+body:not([data-state="playing"]) #combatDock #attackButton.air-smash-ready::before,
+body:not([data-state="playing"]) #combatDock #attackButton.air-smash-ready .action-picture { animation-play-state:paused; }
+@media (prefers-reduced-motion:reduce) {
+  #combatDock #attackButton.air-smash-ready::before,
+  #combatDock #attackButton.air-smash-ready .action-picture { animation:none!important; }
+  #combatDock #attackButton.air-smash-ready::before { opacity:.75; }
 }

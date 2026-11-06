@@ -2,10 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
 import { makeWarrior } from '../models.js';
-import { HAMMER_COMBOS, sampleHammerSwing, SWING_CONTACT_START, SWING_CONTACT_END } from '../hammer-motion.js';
+import { HAMMER_COMBOS, getHammerSwingDuration, sampleHammerSwing, SWING_CONTACT_START, SWING_CONTACT_END } from '../hammer-motion.js';
 
 const delta = 1e-4;
 const angularSpeed = p => Math.abs(sampleHammerSwing(p + delta).yaw - sampleHammerSwing(p - delta).yaw) / (2 * delta);
+
+function setShaftRotation(rotation, up, direction, pose) {
+  direction.set(pose.directionX, pose.directionY, pose.directionZ);
+  return rotation.setFromUnitVectors(up, direction)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(up, pose.shaftTwist));
+}
 
 test('a quick tap loads the shoulder, accelerates through the front and slows into its follow-through', () => {
   const windup = sampleHammerSwing(SWING_CONTACT_START), impact = sampleHammerSwing(.40), follow = sampleHammerSwing(SWING_CONTACT_END);
@@ -49,8 +55,7 @@ test('the real warrior rig follows a continuous full arc with connected hands in
     for (let step = 0; step <= 160; step++) {
       const pose = sampleHammerSwing(step / 160, { twoHanded: !!stance });
       u.body.rotation.set(pose.bodyPitch, pose.bodyYaw, pose.bodyRoll); u.body.position.y = pose.bodyDrop;
-      direction.set(Math.sin(pose.yaw), pose.elevation, Math.cos(pose.yaw)).normalize();
-      targetRotation.setFromUnitVectors(up, direction);
+      setShaftRotation(targetRotation, up, direction, pose);
       targetPosition.set(pose.gripX, pose.gripY, pose.gripZ);
       u.weaponRig.quaternion.copy(restRotation).slerp(targetRotation, pose.windup).slerp(restRotation, pose.recovery);
       u.weaponRig.position.copy(restPosition).lerp(targetPosition, pose.windup).lerp(restPosition, pose.recovery);
@@ -110,9 +115,88 @@ test('both hand modes have visibly different forehand, reverse and finishing tra
     'The third one-handed stroke must load higher than the side sweep');
   assert.ok(Math.abs(at(overhead, .68).yaw - at(overhead, .16).yaw) < .4,
     'The overhead finisher must descend in front instead of repeating a side sweep');
-  assert.ok(Math.atan(at(overhead, .16).elevation) - Math.atan(at(overhead, .68).elevation) > 1,
-    'The overhead head must travel from a steep raised shaft to a downward strike');
+  assert.ok(at(overhead, .16).directionY > .8 && at(overhead, .16).directionZ < -.3,
+    'The overhead must load above and behind the crown, not stop at a steep forward slope');
+  assert.ok(at(overhead, .68).directionY < -.25 && at(overhead, .68).directionZ > .9,
+    'The overhead must finish low in front of the warrior');
   assert.ok(at(overhead, .35).trail > .5, 'A vertical strike still needs a visible speed-based trail');
+});
+
+test('combo rhythms leave readable heavy finishes while front contact stays responsive', () => {
+  const quick = HAMMER_COMBOS.oneHanded.map(getHammerSwingDuration);
+  const heavy = HAMMER_COMBOS.twoHanded.map(getHammerSwingDuration);
+  for (const durations of [quick, heavy]) {
+    assert.ok(durations[0] < durations[1] && durations[1] < durations[2],
+      'A chain must change rhythm, rather than playing every silhouette at the same speed');
+    for (const duration of durations) {
+      assert.ok(duration >= .34 && duration <= .50, 'Readable motion must not introduce a sluggish attack');
+      assert.ok(duration * .40 <= .20, 'The front contact must arrive within 200 ms');
+    }
+  }
+  for (let index = 0; index < quick.length; index++) assert.ok(heavy[index] > quick[index]);
+  const finish = sampleHammerSwing(.55, { variant: 'two-overhead' });
+  assert.equal(finish.trail, 0, 'The downstroke must arrest at its planted finish before recovery');
+  assert.equal(finish.recovery, 0, 'A brief visible planted pose must precede lifting the hammer again');
+  assert.equal(getHammerSwingDuration('unknown'), .32);
+});
+
+test('level, rising and descending silhouettes remain distinct from the elevated game camera', () => {
+  const headLength = 1.78;
+  const headAt = (variant, progress) => {
+    const pose = sampleHammerSwing(progress, { variant });
+    return new THREE.Vector3(pose.gripX + headLength * pose.directionX,
+      pose.gripY + headLength * pose.directionY, pose.gripZ + headLength * pose.directionZ);
+  };
+  const load = variant => headAt(variant, SWING_CONTACT_START);
+  const finish = variant => headAt(variant, SWING_CONTACT_END);
+  assert.ok(Math.abs(finish('one-forehand').y - load('one-forehand').y) < .2,
+    'The first shield strike must read as a level side cut');
+  assert.ok(finish('one-backhand').y - load('one-backhand').y > 1.5,
+    'The reverse shield strike must visibly rise, not mirror the same level cut');
+  assert.ok(load('one-diagonal').y - finish('one-diagonal').y > 2,
+    'The one-handed finisher must descend from the shoulder');
+  assert.ok(load('two-cross').y - finish('two-cross').y > 2,
+    'The two-handed reverse strike must descend, unlike the one-handed rising backhand');
+  assert.ok(load('two-overhead').z < -.5 && load('two-overhead').y > 2.8);
+  assert.ok(Math.abs(finish('two-overhead').x - load('two-overhead').x) < .05);
+  assert.ok(headAt('one-forehand', .40).y - headAt('two-broadside', .40).y > .3,
+    'The wide two-handed cut must pass below the compact shield cut');
+
+  // Camera-space separation catches differences hidden along the view axis.
+  // These are actual world lengths in the orthographic camera plane, rather
+  // than a pixel test tied to one monitor's viewport or zoom.
+  const camera = new THREE.OrthographicCamera(-20, 20, 13, -13, .1, 160);
+  camera.position.set(13, 23, 18); camera.lookAt(0, 0, 0); camera.updateMatrixWorld(true);
+  for (const heading of [0, Math.atan2(-.585491, -.810679), Math.PI / 2, Math.PI, -Math.PI / 2]) {
+    const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+    for (const variants of Object.values(HAMMER_COMBOS)) {
+      const paths = variants.map(variant => Array.from({ length: 105 }, (_, index) =>
+        headAt(variant, .16 + .52 * index / 104).applyQuaternion(turn).applyMatrix4(camera.matrixWorldInverse)));
+      for (let a = 0; a < paths.length; a++) for (let b = a + 1; b < paths.length; b++) {
+        const squared = paths[a].reduce((sum, point, index) => sum
+          + (point.x - paths[b][index].x) ** 2 + (point.y - paths[b][index].y) ** 2, 0);
+        assert.ok(Math.sqrt(squared / paths[a].length) > .65,
+          `${variants[a]} and ${variants[b]} collapse into the same visible path at heading ${heading}`);
+      }
+    }
+  }
+});
+
+test('the hammer striking faces track the stroke plane without rolling onto an edge', () => {
+  const up = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3(), rotation = new THREE.Quaternion();
+  for (const variants of Object.values(HAMMER_COMBOS)) for (const variant of variants) {
+    for (let step = 0; step <= 240; step++) {
+      const pose = sampleHammerSwing(step / 240, { variant });
+      setShaftRotation(rotation, up, direction, pose);
+      assert.ok(Math.abs(direction.length() - 1) < 1e-10);
+      const shaft = up.clone().applyQuaternion(rotation);
+      assert.ok(shaft.distanceTo(direction) < 1e-10, 'Head alignment must not alter the collision path');
+      const strikingAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(rotation);
+      const tangent = new THREE.Vector3(Math.cos(pose.yaw), 0, -Math.sin(pose.yaw));
+      assert.ok(strikingAxis.dot(tangent) > 1 - 1e-10,
+        `${variant}: the striking face rolls away from the intended swing plane`);
+    }
+  }
 });
 
 test('all six combo profiles remain finite and preserve velocity across their animation phases', () => {
@@ -124,9 +208,9 @@ test('all six combo profiles remain finite and preserve velocity across their an
       for (const field of ['windup', 'recovery', 'trail']) assert.ok(pose[field] >= 0 && pose[field] <= 1);
     }
     const epsilon = 1e-5;
-    for (const boundary of [SWING_CONTACT_START, .40, SWING_CONTACT_END]) {
+    for (const boundary of [SWING_CONTACT_START, .40, .48, .54, SWING_CONTACT_END]) {
       const before = sampleHammerSwing(boundary - epsilon, options), at = sampleHammerSwing(boundary, options), after = sampleHammerSwing(boundary + epsilon, options);
-      for (const field of ['yaw', 'elevation', 'gripX', 'gripY', 'gripZ']) {
+      for (const field of ['yaw', 'pitch', 'directionX', 'directionY', 'directionZ', 'shaftTwist', 'gripX', 'gripY', 'gripZ']) {
         const leftVelocity = (at[field] - before[field]) / epsilon, rightVelocity = (after[field] - at[field]) / epsilon;
         assert.ok(Math.abs(leftVelocity - rightVelocity) < .02, `${variant}: ${field} velocity snaps at phase ${boundary}`);
       }
@@ -148,17 +232,18 @@ test('all six physical hammer paths keep both hands attached without stretching 
     const restRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(u.weaponRest.x, u.weaponRest.y, u.weaponRest.z));
     const up = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3(), targetRotation = new THREE.Quaternion(), targetPosition = new THREE.Vector3();
     const path = [];
-    let previousHead = null, maxHeadStep = 0, maxArmReach = 0;
+    let previousHead = null, previousRotation = null, maxHeadStep = 0, maxRotationStep = 0, maxArmReach = 0;
     for (let step = 0; step <= 240; step++) {
       const pose = sampleHammerSwing(step / 240, { variant, twoHanded });
       u.body.rotation.set(pose.bodyPitch, pose.bodyYaw, pose.bodyRoll); u.body.position.y = pose.bodyDrop;
-      direction.set(Math.sin(pose.yaw), pose.elevation, Math.cos(pose.yaw)).normalize();
-      targetRotation.setFromUnitVectors(up, direction); targetPosition.set(pose.gripX, pose.gripY, pose.gripZ);
+      setShaftRotation(targetRotation, up, direction, pose); targetPosition.set(pose.gripX, pose.gripY, pose.gripZ);
       u.weaponRig.quaternion.copy(restRotation).slerp(targetRotation, pose.windup).slerp(restRotation, pose.recovery);
       u.weaponRig.position.copy(restPosition).lerp(targetPosition, pose.windup).lerp(restPosition, pose.recovery);
       u.updateGrip(); hero.updateMatrixWorld(true);
       const head = u.hammerHead.getWorldPosition(new THREE.Vector3());
       if (previousHead) maxHeadStep = Math.max(maxHeadStep, previousHead.distanceTo(head));
+      if (previousRotation) maxRotationStep = Math.max(maxRotationStep, previousRotation.angleTo(u.weaponRig.quaternion));
+      previousRotation = u.weaponRig.quaternion.clone();
       previousHead = head; path.push(head);
       for (const [hand, anchor, arm] of [[u.rightGrip, u.rightGripAnchor, u.rightArm], [u.leftGrip, twoHanded ? u.leftGripAnchor : u.shieldGripAnchor, u.leftArm]]) {
         const position = hand.getWorldPosition(new THREE.Vector3());
@@ -168,6 +253,7 @@ test('all six physical hammer paths keep both hands attached without stretching 
       }
     }
     assert.ok(maxHeadStep < .5, `${variant}: the head teleported ${maxHeadStep} m between poses`);
+    assert.ok(maxRotationStep < .2, `${variant}: the hammer face snapped ${maxRotationStep} radians between poses`);
     assert.ok(maxArmReach < .90, `${variant}: the arm stretched to ${maxArmReach} m`);
     assert.ok(u.weaponRig.position.distanceTo(restPosition) < 1e-7);
     assert.ok(u.weaponRig.quaternion.angleTo(restRotation) < 1e-7);
