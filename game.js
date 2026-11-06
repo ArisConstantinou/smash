@@ -4,7 +4,7 @@ import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261106-feel1
 import {createWorld} from './world.js?v=20261106-feel1';
 import {GameAudio} from './audio.js?v=20261106-audio2';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
-import {findBattleOccluders,occludesBattlePoint,applyOccluderFade} from './occlusion.js?v=20261106-feel1';
+import {findBattleOccluders,occludesBattlePoint,applyOccluderFade} from './occlusion.js?v=20261106-controls3';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-combos1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
@@ -44,7 +44,7 @@ let battleOccluders=new Set(),silhouetteParts=[];
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
 const swingComboSteps=[0,0];
 let attackBuffer=null,spin=null,spinRecovery=null,holdElapsed=0;
-const SPIN_HOLD_SECONDS=.18,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.30,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
+const SPIN_HOLD_SECONDS=.22,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.45,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
 let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0},stats=calculateStats(levels);
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
@@ -176,13 +176,15 @@ function updateBattleVisibility(dt){
   if(occlusionTimer<=0){
     occlusionTimer=.055;
     const direction=new THREE.Vector3().subVectors(camera.position,cameraTarget);
-    const points=[{x:player.x,y:player.y+.25,z:player.z},{x:player.x,y:player.y+1.1,z:player.z},{x:player.x,y:player.y+2.05,z:player.z}];
-    // Protect the fight and the weapon, not just a single ray through the head.
-    for(let n=0;n<8;n++){const a=n*Math.PI/4;points.push({x:player.x+Math.sin(a)*2.8,y:player.y+.9,z:player.z+Math.cos(a)*2.8});}
-    for(const e of enemies)if(!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<6.5)points.push({x:e.x,y:e.y+Math.min(1.25,e.height*.6),z:e.z});
-    if(boss&&!boss.dead&&Math.hypot(boss.x-player.x,boss.z-player.z)<8)points.push({x:boss.x,y:boss.y+2,z:boss.z});
+    const heroPoints=[{x:player.x,y:player.y+.25,z:player.z},{x:player.x,y:player.y+1.1,z:player.z},{x:player.x,y:player.y+2.05,z:player.z}];
+    const points=[...heroPoints];
+    // Never cast at an imaginary ring of empty space: only actors and the
+    // actual weapon can justify fading a building. Points inside a struck
+    // building are rejected by occludesBattlePoint.
+    for(const e of enemies)if(!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<4.5)points.push({x:e.x,y:e.y+Math.min(1.25,e.height*.6),z:e.z});
+    if(boss&&!boss.dead&&Math.hypot(boss.x-player.x,boss.z-player.z)<5.5)points.push({x:boss.x,y:boss.y+2,z:boss.z});
     if(hero.userData.weaponHeld){hero.updateMatrixWorld(true);const p=hero.userData.hammerHead.getWorldPosition(new THREE.Vector3());points.push({x:p.x,y:p.y,z:p.z});}
-    if(throwFlight?.grounded&&Math.hypot(throwFlight.x-player.x,throwFlight.z-player.z)<6)points.push({x:throwFlight.x,y:throwFlight.groundY+.3,z:throwFlight.z});
+    if(throwFlight?.grounded&&Math.hypot(throwFlight.x-player.x,throwFlight.z-player.z)<4)points.push({x:throwFlight.x,y:throwFlight.groundY+.3,z:throwFlight.z});
     const candidates=world.objects.filter(o=>!o.dead&&o.h>1.7&&o.renderActive!==false&&Math.hypot(o.x-player.x,o.z-player.z)<65);
     battleOccluders=phase==='menu'?new Set():findBattleOccluders(candidates,points,direction);
     heroOccluded=[...battleOccluders].some(o=>points.slice(0,3).some(p=>occludesBattlePoint(o,p,direction)));
@@ -211,7 +213,7 @@ function clearInput(){
   combatPointer=null;mouseButtons=0;cancelAttack();guardHeld=false;guarding=false;
   if(touchLayout)pointer.active=false;
   document.querySelectorAll('[data-key]').forEach(e=>e.classList.remove('active'));
-  for(const id of ['attackButton','chargeButton','guardButton'])$(id)?.classList.remove('active');
+  for(const id of ['attackButton','guardButton'])$(id)?.classList.remove('active');
   if($('joystickKnob'))$('joystickKnob').style.transform='translate(0,0)';
 }
 function prepareMaterials(group){
@@ -710,7 +712,7 @@ function startLeap(){
   fragments.add(player.x,.1,player.z,15,[0xc7b78e,0x7d9690],5,.12);pulse(player.x,player.z,2.2,0xb9dac4,.25);audio.play('dash');return true;
 }
 function armAirSmash(){
-  if(!leap||leap.slam||throwFlight)return;
+  if(!leap||leap.slam||leap.strike||throwFlight)return;
   if(!characterStats.canAirSmash){leap.strike=true;audio.play('swing',.35,{variant:'two-overhead',weapon:'wood',exert:false});return;}
   leap.slam=true;chargeHeld=false;chargeStarted=false;charge=0;audio.play('charge',.8);
 }
@@ -725,8 +727,8 @@ function supportHeight(x,z,ceiling=Infinity){
 function landLeap(){
   if(!leap)return;
   const slam=leap.slam,strike=leap.strike;leap=null;player.vy=0;landingRecovery=slam?.14:.07;
-  const radius=slam?5.2+stats.quake*.7:characterStats.canAirSmash?2.35:1.2;
-  const damage=throwFlight?0:Math.round(stats.power*(slam?3.8:characterStats.canAirSmash?.9:strike?.9:0)*stancePower());
+  const radius=slam?5.2+stats.quake*.7:characterStats.canAirSmash?2.35:strike?1.65:1.2;
+  const damage=throwFlight?0:Math.round(stats.power*(slam?3.8:characterStats.canAirSmash?.9:strike?.62:0)*stancePower());
   if(!damage){pulse(player.x,player.z,.9,0xb9d9cb,.2).position.y=player.y+.08;return;}
   impactClouds?.emit(player.x,player.y,player.z,{x:0,z:0},slam?2.2:1);
   frightenNearby(player.x,player.z,slam?1.5:.65,radius+2);
@@ -1258,8 +1260,13 @@ function updatePlayer(dt){
   if(attackBuffer){attackBuffer.life-=dt;if(attackBuffer.life<=0)attackBuffer=null;}
   if(chargeHeld){
     holdElapsed+=dt;
-    if(!spin&&holdElapsed>=SPIN_HOLD_SECONDS&&!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld)startSpin();
+    if(!spin&&holdElapsed>=SPIN_HOLD_SECONDS&&!weaponBusy()&&!guardHeld){
+      let previousHits=null;
+      if(swing&&swing.time/swing.duration>=SWING_CONTACT_END){previousHits=swing.hits;swing=null;attackCooldown=0;}
+      if(!swing&&attackCooldown<=0&&startSpin()&&previousHits)for(const target of previousHits)spin.hitTimes.set(target,0);
+    }
   }
+  if(attackBuffer&&!chargeHeld&&!spin&&swing&&swing.time/swing.duration>=.82&&!weaponBusy()&&!guardHeld){swing=null;attackCooldown=0;}
   if(attackBuffer&&!chargeHeld&&!spin&&!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld){
     attackBuffer=null;chargeStarted=true;charge=0;beginSwing();
   }
@@ -1419,7 +1426,7 @@ function poseHero(dt,moving=false){
   directionMarker.position.set(player.x+markerDirection.x*1.15,player.y+.055,player.z+markerDirection.z*1.15);directionMarker.rotation.y=Math.atan2(markerDirection.x,markerDirection.z);directionMarker.visible=phase==='playing';
   if(guardRing){const g=guardDimensions();guardRing.visible=guarding;guardRing.position.set(player.x+facing.x*g.forward,player.y+g.height,player.z+facing.z*g.forward);guardRing.scale.setScalar(g.radius/1.72);guardRing.rotation.set(0,Math.atan2(facing.x,facing.z),0);guardRing.material.opacity=.12+Math.sin(guardAngle*2)*.035;}
   if(groundShadow){groundShadow.position.set(player.x,.035,player.z);groundShadow.scale.setScalar(1+player.y*.035);groundShadow.material.opacity=clamp(.34-player.y*.018,.15,.34);groundShadow.visible=phase!=='menu';}
-  if(landingMarker){landingMarker.visible=!!leap;landingMarker.position.set(player.x,.09,player.z);landingMarker.scale.setScalar(leap?.slam?5.2+stats.quake*.7:2.35);landingMarker.material.color.setHex(leap?.slam?0xffbf6d:0x9edac9);}
+  if(landingMarker){landingMarker.visible=!!leap;landingMarker.position.set(player.x,.09,player.z);landingMarker.scale.setScalar(leap?.slam?5.2+stats.quake*.7:characterStats.canAirSmash?2.35:leap?.strike?1.65:.9);landingMarker.material.color.setHex(leap?.slam?0xffbf6d:0x9edac9);}
 }
 function updateDrops(dt){
   for(let i=drops.length-1;i>=0;i--){
@@ -1490,16 +1497,7 @@ function updateHUD(force=false){
   if($('leapValue'))$('leapValue').textContent=leap?(leap.slam?'ΣΥΝΤΡΙΒΗ!':characterStats.canAirSmash?touchLayout?'ΠΑΤΑ ΣΦΥΡΙΑ':'ΑΡ. ΚΛΙΚ: ΣΥΝΤΡΙΒΗ':'ΜΙΚΡΟ ΑΛΜΑ'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.channeling?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.grounded?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount&&characterStats.canRicochet?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
-  const attackButton=$('attackButton');
-  attackButton?.classList.toggle('active',!!swing||!!leap?.slam);
-  attackButton?.classList.toggle('air-smash-ready',!!leap&&!leap.slam&&characterStats.canAirSmash);
-  attackButton?.classList.toggle('air-smash-armed',!!leap?.slam);
-  $('attackIcon')?.setAttribute('href',leap?'#a-slam':'#a-swing');
-  if($('attackName'))$('attackName').textContent=leap?(leap.slam?'ΟΠΛΙΣΜΕΝΗ':characterStats.canAirSmash?'ΣΥΝΤΡΙΒΗ':'ΧΤΥΠΗΜΑ ΑΕΡΑ'):characterStats.weaponTier<2?'ΧΤΥΠΗΜΑ':'ΣΦΥΡΙΑ';
-  if($('attackValue'))$('attackValue').textContent=throwFlight?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':leap?(leap.slam||leap.strike?'ΕΤΟΙΜΗ!':'ΠΑΤΑ ΤΩΡΑ'):'ΓΡΗΓΟΡΟ ΧΤΥΠΗΜΑ';
-  const attackLabel=leap?(leap.slam?'Η μεγάλη συντριβή είναι οπλισμένη για την προσγείωση.':characterStats.canAirSmash?'Πάτησε τώρα, στον αέρα, για μεγάλη συντριβή στην προσγείωση.':'Πάτησε για μικρό χτύπημα στην προσγείωση. Η μεγάλη συντριβή ξεκλειδώνει με το σιδερένιο σφυρί.'):'Χτύπημα με '+characterStats.weaponName.toLowerCase()+'. Κράτα για περιστροφή.';
-  if(attackLabel){attackButton.setAttribute('aria-label',attackLabel);attackButton.setAttribute('title',attackLabel);}
-  $('chargeButton')?.classList.toggle('active',chargeHeld||!!spin);
+  updateAttackFeedback();
   $('guardButton')?.classList.toggle('active',guardHeld||guarding);
   $('leapButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
   $('leapButton')?.classList.toggle('airborne',!!leap);
@@ -1513,6 +1511,21 @@ function updateHUD(force=false){
     const button=$(id);if(button)button.dataset.cooldown=remaining>0?remaining.toFixed(1):'';
   }
   if(force)drawMinimap();
+}
+function updateAttackFeedback(){
+  const button=$('attackButton');if(!button)return;
+  const holding=chargeHeld||!!spin,air=!!leap;
+  button.classList.toggle('active',!!swing||holding||!!leap?.slam||!!leap?.strike);
+  button.classList.toggle('air-smash-ready',air&&!leap.slam&&characterStats.canAirSmash);
+  button.classList.toggle('air-smash-armed',!!leap?.slam||!!leap?.strike);
+  button.classList.toggle('spin-active',!!spin);button.classList.toggle('spin-pending',chargeHeld&&!spin);
+  button.dataset.action=air?'air':holding?'spin':'attack';
+  $('attackIcon')?.setAttribute('href',air?'#a-slam':holding?'#a-spin':'#a-swing');
+  $('attackTouchIcon')?.setAttribute('href',air?'#t-slam':holding?'#t-spin':'#t-attack');
+  $('attackName').textContent=air?(leap.slam||leap.strike?'ΕΤΟΙΜΟ':characterStats.canAirSmash?'ΣΥΝΤΡΙΒΗ':'ΚΑΤΕΒΑΣΜΑ'):holding?'360°':characterStats.weaponTier<2?'ΧΤΥΠΗΜΑ':'ΣΦΥΡΙΑ';
+  $('attackValue').textContent=throwFlight?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':air?'ΠΑΤΑ ΣΤΟΝ ΑΕΡΑ':spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ ΓΙΑ ΣΥΝΕΧΕΙΑ':'ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°';
+  const label=air?(leap.slam||leap.strike?'Το χτύπημα είναι έτοιμο για την προσγείωση.':characterStats.canAirSmash?'Πάτησε τώρα, στον αέρα, για μεγάλη συντριβή.':'Πάτησε στον αέρα για μικρό κατέβασμα του ξύλου.'):spin?'Συνεχής περιστροφή 360°. Άφησε για να σταματήσεις.':'Χτύπημα με '+characterStats.weaponName.toLowerCase()+'. Κράτα για συνεχή περιστροφή 360°.';
+  button.setAttribute('aria-label',label);button.setAttribute('title',label);
 }
 function drawMinimap(){
   const c=mapContext,w=140,h=140,extent=world.bounds||BOUNDS,scale=47/extent;
@@ -1537,6 +1550,27 @@ function drawHP(x,y,z,hp,maxHp,tint,alpha=1,label=''){
   c.fillStyle='#fff2d4';c.fillText(Math.max(0,Math.ceil(hp))+' / '+Math.ceil(maxHp)+' HP',p.x,p.y-6);
   c.fillStyle='#34464a';c.fillRect(p.x-width/2,p.y,width,4);c.fillStyle=tint;c.fillRect(p.x-width/2,p.y,width*clamp(hp/maxHp,0,1),4);
   if(label){c.font='bold 9px monospace';c.fillStyle=tint;c.fillText(label,p.x,p.y-23);}
+}
+function buildingHudAnchor(o){
+  // The orthographic view direction is constant across the whole screen.
+  const dx=cameraOffset.x,dz=cameraOffset.z,base=o.baseY??0;
+  const alongZ=Math.abs(dz)>=Math.abs(dx);
+  return {x:o.x+(alongZ?0:Math.sign(dx)*(o.w/2+.04)),
+    y:base+Math.min(o.h*.65,4.6),z:o.z+(alongZ?Math.sign(dz)*(o.d/2+.04):0)};
+}
+function drawBuildingHP(o,label,alpha){
+  const a=buildingHudAnchor(o),p=screenPoint(a.x,a.y,a.z);
+  if(!p.inside||p.x<-100||p.x>screenW+100||p.y<-60||p.y>screenH+60)return;
+  const c=fxContext,w=touchLayout?124:146,h=54;
+  const x=clamp(p.x,w/2+10,screenW-w/2-10),y=clamp(p.y-15,h+10,screenH-36);
+  c.save();c.globalAlpha=clamp(alpha,0,1);c.textAlign='center';
+  c.strokeStyle='#f2c97f';c.lineWidth=1.5;c.beginPath();c.moveTo(p.x,p.y);c.lineTo(x,y);c.stroke();
+  c.fillStyle='#f2c97f';c.beginPath();c.arc(p.x,p.y,2.5,0,Math.PI*2);c.fill();
+  c.fillStyle='rgba(10,25,30,.96)';c.fillRect(x-w/2,y-h,w,h);c.strokeStyle='#a38c61';c.strokeRect(x-w/2,y-h,w,h);
+  c.font='bold 12px Arial,sans-serif';c.fillStyle='#f4d59e';c.fillText(label,x,y-36);
+  c.font='bold 14px Arial,sans-serif';c.fillStyle='#fff5e0';c.fillText(Math.max(0,Math.ceil(o.hp))+' / '+Math.ceil(o.maxHp)+' HP',x,y-19);
+  c.fillStyle='#34464a';c.fillRect(x-w/2+9,y-11,w-18,5);c.fillStyle='#f5c974';c.fillRect(x-w/2+9,y-11,(w-18)*clamp(o.hp/o.maxHp,0,1),5);
+  c.restore();
 }
 function drawAim(){
   if(phase!=='playing')return;
@@ -1572,8 +1606,8 @@ function drawFX(){
   for(const e of enemies)if(e.hurtTimer>0||focusedTarget===e||(e.miniBoss&&Math.hypot(e.x-player.x,e.z-player.z)<24))drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,e.miniBoss?'#ff9c80':e.palette==='metal'?'#ffc18a':'#a6d6ae',Math.min(1,e.hurtTimer||1),e.miniBoss?e.name:'');
   const objectNames={townhouse:'ΚΑΤΟΙΚΙΑ',apartment:'ΠΟΛΥΚΑΤΟΙΚΙΑ',shop:'ΚΑΤΑΣΤΗΜΑ',office:'ΓΡΑΦΕΙΑ',townhall:'ΔΗΜΑΡΧΕΙΟ',police:'ΑΣΤΥΝΟΜΙΚΟ ΤΜΗΜΑ',hospital:'ΝΟΣΟΚΟΜΕΙΟ',skyscraper:'ΟΥΡΑΝΟΞΥΣΤΗΣ',construction:'ΕΡΓΟΤΑΞΙΟ',warehouse:'ΑΠΟΘΗΚΗ',policecar:'ΠΕΡΙΠΟΛΙΚΟ',ambulance:'ΑΣΘΕΝΟΦΟΡΟ',car:'ΑΥΤΟΚΙΝΗΤΟ',wall:'ΤΟΙΧΟΣ',tree:'ΔΕΝΤΡΟ',barrel:'ΒΑΡΕΛΙ',crate:'ΚΙΒΩΤΙΟ',lamp:'ΦΑΝΑΡΙ',bench:'ΠΑΓΚΑΚΙ'};
   for(const o of world.objects)if(!o.dead&&(o.hurtTimer>0||aimPreview?.contact?.target===o)){
-    const anchor=o.h>6?nearestPoint(player.x,player.z,o):o;
-    drawHP(anchor.x,Math.min(o.h,player.y+4)+.4,anchor.z,o.hp,o.maxHp,'#ffd08b',Math.min(1,o.hurtTimer||1),objectNames[o.type]||'ΑΝΤΙΚΕΙΜΕΝΟ');
+    if(o.isBuilding)drawBuildingHP(o,objectNames[o.type]||'ΚΤΙΡΙΟ',Math.min(1,o.hurtTimer||1));
+    else drawHP(o.x,Math.min(o.h,player.y+4)+.4,o.z,o.hp,o.maxHp,'#ffd08b',Math.min(1,o.hurtTimer||1),objectNames[o.type]||'ΑΝΤΙΚΕΙΜΕΝΟ');
   }
   for(const e of hpEchoes)drawHP(e.x,e.y,e.z,0,e.maxHp,'#ff9d72',Math.min(1,e.life*2));
   for(const n of numbers){const p=screenPoint(n.x,n.y,n.z);if(!p.inside)continue;c.globalAlpha=Math.min(1,n.life/.3);c.textAlign='center';c.font='900 '+n.size+'px "Courier New",monospace';c.lineWidth=3;c.strokeStyle='rgba(10,24,26,.8)';c.strokeText(n.text,p.x,p.y);c.fillStyle=n.color;c.fillText(n.text,p.x,p.y);}
@@ -1611,31 +1645,28 @@ function pauseGame(){if(phase==='playing'){setPhase('paused');audio.play('ui');}
 function pressAttack(){
   if(phase!=='playing')return;audio.unlock();
   if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
-  if(leap){armAirSmash();return;}
+  if(leap){armAirSmash();updateAttackFeedback();return;}
   if(throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005||guardHeld||chargeHeld)return;
-  chargeHeld=true;holdElapsed=0;chargeStarted=true;charge=0;
-  // The short tap is committed on release. Holding changes this same input
-  // into a sustained body-and-hammer spin, with no charged release attack.
-}
-function pressSpin(){
-  if(leap)return;
-  pressAttack();
-  if(chargeHeld){holdElapsed=SPIN_HOLD_SECONDS;startSpin();}
+  chargeHeld=true;holdElapsed=0;charge=0;
+  // Start on pointer DOWN, not UP: the physical wind-up and its audio start
+  // together. During recovery remember just ONE next strike, not click spam.
+  if(!swing&&attackCooldown<=0&&!weaponBusy()){
+    chargeStarted=true;beginSwing();
+  }else{
+    attackBuffer={life:Math.max(ATTACK_BUFFER_SECONDS,attackCooldown+.12)};
+    chargeStarted=false;
+  }
+  updateAttackFeedback();
 }
 function releaseAttack(){
-  const wasHeld=chargeHeld;
-  chargeHeld=false;
-  if(spin){cancelAttack();return;}
-  if(phase!=='playing'){cancelAttack();return;}
-  if(!wasHeld||!chargeStarted)return;
-  if(holdElapsed>=SPIN_HOLD_SECONDS){cancelAttack();return;}
-  charge=0;
-  if(!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld)beginSwing();
-  else{attackBuffer={life:Math.max(ATTACK_BUFFER_SECONDS,attackCooldown+.025)};chargeStarted=false;}
-  holdElapsed=0;
+  chargeHeld=false;chargeStarted=false;charge=0;holdElapsed=0;
+  if(spin)stopSpin();
+  if(phase!=='playing')cancelAttack();
+  // An already started strike finishes naturally. Releasing never creates a
+  // second strike; an explicitly tapped buffered strike remains valid.
+  updateAttackFeedback();
 }
-function quickAttack(){if(!spin){pressAttack();releaseAttack();}}
-function cancelAttack(){stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim||touchThrowQueued)cancelTouchThrow();}
+function cancelAttack(){stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim||touchThrowQueued)cancelTouchThrow();updateAttackFeedback();}
 function pressGuard(){
   if(phase!=='playing')return;
   guardHeld=true;cancelAttack();spinRecovery=null;
@@ -1846,8 +1877,7 @@ function initInput(){
     button.addEventListener('pointerup',released);button.addEventListener('pointercancel',cancelled);button.addEventListener('lostpointercapture',cancelled);
     window.addEventListener('pointerup',released);window.addEventListener('pointercancel',cancelled);
   }
-  bindAction('attackButton',quickAttack);
-  bindAction('chargeButton',pressSpin,releaseAttack,cancelAttack);
+  bindAction('attackButton',pressAttack,releaseAttack,cancelAttack);
   bindAction('guardButton',pressGuard,releaseGuard);
   bindAction('leapButton',startLeap);
   bindAction('throwButton',beginTouchThrow,releaseTouchThrow,cancelTouchThrow,moveTouchThrow);

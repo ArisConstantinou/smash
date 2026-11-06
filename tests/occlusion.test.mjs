@@ -25,3 +25,17 @@ test('fades restore authored glass and opaque depth state, without swapping mate
   assert.equal(opaque.opacity,1);assert.equal(opaque.transparent,false);assert.equal(opaque.depthWrite,true);
   assert.equal(glass.opacity,.6);assert.equal(glass.transparent,true);assert.equal(glass.depthWrite,false);
 });
+
+
+test('a weapon inside the struck building cannot hide that building',()=>{
+  for(const point of [{x:5,y:1,z:7},{x:5,y:2,z:4.01},{x:5,y:2,z:4}]){
+    assert.equal(occludesBattlePoint(tower,point,view),false);
+  }
+  assert.equal(occludesBattlePoint(tower,{x:0,y:1,z:0},view),true);
+});
+
+test('nearby buildings outside actual actor rays stay fully opaque',()=>{
+  const player={x:0,y:1,z:0};const rear={x:0,z:-4,w:6,d:6,h:8};
+  const blocked=findBattleOccluders([rear,tower],[player],view);
+  assert.equal(blocked.has(rear),false);assert.equal(blocked.has(tower),true);
+});

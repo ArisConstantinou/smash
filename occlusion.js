@@ -4,10 +4,12 @@ import {firstHammerHit} from './combat.js';
 // each actor would miss tall facades towards the sides of a portrait viewport.
 export function occludesBattlePoint(object, point, towardsCamera, distance=140) {
   if (!object || object.dead || object.h<=1.7 || !point) return false;
+  const base=object.baseY??object.y??0;
+  if (Math.abs(point.x-object.x)<=object.w/2+.025 && Math.abs(point.z-object.z)<=object.d/2+.025 && point.y>=base-.025 && point.y<=base+object.h+.025) return false;
   const length=Math.hypot(towardsCamera.x,towardsCamera.y,towardsCamera.z);
   if (!Number.isFinite(length)||length<1e-6) return false;
   const origin={x:point.x+towardsCamera.x/length*distance,y:point.y+towardsCamera.y/length*distance,z:point.z+towardsCamera.z/length*distance};
-  const hit=firstHammerHit(origin,point,[object],.12);
+  const hit=firstHammerHit(origin,point,[object],.025);
   return !!hit&&hit.t<.9995;
 }
 
