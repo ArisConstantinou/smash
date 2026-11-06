@@ -33,12 +33,12 @@ export function waveBatch(number,spawned,batchIndex,slots=Infinity,random=Math.r
 }
 
 const TYPES={
-  zombie:{name:'ΖΟΜΠΙ',hp:30,damage:5,speed:1.35,radius:.45,height:1.75,windup:.9,attackRecovery:2.75,lungeSpeed:8.2,attackKind:'lunge',xp:1,palette:'organic'},
-  crawler:{name:'ΑΡΠΑΚΤΙΚΟ',hp:25,damage:5,speed:2.5,radius:.48,height:1.15,windup:.66,attackRecovery:2.5,lungeSpeed:10,attackKind:'lunge',xp:1,palette:'organic'},
-  robot:{name:'ΡΟΜΠΟΤ',hp:56,damage:6,speed:1.65,radius:.47,height:1.8,windup:1.15,attackRecovery:3.8,boltSpeed:8,attackKind:'ranged',xp:2,palette:'metal'},
-  brute:{name:'ΒΑΡΥΣ',hp:126,damage:13,speed:1.15,radius:.71,height:2.55,windup:1.25,attackRecovery:3.2,attackRadius:2.95,attackKind:'slam',xp:3,palette:'organic'},
-  mutant:{name:'ΜΕΤΑΛΛΑΓΜΕΝΟΣ',hp:96,damage:10,speed:1.9,radius:.72,height:2.6,windup:1.05,attackRecovery:2.9,lungeSpeed:9.5,attackKind:'lunge',xp:3,palette:'organic'},
-  mech:{name:'MECH',hp:170,damage:11,speed:1.4,radius:.82,height:2.95,windup:1.25,attackRecovery:3.9,boltSpeed:9,attackKind:'ranged',burst:3,xp:4,palette:'metal'},
+  zombie:{name:'ΖΟΜΠΙ',hp:100,damage:5,speed:1.35,radius:.45,height:1.75,windup:.9,attackRecovery:2.75,lungeSpeed:8.2,attackKind:'lunge',xp:1,palette:'organic'},
+  crawler:{name:'ΑΡΠΑΚΤΙΚΟ',hp:80,damage:5,speed:2.5,radius:.48,height:1.15,windup:.66,attackRecovery:2.5,lungeSpeed:10,attackKind:'lunge',xp:1,palette:'organic'},
+  robot:{name:'ΡΟΜΠΟΤ',hp:150,damage:6,speed:1.65,radius:.47,height:1.8,windup:1.15,attackRecovery:3.8,boltSpeed:8,attackKind:'ranged',xp:2,palette:'metal'},
+  brute:{name:'ΒΑΡΥΣ',hp:240,damage:13,speed:1.15,radius:.71,height:2.55,windup:1.25,attackRecovery:3.2,attackRadius:2.95,attackKind:'slam',xp:3,palette:'organic'},
+  mutant:{name:'ΜΕΤΑΛΛΑΓΜΕΝΟΣ',hp:200,damage:10,speed:1.9,radius:.72,height:2.6,windup:1.05,attackRecovery:2.9,lungeSpeed:9.5,attackKind:'lunge',xp:3,palette:'organic'},
+  mech:{name:'MECH',hp:360,damage:11,speed:1.4,radius:.82,height:2.95,windup:1.25,attackRecovery:3.9,boltSpeed:9,attackKind:'ranged',burst:3,xp:4,palette:'metal'},
   titan:{name:'ΤΙΤΑΝΑΣ · MINI BOSS',hp:600,damage:20,speed:1.22,radius:1.3,height:4.35,windup:1.5,attackRecovery:3.6,attackRadius:4.2,attackKind:'slam',miniBoss:true,xp:10,palette:'organic'},
   siegeMech:{name:'ΠΟΛΙΟΡΚΗΤΗΣ · MINI BOSS',hp:720,damage:15,speed:1.2,radius:1.3,height:4.7,windup:1.5,attackRecovery:4.1,boltSpeed:9.2,attackKind:'ranged',burst:3,miniBoss:true,xp:12,palette:'metal'},
 };

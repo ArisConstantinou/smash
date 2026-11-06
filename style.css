@@ -246,11 +246,11 @@ kbd.cooldown{opacity:.42;border-color:#6f8170;box-shadow:none}
 .upgrades-toggle.has-pending,.upgrades-toggle[data-pending="true"] { border-left-color:#ffda8e; }
 #upgradePanel {
   position:absolute; top:calc(100% + 7px); left:0; width:min(640px,calc(50vw - 56px));
-  max-height:calc(100dvh - var(--combat-dock-space) - 201px); overflow:auto; padding:14px;
+  max-height:none; overflow:hidden; padding:14px;
   background:linear-gradient(135deg,rgba(33,54,53,.98),rgba(13,31,37,.98));
   border:1px solid #738472; border-top:2px solid #d9bc7b; border-radius:7px;
   box-shadow:0 5px 0 #0b1b22,0 12px 32px #05131955; overscroll-behavior:contain;
-  scrollbar-width:thin; scrollbar-color:#7e936e #142c30; touch-action:pan-y;
+  scrollbar-width:none; touch-action:manipulation;
 }
 #upgradePanel .upgrade-drawer-heading { display:flex; align-items:center; gap:12px; margin:0 0 11px; }
 #upgradePanel .upgrade-eyebrow { display:block; color:#9bbbae; font:700 8px/1.3 var(--body); letter-spacing:1px; }
@@ -585,12 +585,12 @@ body[data-touch-controls="true"] .announcement {
 body[data-touch-controls="true"] .announcement h2 { font-size:25px; letter-spacing:1.5px; }
 body[data-touch-controls="true"] .announcement p { font-size:10px; line-height:1.5; }
 
-/* Only the open drawer scrolls. It leaves the combat controls and toolbar
-   reachable, including on shorter phones and while Safari's bars are visible. */
+/* The upgrade surface shares the visible viewport with the combat controls.
+   Compact powers and equipment views below keep its content within reach. */
 body[data-touch-controls="true"] #upgradePanel {
   position:fixed; top:var(--mobile-hud-space); left:var(--mobile-safe-left); right:var(--mobile-safe-right);
   width:auto; max-height:calc(var(--app-height,100dvh) - var(--mobile-hud-space) - var(--combat-dock-space) - 12px);
-  min-height:0; padding:10px; overflow:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  min-height:0; padding:10px; overflow:hidden; touch-action:manipulation;
 }
 body[data-touch-controls="true"] #upgradePanel .upgrade-drawer-heading { gap:8px; margin-bottom:10px; }
 body[data-touch-controls="true"] #upgradePanel h2 { font-size:22px; letter-spacing:.7px; }
@@ -842,3 +842,247 @@ body[data-touch-controls="true"] .forge-card{padding:10px}body[data-touch-contro
 .hero-content{max-height:calc(100dvh - 170px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#536d5a transparent;padding-right:12px;touch-action:pan-y}.hero-content .landing-controls{margin-top:16px}.hero-content .hero-description{margin-bottom:16px}
 @media(max-width:800px){.hero-content{max-height:calc(100dvh - 130px)}.resume-character,.character-testing{width:100%}.character-testing{padding:10px}.hero-content .combat-hints,.hero-content .direction-note,.hero-content .air-hint{display:none}}
 @media(orientation:landscape) and (max-height:500px){.hero-content{max-height:calc(100dvh - 65px);padding-bottom:14px}.hero-content .hero-rule,.hero-content .hero-description,.hero-content .landing-controls,.hero-content .touch-intro,.hero-content .touch-intro-note{display:none}.hero-content h1{margin-bottom:10px}.character-testing{margin-top:9px}.resume-character{margin-top:8px}.character-testing summary span{display:inline;margin-left:5px}}
+
+/* A small launcher opens one bounded view. All three available powers fit at
+   once; equipment has its own tab, so neither view becomes a scrolling sheet. */
+.upgrade-dock { width:auto; }
+.upgrades-toggle { position:relative; width:192px; height:44px; }
+#upgradePanel {
+  width:min(440px,calc(100vw - 56px)); max-height:none; min-height:0;
+  padding:10px; overflow:hidden; touch-action:manipulation;
+  border-radius:10px; border-color:#8a987e; border-top-color:#efc778;
+  background:linear-gradient(135deg,#203a39f5,#10282df5);
+  box-shadow:0 4px 0 #081c22b3,0 12px 30px #04111466;
+  transform-origin:top left; scrollbar-width:none;
+}
+#upgradePanel:not([hidden]) { animation:upgrade-unfold .14s ease-out; }
+#upgradePanel .upgrade-drawer-heading { gap:7px; margin:0 0 7px; }
+.upgrade-tabs { display:flex; flex:1; min-width:0; gap:5px; }
+.upgrade-tab {
+  display:flex; align-items:center; justify-content:center; flex:1; gap:6px;
+  min-width:0; min-height:44px; padding:6px 8px;
+  color:#c5d6c8; background:#112b30; border:1px solid #68887a66;
+  border-radius:6px; font:800 10px/1.2 var(--body); letter-spacing:.25px;
+}
+.upgrade-tab svg { width:16px; height:16px; }
+.upgrade-tab[aria-selected="true"] {
+  color:#1b302b; background:linear-gradient(155deg,#f6d18a,#d49c46);
+  border-color:#ffdda0; box-shadow:inset 0 1px 0 #fff3c74d;
+}
+.upgrade-tab:focus-visible,#upgradePanel .upgrade-close:focus-visible {
+  outline:2px solid #fff0bb; outline-offset:-3px;
+}
+#upgradePanel .upgrade-close { flex:0 0 44px; width:44px; height:44px; border-radius:6px; }
+#upgradePanel .upgrade-close svg { width:20px; height:20px; }
+#upgradePanel .upgrade-choices { grid-template-columns:1fr; gap:5px; }
+#upgradePanel .upgrade-card {
+  display:grid; grid-template-columns:44px minmax(0,1fr) 62px; grid-template-rows:auto auto;
+  align-items:center; justify-items:start; min-height:58px; padding:6px 8px;
+  gap:2px 9px; border-radius:6px; border-bottom-width:2px; text-align:left;
+}
+#upgradePanel .upgrade-card>.upgrade-key {
+  top:3px; left:3px; right:auto; min-width:15px; height:15px; padding:0;
+  font-size:8px; background:#142c31de; border-bottom-width:1px;
+}
+#upgradePanel .upgrade-card>.upgrade-icon { grid-column:1; grid-row:1/3; width:44px; height:37px; margin:0; }
+#upgradePanel .upgrade-card>small { display:none; }
+#upgradePanel .upgrade-card>h3 {
+  grid-column:2; grid-row:1; align-self:end; min-height:0; margin:0;
+  font:800 12px/1.2 var(--body); letter-spacing:.15px; overflow-wrap:normal;
+}
+#upgradePanel .upgrade-card>p {
+  grid-column:2; grid-row:2; align-self:start; margin:0;
+  font:400 10.5px/1.3 var(--body); color:#cbdbce;
+}
+#upgradePanel .upgrade-card>.upgrade-level {
+  grid-column:3; grid-row:1/3; display:flex; flex-direction:column; justify-content:center;
+  align-items:center; gap:3px; width:100%; margin:0; padding:0; border:0;
+  white-space:nowrap; font:700 8px/1.2 var(--body); color:#aec5b3;
+}
+#upgradePanel .upgrade-level b {
+  display:grid; place-items:center; width:31px; height:24px;
+  font-size:0; border:1px solid #c6a66c; border-radius:4px; color:#ffdd96;
+  background:#6a60372b;
+}
+#upgradePanel .upgrade-level b::before { content:"+"; font:800 22px/1 var(--body); }
+#upgradePanel .upgrade-queue-heading { gap:5px; margin:7px 0 0; }
+#upgradePanel .upgrade-queue-heading svg { width:12px; height:12px; }
+#upgradePanel .upgrade-queue-heading p { font:600 10px/1.35 var(--body); color:#b9cdbc; }
+#upgradePanel .upgrade-drawer-footnote {
+  min-height:0; margin-top:7px; padding-top:6px; gap:6px; font-size:9px;
+}
+#upgradePanel[data-tab="gear"] .upgrade-key-hint { display:none; }
+#upgradePanel .upgrade-live { margin-left:auto; font-size:7px; }
+.gear-topline { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; }
+#upgradePanel .forge-card { min-width:0; margin:0; padding:7px 8px; }
+#upgradePanel .equipped-heading { margin:0; gap:6px; }
+#upgradePanel .equipped-heading strong { min-width:0; font:800 12px/1.25 var(--body); }
+#upgradePanel .loadout-level { gap:3px; font:700 8px/1 var(--body); }
+#upgradePanel .loadout-level b { font:800 13px/1 var(--body); }
+.gear-experience { display:flex; gap:7px; align-items:center; margin-top:5px; }
+.gear-experience>span { flex:none; color:#abcabc; font:9px/1 var(--mono); }
+.gear-experience .character-xp { flex:1; min-width:20px; height:3px; }
+#upgradePanel #weaponAbilities { margin:6px 0 0; font:10px/1.35 var(--body); color:#b7cbbb; }
+#upgradePanel .material-inventory { gap:5px; margin:6px 0; }
+#upgradePanel .material-inventory>span {
+  min-width:0; min-height:30px; flex-direction:row; align-items:center; justify-content:space-between;
+  padding:5px 7px; gap:4px; font:700 8px/1 var(--body);
+}
+#upgradePanel .material-inventory b { font:800 13px/1 var(--mono); }
+#upgradePanel .next-weapon {
+  display:grid; grid-template-columns:minmax(0,1fr) 106px; grid-template-rows:auto auto auto;
+  gap:3px 10px; padding:8px; border:1px solid #526e5f; border-radius:6px;
+  background:linear-gradient(115deg,#213e35,#142d2b);
+}
+#upgradePanel .next-weapon>small { grid-column:1; grid-row:1; font:700 8px/1 var(--body); letter-spacing:.6px; }
+#upgradePanel .next-weapon>strong { grid-column:1; grid-row:2; font:800 11px/1.2 var(--body); }
+#upgradePanel .next-weapon>p { grid-column:1; grid-row:3; margin:0; font:10px/1.3 var(--body); }
+#upgradePanel #forgeButton {
+  grid-column:2; grid-row:1/4; align-self:center; width:100%; min-height:44px;
+  padding:6px; font:800 9px/1.3 var(--body); overflow-wrap:normal;
+}
+#upgradePanel .loadout-stats { gap:5px; margin-top:7px; }
+#upgradePanel .loadout-stats>div {
+  grid-template-columns:1fr; grid-template-rows:auto auto; min-height:31px;
+  justify-items:center; gap:2px; padding:4px 2px;
+}
+#upgradePanel .loadout-stats svg { display:none; }
+#upgradePanel .loadout-stats strong { font:800 12px/1 var(--body); }
+#upgradePanel .loadout-stats small { font:700 7px/1 var(--body); letter-spacing:0; }
+#upgradePanel .relic-slots { flex-wrap:nowrap; gap:4px; margin-top:6px; }
+#upgradePanel .relic-slots>.relic-installed { flex:1; justify-content:center; padding:1px 2px; gap:2px; }
+#upgradePanel .relic-installed svg { width:23px; height:19px; }
+#upgradePanel .relic-installed b { font-size:9px; }
+
+/* The badge is the only closed mobile UI. The open panel ends above both
+   thumbs in portrait, and uses their free middle column in landscape. */
+body[data-touch-controls="true"] .upgrade-dock { width:52px; }
+body[data-touch-controls="true"] .upgrades-toggle { justify-content:center; width:52px; min-width:52px; padding:8px; }
+body[data-touch-controls="true"] .upgrades-toggle>span,
+body[data-touch-controls="true"] .upgrades-toggle>.upgrade-chevron { display:none; }
+body[data-touch-controls="true"] .upgrades-toggle>svg { width:23px; height:23px; }
+body[data-touch-controls="true"] .pending-upgrade-count {
+  position:absolute; top:-5px; right:-8px; min-width:22px; height:22px;
+  margin:0; padding:0 4px; border-radius:5px; font-size:12px;
+}
+body[data-touch-controls="true"] .upgrades-toggle.has-pending {
+  border-color:#eac276; box-shadow:inset 0 0 0 1px #eac27626,0 3px 10px #07171940;
+}
+body[data-touch-controls="true"] #upgradePanel {
+  position:fixed; top:var(--mobile-hud-space); left:var(--mobile-safe-left); right:var(--mobile-safe-right);
+  width:auto; max-height:none; min-height:0; padding:8px; overflow:hidden; touch-action:manipulation;
+}
+body[data-touch-controls="true"] #upgradePanel .upgrade-drawer-heading { gap:6px; margin-bottom:6px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-tab { gap:4px; padding:6px 4px; font-size:9px; letter-spacing:.1px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-tab svg { width:14px; height:14px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-close { width:44px; height:44px; flex-basis:44px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-choices { grid-template-columns:1fr; gap:5px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-card {
+  grid-template-columns:34px minmax(0,1fr) 45px; grid-template-rows:auto auto;
+  min-height:50px; padding:4px 7px; gap:1px 7px;
+}
+body[data-touch-controls="true"] #upgradePanel .upgrade-card>.upgrade-icon { grid-column:1; grid-row:1/3; width:34px; height:29px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-card>h3 { grid-column:2; grid-row:1; font:800 11px/1.15 var(--body); margin:0; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-card>p { grid-column:2; grid-row:2; font:400 9.5px/1.25 var(--body); margin:0; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-card>.upgrade-level { grid-column:3; grid-row:1/3; margin:0; padding:0; font-size:7px; gap:2px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-level b { font-size:0; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-queue-heading { margin-top:6px; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-queue-heading p { font-size:9px; line-height:1.3; }
+body[data-touch-controls="true"] #upgradePanel .upgrade-drawer-footnote { display:none; }
+body[data-touch-controls="true"] #upgradePanel .gear-topline { grid-template-columns:minmax(0,1fr) 90px; gap:6px; }
+body[data-touch-controls="true"] #upgradePanel .forge-card { padding:6px 7px; }
+body[data-touch-controls="true"] #upgradePanel .equipped-heading strong { font-size:11px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-level { gap:2px; font-size:7px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-level b { font-size:12px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stance {
+  display:grid; grid-template-columns:23px minmax(0,1fr); align-content:center;
+  min-width:0; min-height:44px; padding:5px; gap:3px; margin:0; border-radius:6px;
+}
+body[data-touch-controls="true"] #upgradePanel .loadout-stance>svg { width:23px; height:25px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stance>span { gap:3px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stance b { font:700 7px/1 var(--body); letter-spacing:.4px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stance strong { font:800 8px/1.2 var(--body); }
+body[data-touch-controls="true"] #upgradePanel .loadout-stance .stance-switch-icon { display:none; }
+body[data-touch-controls="true"] #upgradePanel .next-weapon { grid-template-columns:minmax(0,1fr) 94px; gap:3px 8px; padding:7px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stats>div { grid-template-rows:auto auto; min-height:31px; padding:4px 2px; gap:2px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stats strong { font-size:12px; }
+body[data-touch-controls="true"] #upgradePanel .loadout-stats small { font-size:7px; }
+
+/* Extra stat summaries are optional; the three choices, current weapon,
+   materials, recipe and grip always stay reachable even on a small phone. */
+@media (orientation:portrait) and (max-height:680px) {
+  body[data-touch-controls="true"] #upgradePanel #weaponAbilities,
+  body[data-touch-controls="true"] #upgradePanel .loadout-stats,
+  body[data-touch-controls="true"] #upgradePanel .relic-slots { display:none; }
+}
+@media (orientation:landscape) and (max-height:500px) {
+  body[data-touch-controls="true"] #upgradePanel {
+    top:var(--mobile-hud-space);
+    left:calc(var(--mobile-safe-left) + var(--mobile-joystick-size) + 12px);
+    right:calc(var(--mobile-safe-right) + 234px); width:auto; max-height:none;
+  }
+  body[data-touch-controls="true"] #upgradePanel #weaponAbilities,
+  body[data-touch-controls="true"] #upgradePanel .relic-slots { display:none; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-queue-heading { display:none; }
+  body[data-touch-controls="true"] #upgradePanel .loadout-stats { margin-top:5px; }
+}
+@media (orientation:landscape) and (max-height:500px) and (max-width:700px) {
+  body[data-touch-controls="true"] #upgradePanel { top:calc(var(--mobile-safe-top) + 56px); }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-tab svg { display:none; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-card { grid-template-columns:24px minmax(0,1fr) 31px; gap:1px 4px; padding:4px; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-card>.upgrade-icon { width:24px; height:23px; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-card>h3 { font-size:9px; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-card>p { font-size:8.5px; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-card>.upgrade-level { font-size:0; }
+  body[data-touch-controls="true"] #upgradePanel .upgrade-level b { width:26px; }
+  body[data-touch-controls="true"] #upgradePanel .gear-topline { grid-template-columns:minmax(0,1fr) 68px; }
+  body[data-touch-controls="true"] #upgradePanel .loadout-stance { grid-template-columns:1fr; justify-items:center; }
+  body[data-touch-controls="true"] #upgradePanel .loadout-stance>svg { display:none; }
+  body[data-touch-controls="true"] #upgradePanel .next-weapon { grid-template-columns:minmax(0,1fr) 70px; gap:3px 5px; padding:5px; }
+  body[data-touch-controls="true"] #upgradePanel .next-weapon>strong { font-size:9px; }
+  body[data-touch-controls="true"] #upgradePanel .next-weapon>p { font-size:8px; }
+  body[data-touch-controls="true"] #upgradePanel .material-inventory>span { flex-direction:column; font-size:6px; padding:4px; }
+  body[data-touch-controls="true"] #upgradePanel .loadout-stats { display:none; }
+}
+
+/* World-projected feedback follows the fighter. It never captures a touch
+   and has no permanent panel or repeating screen-wide effect. */
+.combo-hud {
+  --combo-accent:#ffe0a1;
+  position:absolute; z-index:3; min-width:80px; width:max-content; max-width:150px;
+  transform:translate(-50%,-100%); pointer-events:none; text-align:center;
+  color:var(--combo-accent); text-shadow:0 2px 1px #0d1f26,1px 0 1px #0d1f26,-1px 0 1px #0d1f26;
+}
+.combo-caption { display:flex; justify-content:center; align-items:baseline; gap:4px; }
+.combo-caption strong { font:italic 800 25px/1 var(--display); letter-spacing:.5px; }
+.combo-track { height:3px; margin:4px 6px 3px; overflow:hidden; background:#0b242bbf; border-radius:2px; }
+#comboFill { display:block; width:100%; height:100%; background:var(--combo-accent); transform:scaleX(1); transform-origin:left; }
+.combo-reward { display:block; font:800 9px/1.25 var(--body); letter-spacing:.1px; }
+.combo-hud[data-tier="2"] { --combo-accent:#ffd17f; }
+.combo-hud[data-tier="3"] { --combo-accent:#ffb06d; }
+.combo-hud[data-tier="4"] { --combo-accent:#fff3bb; }
+.combo-hud.pop { animation:combo-tick .19s ease-out; }
+.comic-burst {
+  position:absolute; z-index:4; display:grid; place-items:center;
+  min-width:102px; max-width:154px; min-height:62px; padding:18px 16px;
+  background:#ffcc76; color:#233631; font:italic 900 22px/1 var(--body);
+  text-shadow:1px 1px 0 #fff2bc; letter-spacing:-.7px;
+  clip-path:polygon(0 30%,19% 27%,11% 5%,35% 16%,45% 0,56% 17%,83% 3%,78% 25%,100% 22%,88% 46%,100% 65%,79% 65%,88% 92%,61% 81%,52% 100%,39% 82%,13% 96%,18% 72%,0 77%,12% 51%);
+  filter:drop-shadow(0 3px 0 #152b2a); pointer-events:none;
+  transform:translate(-50%,-50%) rotate(-8deg);
+}
+.comic-burst:not([hidden]) { animation:comic-pop .48s ease-out both; }
+body[data-touch-controls="true"] .combo-caption strong { font-size:22px; }
+body[data-touch-controls="true"] .combo-reward { font-size:8px; }
+body[data-touch-controls="true"] .comic-burst { min-width:90px; min-height:54px; padding:16px 13px; font-size:19px; }
+@keyframes upgrade-unfold { from { opacity:0; transform:translateY(-5px) scale(.98); } to { opacity:1; transform:none; } }
+@keyframes combo-tick { from { transform:translate(-50%,-100%) scale(1.14); } to { transform:translate(-50%,-100%) scale(1); } }
+@keyframes comic-pop {
+  0% { opacity:0; transform:translate(-50%,-40%) rotate(-12deg) scale(.62); }
+  22% { opacity:1; transform:translate(-50%,-50%) rotate(-6deg) scale(1.08); }
+  70% { opacity:1; transform:translate(-50%,-53%) rotate(-8deg) scale(1); }
+  100% { opacity:0; transform:translate(-50%,-68%) rotate(-8deg) scale(.94); }
+}
+@media (prefers-reduced-motion:reduce) {
+  #upgradePanel:not([hidden]),.combo-hud.pop,.comic-burst:not([hidden]) { animation:none; }
+}

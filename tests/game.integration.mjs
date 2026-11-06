@@ -17,6 +17,8 @@ import * as enemyModels from '../enemy-models.js';
 import * as hammerMotion from '../hammer-motion.js';
 import * as characterProgression from '../character-progression.js';
 import * as enemyReactions from '../enemy-reactions.js';
+import * as combatFeedback from '../combat-feedback.js';
+import * as occlusion from '../occlusion.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -145,7 +147,7 @@ class FakeRenderer {
 class StubAudio {
   muted = false;
   async unlock() {}
-  play(name, power = 0) { audioEvents.push({ name, power }); }
+  play(name, power = 0, details = {}) { audioEvents.push({ name, power, details }); }
   setVolume(value) { this.volume = value; }
   toggle() { return this.muted = !this.muted; }
   update() {}
@@ -177,12 +179,14 @@ const imports = new Map([
   ['./hammer-motion.js', synthetic(hammerMotion, 'real-hammer-motion')],
   ['./character-progression.js', synthetic(characterProgression, 'real-character-progression')],
   ['./enemy-reactions.js', synthetic(enemyReactions, 'real-enemy-reactions')],
+  ['./combat-feedback.js', synthetic(combatFeedback, 'real-combat-feedback')],
+  ['./occlusion.js', synthetic(occlusion, 'real-occlusion')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
-  get phase(){return phase;}, get player(){return player;}, get world(){return world;},
+  get phase(){return phase;}, get combatCombo(){return combatCombo;}, get comboXpCarry(){return comboXpCarry;}, get battleOccluders(){return battleOccluders;}, get heroSilhouette(){return heroSilhouette;}, get upgradeTab(){return upgradeTab;}, get comicState(){return comicState;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
   get character(){return character;}, get characterStats(){return characterStats;}, get testRun(){return testRun;},
@@ -197,17 +201,17 @@ export const __integration = {
   get upgradeQueue(){return upgradeQueue;}, get upgradePanelOpen(){return upgradePanelOpen;},
   get nearbyTargets(){return nearbyTargets;}, get focusedTarget(){return focusedTarget;},
   get stance(){return stance;}, get stanceTarget(){return stanceTarget;},
-  get guarding(){return guarding;}, get aim(){return aim;}, get aimPreview(){return aimPreview;},
+  get guarding(){return guarding;}, get guardRing(){return guardRing;}, get aim(){return aim;}, get aimPreview(){return aimPreview;},
   get leap(){return leap;}, get throwWindup(){return throwWindup;}, get throwFlight(){return throwFlight;},
   get throwCooldown(){return throwCooldown;},
   get hammerLightning(){return hammerLightning;}, get hammerAura(){return hammerAura;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
-  startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
+  recordCombatContact, updateComboDisplay, updateBattleVisibility, startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
   updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
   drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
-  gainXP, forgeWeapon, renderCharacterProgress, persistCharacter, startLeap, armAirSmash,
+  gainXP, forgeWeapon, renderCharacterProgress, persistCharacter, startLeap, armAirSmash, guardDimensions, guardContact,
   setFacing(x,z){facing=normalize(x,z);pointer.active=false;},
   primeSwing(q){chargeHeld=false;chargeStarted=true;charge=q;attackCooldown=0;swing=null;},
   failFirstSpawnDuring(callback){const original=spawnEnemy;let attempts=0;spawnEnemy=(...args)=>++attempts===1?null:original(...args);try{callback();return attempts;}finally{spawnEnemy=original;}},
@@ -441,14 +445,14 @@ test('right mouse holds defense and release stops it; the former Q and E keys do
   assert.ok(api.leap); assert.equal(api.leap.slam, false, 'Space alone starts a normal leap without arming the mouse attack');
 });
 
-test('wave one gives breathing room, starts with two weak zombies, and a normal hit defeats one', () => {
+test('wave one gives breathing room and enemies survive a single hit even from the test hammer', () => {
   reset(); advance(5.5);
   assert.equal(api.enemies.length, 0, 'The opening must allow time to learn the controls before the first spawn');
   advance(1);
   assert.equal(api.enemies.length, 2, 'The first wave arrives in its first scheduled batch of two');
   assert.equal(api.wave.number, 1); assert.equal(api.wave.total, 10); assert.equal(api.wave.spawned, 2);
   const enemy = api.enemies[0];
-  assert.equal(enemy.type, 'zombie'); assert.ok(enemy.hp <= api.stats.power);
+  assert.equal(enemy.type, 'zombie'); assert.ok(enemy.hp > api.stats.power);
   assert.ok(enemy.damage <= 6, 'A starter zombie should not retain the previous 11-damage attack');
   assert.ok(enemy.speed < api.stats.speed / 3);
   api.world.objects.forEach((o, i) => { o.x = 500 + i * 10; o.z = 500; o.mesh.position.set(o.x,o.baseY,o.z); });
@@ -456,7 +460,9 @@ test('wave one gives breathing room, starts with two weak zombies, and a normal 
   enemy.x = api.player.x; enemy.z = api.player.z + 2.3; enemy.speed = 0; enemy.state = 'idle';
   api.setFacing(0, 1); api.poseHero(1);
   mouseAttack(true); mouseAttack(false); playerSteps(.35);
-  assert.equal(enemy.dead, true, 'One ordinary starter hammer hit must defeat the first zombie');
+  assert.equal(enemy.dead, false, 'Even the test hammer should register contact before the enemy falls');
+  playerSteps(.12);mouseAttack(true);mouseAttack(false);playerSteps(.5);
+  assert.equal(enemy.dead, true, 'The stronger test hammer defeats an opening zombie in two contacts');
   assert.equal(api.kills, 1);
 });
 
@@ -615,12 +621,12 @@ test('a continuous swing crosses many poses and damages a target only once', () 
   assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 480 Hz sample`);
 });
 
-test('a quick left-click connects during acceleration and completes its readable 360 ms forehand', () => {
+test('a quick left-click connects during acceleration and completes its readable 380 ms forehand', () => {
   arena(); api.poseHero(1);
   const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
   mouseAttack(true); mouseAttack(false);
   const plannedDuration = api.swing.duration;
-  close(plannedDuration, .36);
+  close(plannedDuration, .38);
   let contactTime = null, duration = 0;
   while (api.swing && duration < .5) {
     api.updatePlayer(1 / 240); duration += 1 / 240;
@@ -725,8 +731,8 @@ test('an active combo stroke stays fixed and rejected recovery inputs do not ski
 
 test('every combo stroke hits close and forward enemies promptly once without damaging enemies behind', () => {
   const durations = {
-    'one-forehand': .36, 'one-backhand': .38, 'one-diagonal': .42,
-    'two-broadside': .44, 'two-cross': .46, 'two-overhead': .50,
+    'one-forehand': .38, 'one-backhand': .42, 'one-diagonal': .48,
+    'two-broadside': .48, 'two-cross': .58, 'two-overhead': .68,
   };
   for (const twoHanded of [false, true]) for (const sizeLevel of [0, 2]) for (const distance of [.9, 2.3]) {
     arena();
@@ -740,7 +746,7 @@ test('every combo stroke hits close and forward enemies promptly once without da
       mouseAttack(true); mouseAttack(false);
       const strike = api.swing; assert.equal(strike?.variant, variant);
       close(strike.duration, durations[variant]);
-      while (api.swing && duration < .65) {
+      while (api.swing && duration < .85) {
         api.updatePlayer(1 / 240); duration += 1 / 240;
         assert.equal(strike.variant, variant);
         assert.equal(rear.hp, rear.maxHp,
@@ -1890,11 +1896,44 @@ test('RMB aims a vertical frontal propeller while stationary, blocks the front a
   playerSteps(.38, 1 / 120, () => points.push(worldPosition(api.hero.userData.hammerHead).sub(api.hero.position)));
   const heights = points.map(p => p.y), depths = points.map(p => p.x * api.aim.x + p.z * api.aim.z);
   const lateral = points.map(p => p.x * api.aim.z - p.z * api.aim.x);
-  assert.ok(Math.max(...heights) - Math.min(...heights) > 2);
-  assert.ok(Math.max(...lateral) - Math.min(...lateral) > 2);
+  const guard = api.guardDimensions(), orbit = api.hero.userData.hammerHead.position.y - guard.gripCenter;
+  assert.ok(Math.max(...heights) - Math.min(...heights) > orbit * 1.8);
+  assert.ok(Math.max(...lateral) - Math.min(...lateral) > orbit * 1.8);
   assert.ok(Math.max(...depths) - Math.min(...depths) < .02, 'The spin stays in one vertical plane in front');
-  assert.ok(Math.min(...depths) > .8, 'The propeller does not orbit around the warrior');
+  for (const depth of depths) close(depth, guard.forward, .001);
+  assert.ok(guard.forward > api.player.radius, 'The propeller stays in front of the warrior');
   mouseGuard(false); assert.equal(api.guarding, false);
+});
+
+test('stock guards rotate about the hands with connected unstretched arms and an aligned defense plane', () => {
+  for (const level of [1, 3, 6, 10, 15]) for (const twoHanded of [false, true]) {
+    arena(level, {test: true});
+    if ((api.stance > .9) !== twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    mouseGuard(true);
+    playerSteps(.5, 1 / 120, () => {
+      const u = api.hero.userData, g = api.guardDimensions();
+      assert.equal(api.guarding, true);
+      close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
+      if (twoHanded) close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.leftGripAnchor)), 0);
+      else if (u.shieldEquipped) close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.shieldGripAnchor)), 0);
+      for (const [arm, hand] of [[u.leftArm, u.leftGrip], [u.rightArm, u.rightGrip]]) {
+        assert.ok(worldPosition(arm).distanceTo(worldPosition(hand)) <= .9 + 1e-6,
+          `Level ${level}, ${twoHanded ? 'two' : 'one'} hands: guard stretched an arm`);
+        close(arm.userData.upper.scale.y, .44); close(arm.userData.fore.scale.y, .46);
+        const elbow = arm.userData.upper.localToWorld(new THREE.Vector3(0, .5, 0));
+        close(elbow.distanceTo(arm.userData.fore.localToWorld(new THREE.Vector3(0, -.5, 0))), 0);
+      }
+      assert.ok(u.getHeadFloorY() >= .0799, 'The entire equipped head must clear the ground throughout the propeller');
+      const center = worldPosition(api.guardRing);
+      close(center.x, api.player.x + api.facing.x * g.forward);
+      close(center.z, api.player.z + api.facing.z * g.forward);
+      close(center.y, api.player.y + g.height);
+      const from = {x: center.x + api.facing.x * 2, y: center.y, z: center.z + api.facing.z * 2};
+      const to = {x: center.x - api.facing.x * 2, y: center.y, z: center.z - api.facing.z * 2};
+      close(api.guardContact(from, to), .5, 1e-6);
+    });
+    mouseGuard(false);
+  }
 });
 
 test('RMB reflects a frontal robot bolt back into an enemy without hurting the warrior', () => {
@@ -1924,7 +1963,7 @@ test('walking RMB defense and its physical vertical plane follow travel instead 
     points.push(worldPosition(api.hero.userData.hammerHead).sub(api.hero.position));
   });
   const depth = points.map(point => point.x * direction.x + point.z * direction.z);
-  assert.ok(Math.min(...depth) > .8);
+  for (const value of depth) close(value, api.guardDimensions().forward, .001);
   assert.ok(Math.max(...depth) - Math.min(...depth) < .02,
     'The physical propeller plane must agree with the visible walking direction');
   const hp = api.player.hp;
@@ -2733,11 +2772,14 @@ test('a thrown starter log stays where it lands until the player approaches to r
   assert.equal(projectile.mesh.parent, api.scene);
   assert.ok(Math.hypot(projectile.x - startX, projectile.z - startZ) > 3);
   assert.ok(projectile.y < .8, 'The recoverable weapon must settle visibly near the ground');
+  assert.ok(new THREE.Box3().setFromObject(projectile.mesh).min.y >= .014,
+    'The thicker physical log must lie above the street, not sink below its visible surface');
   close(api.player.x, startX); close(api.player.z, startZ);
   const resting = {x: projectile.x, z: projectile.z};
   playerSteps(2);
   assert.equal(api.throwFlight, projectile); assert.equal(api.hero.userData.weaponHeld, false);
   close(projectile.x, resting.x); close(projectile.z, resting.z);
+  assert.ok(new THREE.Box3().setFromObject(projectile.mesh).min.y >= .014);
   api.player.x = projectile.x; api.player.z = projectile.z;
   api.updatePlayer(1 / 120);
   assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
@@ -2756,6 +2798,8 @@ test('a nonreturning weapon landing on a roof can be retrieved from that same su
   const projectile = api.throwFlight;
   assert.ok(projectile?.grounded, 'The real ballistic throw must settle on the fixture roof');
   close(projectile.groundY, roof.h);
+  assert.ok(new THREE.Box3().setFromObject(projectile.mesh).min.y >= roof.h + .014,
+    'The resting mesh must use the roof support height and its real thickness');
   assert.equal(api.hero.userData.weaponHeld, false);
   api.player.x = projectile.x; api.player.z = projectile.z; api.player.y = roof.h;
   api.updatePlayer(1 / 120);
@@ -2839,4 +2883,96 @@ test('nearby enemies look upward and brace for a visible jump while walls and di
   assert.equal(near.fearTime, 0, 'One sustained airborne threat must not repeatedly stun the same witness');
   assert.ok(near.fearCooldown < initialCooldown);
   assert.ok(near.fear < .02, 'The visible fear pose must settle after its short reaction');
+});
+
+test('level-one log starts in both hands and four real contacts defeat a starter enemy', () => {
+  arena(1, {test: true});
+  assert.equal(api.stance, 1);assert.equal(api.stanceTarget, 1);
+  assert.equal(api.characterStats.hasShield, false);
+  const enemy=stationaryEnemy('zombie',0,2.1);
+  enemy.hp=enemy.maxHp=100;
+  const names=[];
+  for(let strike=0;strike<4;strike++){
+    mouseAttack(true);mouseAttack(false);names.push(api.swing?.variant);
+    playerSteps(.8);
+    assert.equal(api.combatCombo.hits,strike+1,'Each real contact counts once; killing adds no second count');
+    if(strike<3)assert.equal(enemy.dead,false);
+  }
+  assert.deepEqual(names,['two-broadside','two-cross','two-overhead','two-broadside']);
+  assert.equal(enemy.dead,true);assert.equal(api.kills,1);
+  assert.equal(api.characterStats.canLightning,false);
+});
+
+test('hit combo rewards successful contact, carries XP fractions and ends when the player is hurt', () => {
+  arena(1, {test: true});
+  const enemy=stationaryEnemy('brute',0,2);enemy.hp=enemy.maxHp=10000;
+  const before=audioEvents.length;
+  for(let n=0;n<10;n++)api.hitEnemy(enemy,1,{x:0,z:1},0,0);
+  assert.equal(api.combatCombo.hits,10);assert.equal(api.kills,0);
+  assert.equal(combatFeedback.comboMultiplier(api.combatCombo),1.5);
+  assert.equal(api.drops.filter(d=>d.kind==='wood').reduce((n,d)=>n+(d.amount||1),0),3);
+  assert.equal(audioEvents.slice(before).filter(e=>e.name==='combo').length,2);
+  api.drawFX();assert.equal(elements.get('comboHud').hidden,false);
+  assert.equal(elements.get('comboCount').textContent,'10 HIT');
+  assert.match(elements.get('comboReward').textContent,/1.5/);
+  api.hitEnemy(enemy,0,{x:0,z:1},0,0);assert.equal(api.combatCombo.hits,10);
+  const xpBefore=api.xp,scoreBefore=api.score;
+  for(let n=0;n<2;n++){
+    const target=stationaryEnemy('zombie',3+n,0);target.hp=1;api.hitEnemy(target,1,{x:1,z:0},0,0);
+  }
+  assert.equal(api.xp-xpBefore,3,'Two 1-XP defeats at x1.5 must award 3 XP');
+  assert.ok(api.score-scoreBefore>=75);
+  api.hurtPlayer(1,0,0,false);assert.equal(api.combatCombo.hits,0);
+  api.drawFX();assert.equal(elements.get('comboHud').hidden,true);
+});
+
+test('scenery takes repeated physical log hits, uses surface audio and never builds an enemy combo', () => {
+  arena(1, {test: true});
+  const car=api.world.objects.find(o=>o.type==='car'),building=api.world.buildingObjects[0];
+  const damage=Math.round(api.stats.power*1.25),carHp=car.hp,buildingHp=building.hp;
+  const before=audioEvents.length;
+  for(let n=0;n<3;n++){api.hurtObject(car,damage);api.hurtObject(building,damage);}
+  assert.equal(car.dead,false);assert.equal(building.dead,false);
+  assert.equal(car.hp,carHp-damage*3);assert.equal(building.hp,buildingHp-damage*3);
+  assert.ok(Math.ceil(carHp/damage)>=9);assert.ok(Math.ceil(buildingHp/damage)>=15);
+  assert.equal(api.combatCombo.hits,0);
+  const impacts=audioEvents.slice(before).filter(e=>e.name==='hit');
+  assert.ok(impacts.some(e=>e.details.material==='metal'&&e.details.weapon==='wood'));
+  assert.ok(impacts.some(e=>e.details.material==='masonry'&&e.details.weapon==='wood'));
+});
+
+test('actual camera visibility fades an obstructing tower and restores its material and collision state', () => {
+  arena(1, {test: true});
+  const tower=api.world.buildingObjects.find(o=>o.h>20);
+  Object.assign(tower,{x:5,z:7,w:6,d:6,h:24,renderActive:true});tower.mesh.position.set(5,tower.baseY,7);
+  api.world.rebuildSpatialIndex();api.camera.position.set(13,23,18);
+  for(let n=0;n<12;n++)api.updateBattleVisibility(.06);
+  assert.ok(api.battleOccluders.has(tower));assert.equal(tower.dead,false);
+  assert.ok(tower.materials.every(m=>m.opacity<.08));
+  assert.equal(api.heroSilhouette.visible,true);
+  assert.ok(api.world.nearObjects(5,7,0).includes(tower),'Fading must not erase physical obstacles');
+  tower.x=-15;tower.z=-15;
+  for(let n=0;n<30;n++)api.updateBattleVisibility(.06);
+  assert.equal(api.battleOccluders.has(tower),false);assert.equal(tower.occlusionFade,0);
+  for(const m of tower.materials){const b=m.userData.occlusionBaseline;assert.equal(m.opacity,b.opacity);assert.equal(m.depthWrite,b.depthWrite);}
+  assert.equal(api.heroSilhouette.visible,false);
+});
+
+test('compact upgrade tabs preserve pending choices and close after the last selection', () => {
+  arena();api.openUpgrade();api.toggleUpgradePanel(true);
+  assert.equal(api.upgradeTab,'powers');assert.equal(elements.get('upgradeChoices').children.length,3);
+  elements.get('upgradeGearTab').click();assert.equal(api.upgradeTab,'gear');
+  assert.equal(elements.get('upgradePowerView').hidden,true);
+  key('Digit1',true);key('Digit1',false);assert.equal(api.upgradeQueue.length,1);
+  elements.get('upgradePowerTab').click();key('Digit1',true);key('Digit1',false);
+  assert.equal(api.upgradeQueue.length,0);assert.equal(api.upgradePanelOpen,false);assert.equal(api.phase,'playing');
+});
+
+test('sound icon reports zero volume and a tap restores an audible saved setting', () => {
+  arena();elements.get('volumeRange').oninput({target:{value:'0'}});
+  assert.equal(elements.get('soundIcon').getAttribute('href'),'#a-sound-off');
+  elements.get('soundButton').click();
+  assert.equal(elements.get('soundIcon').getAttribute('href'),'#a-sound-on');
+  const saved=JSON.parse(storage.get('ironfall.settings'));
+  assert.equal(saved.muted,false);assert.ok(saved.volume>0);
 });

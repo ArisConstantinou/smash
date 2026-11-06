@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
 import { makeWarrior, makeTreasure } from '../models.js';
-import { sampleHammerSwing } from '../hammer-motion.js';
+import { sampleHammerSwing, HAMMER_COMBOS } from '../hammer-motion.js';
+import { createCharacterProgression, getCharacterStats } from '../character-progression.js';
 
 const epsilon = 1e-7;
 function close(a, b, message = 'Values should match') {
@@ -384,6 +385,106 @@ test('equipment material arrays are stable, owned per warrior and separate from 
       assert.equal(skinMaterials.has(m), false, 'Hammer lightning must not recolor the torso');
       assert.ok(all.includes(m)); assert.equal(b.getEquipmentMaterials().includes(m), false);
       assert.ok(m.userData.originalColor?.isColor); assert.ok(m.userData.originalEmissive?.isColor);
+    }
+  }
+});
+
+test('melee contact bounds fit the actual equipped head and neck after a tier or size change', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  u.weaponRig.position.set(0, 0, 0); u.weaponRig.quaternion.identity();
+  for (const [tier, size] of [[0, .98], [1, 1], [2, 1.03], [3, 1.10], [4, 1.18], [0, 1.6], [0, .98]]) {
+    u.setEquipment(tier); u.hammerHead.scale.setScalar(size); u.setReach(1.4);
+    hero.updateMatrixWorld(true);
+    const origin = worldPosition(u.hammerHead);
+    const extents = u.getHeadHalfExtents(), radius = u.getHeadContactRadius();
+    const measured = {x: 0, y: 0, z: 0, radius: 0, forward: 0};
+    u.hammerHead.traverse(mesh => {
+      if (!mesh.isMesh || !mesh.visible) return;
+      const positions = mesh.geometry.getAttribute('position');
+      for (let index = 0; index < positions.count; index++) {
+        const point = new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld).sub(origin);
+        assert.ok(point.length() <= radius + epsilon, 'Visible head geometry escaped the reported contact sphere');
+        measured.x = Math.max(measured.x, Math.abs(point.x));
+        measured.y = Math.max(measured.y, Math.abs(point.y));
+        measured.z = Math.max(measured.z, Math.abs(point.z));
+        measured.radius = Math.max(measured.radius, point.length());
+        measured.forward = Math.max(measured.forward, point.y);
+      }
+    });
+    for (const axis of ['x', 'y', 'z']) close(extents[axis], measured[axis]);
+    close(radius, measured.radius, 'A tier change must not keep the previous weapon contact radius');
+    close(u.getHeadForwardExtent(), measured.forward);
+    const neck = u.hammerPivot.getObjectByName('hammerShaft');
+    const neckOrigin = worldPosition(neck);
+    let neckRadius = 0;
+    neck.traverse(mesh => {
+      if (!mesh.isMesh) return;
+      const positions = mesh.geometry.getAttribute('position');
+      for (let index = 0; index < positions.count; index++) {
+        const point = new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld).sub(neckOrigin);
+        neckRadius = Math.max(neckRadius, Math.hypot(point.x, point.z));
+      }
+    });
+    close(u.getShaftContactRadius(), neckRadius);
+    if (tier === 0 && size < 1) {
+      assert.ok(measured.forward > .54 && measured.z * 2 > .62,
+        'The starting trunk must retain a long, broad readable silhouette');
+      assert.ok(neckRadius > .18, 'The trunk needs a continuous substantial wooden neck');
+    }
+  }
+});
+
+test('throw guidance measures the real release balance without resizing a held compact weapon', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  for (const [tier, size] of [[0, .98], [1, 1.36], [2, 1.03], [4, 1.9]]) {
+    u.setEquipment(tier); u.hammerHead.scale.setScalar(size); u.setReach(.35);
+    const headPosition = u.hammerHead.position.clone(), radius = u.getThrowRadius();
+    for (const reach of [.35, 1.5, 3.4]) {
+      const metrics = u.getThrowMetrics(reach);
+      close(u.reachScale, .35); close(u.hammerHead.position.distanceTo(headPosition), 0);
+      close(u.getThrowRadius(), radius, 'Predicting a longer release must not change the visible compact weapon');
+      u.setReach(reach);
+      const projectile = u.createThrownHammer();
+      close(metrics.x, projectile.userData.balance.x);
+      close(metrics.y, projectile.userData.balance.y);
+      close(metrics.z, projectile.userData.balance.z);
+      close(metrics.radius, projectile.userData.radius);
+      u.setReach(.35);
+    }
+  }
+});
+
+test('every base weapon can finish its swings above the ground without stretching arms or changing size', () => {
+  const up = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3();
+  for (const level of [1, 3, 6, 10, 15]) for (const [mode, variants] of Object.entries(HAMMER_COMBOS)) {
+    const hero = makeWarrior(), u = hero.userData, stats = getCharacterStats(createCharacterProgression(level));
+    const twoHanded = mode === 'twoHanded';
+    u.setEquipment(stats.weaponTier); u.hammerHead.scale.setScalar(stats.size);
+    restingPose(hero, Number(twoHanded));
+    u.setReach(stats.range - .55 - u.getHeadForwardExtent() - .43);
+    const restPosition = u.weaponRestPosition.clone(), restRotation = u.weaponRig.quaternion.clone();
+    const headSize = u.hammerHead.scale.clone(), headReach = u.reachScale;
+    for (const variant of variants) for (let step = 0; step <= 120; step++) {
+      const pose = sampleHammerSwing(step / 120, {variant});
+      u.body.rotation.set(pose.bodyPitch, pose.bodyYaw, pose.bodyRoll); u.body.position.y = pose.bodyDrop;
+      direction.set(pose.directionX, pose.directionY, pose.directionZ);
+      const rotation = new THREE.Quaternion().setFromUnitVectors(up, direction)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(up, pose.shaftTwist));
+      u.weaponRig.quaternion.copy(restRotation).slerp(rotation, pose.windup).slerp(restRotation, pose.recovery);
+      u.weaponRig.position.copy(restPosition).lerp(new THREE.Vector3(pose.gripX, pose.gripY, pose.gripZ), pose.windup)
+        .lerp(restPosition, pose.recovery);
+      u.weaponRig.position.y += Math.max(0, .04 - u.getHeadFloorY());
+      u.updateGrip(); hero.updateMatrixWorld(true);
+      const headBounds = new THREE.Box3().setFromObject(u.hammerHead);
+      assert.ok(headBounds.min.y >= .04 - epsilon, `${level}/${variant}: head passed through the ground`);
+      close(u.hammerHead.scale.distanceTo(headSize), 0, 'An ordinary swing must not magically enlarge the head');
+      close(u.reachScale, headReach, 'An ordinary swing must not stretch the shaft');
+      contact(u.rightGrip, u.rightGripAnchor);
+      if (twoHanded) contact(u.leftGrip, u.leftGripAnchor);
+      for (const [arm, grip] of [[u.leftArm, u.leftGrip], [u.rightArm, u.rightGrip]]) {
+        assert.ok(worldPosition(arm).distanceTo(worldPosition(grip)) < .9,
+          `${level}/${variant}: reaching the ground stretched the arm`);
+      }
     }
   }
 });

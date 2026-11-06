@@ -122,18 +122,19 @@ test('both hand modes have visibly different forehand, reverse and finishing tra
   assert.ok(at(overhead, .35).trail > .5, 'A vertical strike still needs a visible speed-based trail');
 });
 
-test('combo rhythms leave readable heavy finishes while front contact stays responsive', () => {
+test('combo rhythms leave a distinct heavy finish while front contact stays responsive', () => {
   const quick = HAMMER_COMBOS.oneHanded.map(getHammerSwingDuration);
   const heavy = HAMMER_COMBOS.twoHanded.map(getHammerSwingDuration);
   for (const durations of [quick, heavy]) {
     assert.ok(durations[0] < durations[1] && durations[1] < durations[2],
       'A chain must change rhythm, rather than playing every silhouette at the same speed');
     for (const duration of durations) {
-      assert.ok(duration >= .34 && duration <= .50, 'Readable motion must not introduce a sluggish attack');
-      assert.ok(duration * .40 <= .20, 'The front contact must arrive within 200 ms');
+      assert.ok(duration >= .34 && duration <= .68, 'The heaviest full follow-through must stay under 700 ms');
+      assert.ok(duration * .40 <= .28, 'The heaviest front contact must arrive within 280 ms');
     }
   }
   for (let index = 0; index < quick.length; index++) assert.ok(heavy[index] > quick[index]);
+  assert.ok(heavy[2] - heavy[0] >= .18, 'The overhead needs a clearly longer load and recovery than the sweep');
   const finish = sampleHammerSwing(.55, { variant: 'two-overhead' });
   assert.equal(finish.trail, 0, 'The downstroke must arrest at its planted finish before recovery');
   assert.equal(finish.recovery, 0, 'A brief visible planted pose must precede lifting the hammer again');
@@ -208,7 +209,7 @@ test('all six combo profiles remain finite and preserve velocity across their an
       for (const field of ['windup', 'recovery', 'trail']) assert.ok(pose[field] >= 0 && pose[field] <= 1);
     }
     const epsilon = 1e-5;
-    for (const boundary of [SWING_CONTACT_START, .40, .48, .54, SWING_CONTACT_END]) {
+    for (const boundary of [SWING_CONTACT_START, .40, .48, .50, .54, SWING_CONTACT_END]) {
       const before = sampleHammerSwing(boundary - epsilon, options), at = sampleHammerSwing(boundary, options), after = sampleHammerSwing(boundary + epsilon, options);
       for (const field of ['yaw', 'pitch', 'directionX', 'directionY', 'directionZ', 'shaftTwist', 'gripX', 'gripY', 'gripZ']) {
         const leftVelocity = (at[field] - before[field]) / epsilon, rightVelocity = (after[field] - at[field]) / epsilon;

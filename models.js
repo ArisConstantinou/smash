@@ -145,16 +145,17 @@ function growthRing(g, color, radius, y, x = 0, z = 0, thickness = .009) {
   return part(g, GEO.get(key), color, x, y, z, 1, 1, 1, Math.PI / 2);
 }
 
-// An asymmetric, tapered piece of tree trunk. The cut end, growth rings,
-// broken branch and raised bark seams distinguish it from a plain cylinder.
+// An asymmetric, tapered piece of tree trunk. Its length and broad cut end
+// stay visible from the game camera; the thick lower neck joins the shaft
+// continuously instead of reading as a small mallet head on a thin stick.
 function logHead(g, banded = false) {
   const sides = 10, positions = [], colors = [];
   const color = new THREE.Color();
   const levels = [
-    { y: -.42, r: .18, x: -.015, z: 0 },
-    { y: -.24, r: .245, x: -.025, z: .015 },
-    { y: .13, r: .29, x: .015, z: -.005 },
-    { y: .42, r: .275, x: .035, z: .015 },
+    { y: -.56, r: .20, x: -.015, z: 0 },
+    { y: -.34, r: .30, x: -.025, z: .015 },
+    { y: .20, r: .35, x: .015, z: -.005 },
+    { y: .56, r: .325, x: .035, z: .015 },
   ];
   const bark = [0x654732, 0x80573a, 0x946443, 0x704b34, 0xa07149];
   const ringPoint = (level, i) => {
@@ -175,8 +176,8 @@ function logHead(g, banded = false) {
     }
   }
   for (let i = 0; i < sides; i++) {
-    triangle([-.015, -.42, 0], ringPoint(levels[0], i + 1), ringPoint(levels[0], i), 0x875b3b);
-    triangle([.035, .42, .015], ringPoint(levels[3], i), ringPoint(levels[3], i + 1), 0xc69a64);
+    triangle([-.015, -.56, 0], ringPoint(levels[0], i + 1), ringPoint(levels[0], i), 0x875b3b);
+    triangle([.035, .56, .015], ringPoint(levels[3], i), ringPoint(levels[3], i + 1), 0xd5ad76);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -187,23 +188,23 @@ function logHead(g, banded = false) {
   // The authored source is compacted immediately below; avoid retaining its
   // temporary geometry after the merged equipment mesh has been created.
   g.userData.sourceGeometry = geometry;
-  for (const radius of [.075, .145, .215]) growthRing(g, 0x8b613d, radius, .424, .035, .015);
+  for (const radius of [.095, .18, .265]) growthRing(g, 0x8b613d, radius, .564, .035, .015, .011);
   for (const [angle, length] of [[.3, .12], [2.4, .10], [4.1, .15]]) {
-    box(g, 0x80583b, .035 + Math.sin(angle) * .2, .427, .015 + Math.cos(angle) * .2,
+    box(g, 0x80583b, .035 + Math.sin(angle) * .26, .567, .015 + Math.cos(angle) * .26,
       .012, .006, length, 0, angle, 0);
   }
   for (let i = 0; i < 8; i++) {
-    const angle = i * Math.PI / 4 + .12, radius = .267;
+    const angle = i * Math.PI / 4 + .12, radius = .325;
     box(g, i % 2 ? 0x4d3528 : 0xaf7e51, Math.sin(angle) * radius, -.02,
-      Math.cos(angle) * radius, .025, .52 + (i % 3) * .05, .018, 0, angle, -.045);
+      Math.cos(angle) * radius, .035, .74 + (i % 3) * .04, .022, 0, angle, -.045);
   }
-  const knot = group(g, 'brokenBranch', .245, .025, .075);
+  const knot = group(g, 'brokenBranch', .31, .025, .075);
   knot.rotation.z = -1.06;
   cylinder(knot, 0x66452f, 0, .07, 0, .078, .12, .23, 7);
   cylinder(knot, 0xc69a64, 0, .19, 0, .072, .074, .016, 7);
   growthRing(knot, 0x805638, .038, .2, 0, 0, .008);
   if (banded) {
-    for (const [y, radius] of [[-.23, .255], [.22, .296]]) {
+    for (const [y, radius] of [[-.30, .312], [.30, .352]]) {
       cylinder(g, 0x58666a, 0, y, .008, radius, radius, .09, 10);
       for (let i = 0; i < 5; i++) {
         const angle = i * Math.PI * 2 / 5;
@@ -508,6 +509,87 @@ export function makeWarrior() {
     return weaponHeld;
   }
 
+  // Gameplay asks the equipped geometry for its contact volume. The measured
+  // data excludes hands, hidden helpers and old equipment. Geometry is read
+  // only when changing tier; growth upgrades just rescale these cached points.
+  const contactCache = {
+    tier: -1, head: new THREE.Box3(), headPoints: [], shaftPoints: [],
+    sizeKey: '', radius: 0, forward: 0, shaftRadius: 0, halfExtents: {x: 0, y: 0, z: 0},
+  };
+  const contactVertex = new THREE.Vector3();
+  function measureContactGeometry() {
+    if (contactCache.tier === equipmentTier) return;
+    contactCache.tier = equipmentTier;
+    contactCache.sizeKey = '';
+    contactCache.head.makeEmpty();
+    contactCache.headPoints.length = 0; contactCache.shaftPoints.length = 0;
+    const collect = (node, parentMatrix, points, bounds) => {
+      if (!node.visible) return;
+      node.updateMatrix();
+      const transform = new THREE.Matrix4().multiplyMatrices(parentMatrix, node.matrix);
+      if (node.isMesh) {
+        const positions = node.geometry.getAttribute('position');
+        for (let index = 0; index < positions.count; index++) {
+          contactVertex.fromBufferAttribute(positions, index).applyMatrix4(transform);
+          points.push(contactVertex.x, contactVertex.y, contactVertex.z);
+          bounds?.expandByPoint(contactVertex);
+        }
+      }
+      for (const child of node.children) collect(child, transform, points, bounds);
+    };
+    const identity = new THREE.Matrix4();
+    for (const child of hammerHead.children) collect(child, identity, contactCache.headPoints, contactCache.head);
+    for (const child of shaft.children) collect(child, identity, contactCache.shaftPoints);
+  }
+  function headContactDimensions() {
+    measureContactGeometry();
+    const sx = hammerHead.scale.x * hammerPivot.scale.x;
+    const sy = hammerHead.scale.y * hammerPivot.scale.y;
+    const sz = hammerHead.scale.z * hammerPivot.scale.z;
+    const shaftX = shaft.scale.x * hammerPivot.scale.x, shaftZ = shaft.scale.z * hammerPivot.scale.z;
+    const key = [sx, sy, sz, shaftX, shaftZ].join(':');
+    if (contactCache.sizeKey === key) return contactCache;
+    let radiusSquared = 0, forward = 0, shaftSquared = 0;
+    const extents = contactCache.halfExtents;
+    extents.x = extents.y = extents.z = 0;
+    const points = contactCache.headPoints;
+    for (let index = 0; index < points.length; index += 3) {
+      const x = points[index] * sx, y = points[index + 1] * sy, z = points[index + 2] * sz;
+      radiusSquared = Math.max(radiusSquared, x * x + y * y + z * z);
+      forward = Math.max(forward, y);
+      extents.x = Math.max(extents.x, Math.abs(x));
+      extents.y = Math.max(extents.y, Math.abs(y));
+      extents.z = Math.max(extents.z, Math.abs(z));
+    }
+    const neck = contactCache.shaftPoints;
+    for (let index = 0; index < neck.length; index += 3) {
+      const x = neck[index] * shaftX, z = neck[index + 2] * shaftZ;
+      shaftSquared = Math.max(shaftSquared, x * x + z * z);
+    }
+    contactCache.sizeKey = key;
+    contactCache.radius = Math.sqrt(radiusSquared);
+    contactCache.forward = forward;
+    contactCache.shaftRadius = Math.sqrt(shaftSquared);
+    return contactCache;
+  }
+  const getHeadContactRadius = () => headContactDimensions().radius;
+  const getHeadForwardExtent = () => headContactDimensions().forward;
+  const getShaftContactRadius = () => headContactDimensions().shaftRadius;
+  // Read-only shared value, expressed about the actual head origin. Used to
+  // fit an entire log or hammer through guard/orbit poses without assumptions
+  // about which equipment axis is longest.
+  const getHeadHalfExtents = () => headContactDimensions().halfExtents;
+  const headFloorMatrix = new THREE.Matrix4(), headFloorBounds = new THREE.Box3();
+  function getHeadFloorY() {
+    // Hero-local ground height, independent of the hero's world location or
+    // heading. A descending strike can raise its hands by max(0, .04 - y)
+    // before solving the arm chains, preserving the complete physical weapon.
+    measureContactGeometry();
+    weaponRig.updateMatrix(); hammerPivot.updateMatrix(); hammerHead.updateMatrix();
+    headFloorMatrix.multiplyMatrices(weaponRig.matrix, hammerPivot.matrix).multiply(hammerHead.matrix);
+    return headFloorBounds.copy(contactCache.head).applyMatrix4(headFloorMatrix).min.y;
+  }
+
   const localBoundsCache = {
     key: '', bounds: new THREE.Box3(), center: new THREE.Vector3(),
     radius: 0, spinRadius: 0,
@@ -516,8 +598,10 @@ export function makeWarrior() {
   const localRootScale = new THREE.Matrix4();
   const localMeshBox = new THREE.Box3();
   const localSphere = new THREE.Sphere();
-  function localHammerBounds() {
-    const key = [equipmentTier, reachScale, hammerHead.scale.x, hammerHead.scale.y, hammerHead.scale.z,
+  const boundsPoseMatrix = new THREE.Matrix4(), boundsPosePosition = new THREE.Vector3(), boundsPoseScale = new THREE.Vector3();
+  function localHammerBounds(requestedReach = reachScale) {
+    const reach = Number.isFinite(requestedReach) ? Math.max(.35, requestedReach) : reachScale;
+    const key = [equipmentTier, reach, hammerHead.scale.x, hammerHead.scale.y, hammerHead.scale.z,
       hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z].join(':');
     if (key === localBoundsCache.key) return localBoundsCache;
     const bounds = localBoundsCache.bounds;
@@ -526,9 +610,21 @@ export function makeWarrior() {
     function visit(node, parentMatrix) {
       if (!node.visible) return;
       node.updateMatrix();
+      let poseMatrix = node.matrix;
+      if (reach !== reachScale && (node === hammerHead || node === shaft || node === collar)) {
+        // Aim prediction needs the release length while the real weapon may
+        // still be in its compact guard/orbit. Measure that pose in a matrix;
+        // never resize the live weapon or create/dispose a projectile clone.
+        boundsPosePosition.copy(node.position); boundsPoseScale.copy(node.scale);
+        const headY = .43 + reach, shaftLength = Math.max(.1, headY - .21 - .5);
+        if (node === hammerHead) boundsPosePosition.y = headY;
+        else if (node === shaft) { boundsPosePosition.y = .5 + shaftLength / 2; boundsPoseScale.y = shaftLength; }
+        else boundsPosePosition.y = headY - .31;
+        poseMatrix = boundsPoseMatrix.compose(boundsPosePosition, node.quaternion, boundsPoseScale);
+      }
       let matrix = localMatrices.get(node);
       if (!matrix) { matrix = new THREE.Matrix4(); localMatrices.set(node, matrix); }
-      matrix.multiplyMatrices(parentMatrix, node.matrix);
+      matrix.multiplyMatrices(parentMatrix, poseMatrix);
       if (node.isMesh) {
         if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
         localMeshBox.copy(node.geometry.boundingBox).applyMatrix4(matrix);
@@ -548,6 +644,12 @@ export function makeWarrior() {
   }
   const getThrowRadius = () => localHammerBounds().radius;
   const getSpinRadius = () => localHammerBounds().spinRadius;
+  function getThrowMetrics(reach = reachScale) {
+    const bounds = localHammerBounds(reach);
+    // Center is in the unrotated weapon frame with the current physical
+    // scaling already included, just like createThrownHammer's balanceY.
+    return {x: bounds.center.x, y: bounds.center.y, z: bounds.center.z, radius: bounds.radius};
+  }
   function getThrowCenterWorld(target = new THREE.Vector3()) {
     target.copy(localHammerBounds().center);
     // Cached bounds already include pivot scale; localToWorld applies it once.
@@ -772,21 +874,25 @@ export function makeWarrior() {
       cylinder(g, P.timberDark, 0, .065, -.197, .056, .056, .32, 8);
     });
     draw(handle, g => {
-      cylinder(g, tier ? 0x62452f : 0x735037, 0, .2, 0, .078, .10, .68, 8);
+      cylinder(g, tier ? 0x62452f : 0x735037, 0, .2, 0, tier < 2 ? .115 : .078, .10, .68, 8);
       if (tier) for (let i = 0; i < 6; i++) box(g, i % 2 ? 0x98754b : 0x4e382b, 0, -.035 + i * .1,
         0, .17, .037, .17, 0, i * .3);
       else for (const side of [-1, 1]) box(g, 0xb18b59, side * .068, .18, .025, .027, .55, .09);
       if (tier >= 2) cylinder(g, iron, 0, -.13, 0, .11, .12, .12, 8);
     });
     draw(shaft, g => {
-      cylinder(g, tier ? 0x59422e : 0x795638, 0, 0, 0, tier < 2 ? .085 : .064,
-        tier < 2 ? .095 : .075, 1, 8);
-      box(g, tier ? 0x9e8055 : 0xba8e57, 0, 0, tier < 2 ? .087 : .07, .034, .93, .018);
+      cylinder(g, tier ? 0x59422e : 0x795638, 0, 0, 0, tier < 2 ? .205 : .064,
+        tier < 2 ? .11 : .075, 1, 8);
+      if (tier < 2) {
+        // Raised bark follows the taper: an unbroken branch below the trunk.
+        for (const side of [-1, 1]) box(g, side < 0 ? 0x523c2c : 0xa87d4e,
+          side * .145, .02, .04, .026, .90, .045, 0, 0, -side * .09);
+      } else box(g, 0x9e8055, 0, 0, .07, .034, .93, .018);
     });
     draw(collar, g => {
-      cylinder(g, tier ? iron : 0x59402e, 0, 0, 0, tier < 2 ? .13 : .15,
-        tier < 2 ? .12 : .14, .13, 8);
-      if (tier >= 2) box(g, 0xbbc3b9, 0, 0, .15, .065, .065, .03);
+      if (tier < 2) return;
+      cylinder(g, iron, 0, 0, 0, .15, .14, .13, 8);
+      box(g, 0xbbc3b9, 0, 0, .15, .065, .065, .03);
     });
     draw(hammerHead, g => {
       if (tier < 2) { logHead(g, tier === 1); return; }
@@ -832,7 +938,7 @@ export function makeWarrior() {
     Object.assign(root.userData, { equipmentTier: next, weaponKind: weaponKinds[next], equipmentName: equipmentNames[next],
       shieldEquipped, shieldStored: shieldEquipped && stance >= .65, color: next < 2 ? 0xc58c68 : P.blue,
       fragments: next < 2 ? [0x795638, 0xb18b59, 0xc58c68, 0x40565a] : [P.blue, P.steel, P.gold, P.hot] });
-    localBoundsCache.key = ''; localMatrices.clear();
+    localBoundsCache.key = ''; localMatrices.clear(); contactCache.tier = -1;
     updateGrip();
     return next;
   }
@@ -843,8 +949,9 @@ export function makeWarrior() {
     body, leftLeg, rightLeg, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
     leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
     shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach,
-    setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld,
-    getSpinRadius, weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,
+    setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld, getThrowMetrics,
+    getSpinRadius, getHeadContactRadius, getHeadForwardExtent, getShaftContactRadius, getHeadHalfExtents, getHeadFloorY,
+    weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,
     stance: 0, shieldStored: false, weaponHeld: true, reachScale: 1,
     hammerRest: { x: 0, y: 0, z: 0 },
     width: 1.1, depth: .7, height: 1.99, color: P.blue,

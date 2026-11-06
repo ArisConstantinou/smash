@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave,WAVE_ENEMY_TYPES} from '../waves.js';
 import {attackStats,calculateStats} from '../core.js';
+import {getCharacterStats,createCharacterProgression} from '../character-progression.js';
 
 test('opening wave spends exactly ten enemies in groups of two, three and five',()=>{
   const sizes=[];let spawned=0,index=0;
@@ -37,10 +38,12 @@ test('later waves increase the budget, health and damage while retaining readabl
   }
 });
 
-test('opening zombies fall to one starting swing or one full spin contact',()=>{
+test('opening zombies need several log contacts while equipment noticeably improves time to defeat',()=>{
   const stats=calculateStats({}),enemy=enemyStatsForWave('zombie',1);
-  assert.ok(attackStats(stats,0).damage>=enemy.hp);
-  assert.ok(Math.round(stats.power*.9)>=enemy.hp);
+  const starter=getCharacterStats(createCharacterProgression(1)),advanced=getCharacterStats(createCharacterProgression(15));
+  const logHits=Math.ceil(enemy.hp/Math.round(starter.power*1.25));
+  assert.ok(logHits>=4&&logHits<=6);
+  assert.ok(Math.ceil(enemy.hp/advanced.power)<logHits);
   assert.ok(enemy.damage<=stats.maxHp/20,'Initial mistakes leave room to recover');
   assert.ok(enemy.speed<stats.speed/2,'Starting movement can escape the horde');
 });

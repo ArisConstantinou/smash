@@ -17,27 +17,27 @@ function weapon(id, name, minLevel, cost, stats) {
 
 export const CHARACTER_WEAPONS = Object.freeze([
   weapon('log', 'ΚΟΥΤΣΟΥΡΟ', 1, {}, {
-    power: 22, size: .84, range: 2.25, jumpVelocity: 10.5, jumpCooldown: 1.35,
+    power: 22, size: .98, range: 2.75, jumpVelocity: 10.5, jumpCooldown: 1.35,
     canAirSmash: false, canReturn: false, canRicochet: false, canLightning: false,
     maxChainHits: 1, hasShield: false, armorTier: 0, throwRange: 10, throwDamageMultiplier: 1.5,
   }),
   weapon('club', 'ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ', 3, {wood: 8}, {
-    power: 30, size: .9, range: 2.45, jumpVelocity: 12.5, jumpCooldown: 1.5,
+    power: 30, size: 1, range: 2.95, jumpVelocity: 12.5, jumpCooldown: 1.5,
     canAirSmash: false, canReturn: false, canRicochet: false, canLightning: false,
     maxChainHits: 1, hasShield: false, armorTier: 0, throwRange: 12, throwDamageMultiplier: 1.65,
   }),
   weapon('iron', 'ΣΙΔΕΡΕΝΙΟ ΣΦΥΡΙ', 6, {wood: 10, scrap: 8}, {
-    power: 38, size: 1, range: 2.85, jumpVelocity: 16, jumpCooldown: 1.8,
+    power: 38, size: 1.03, range: 3.15, jumpVelocity: 16, jumpCooldown: 1.8,
     canAirSmash: true, canReturn: false, canRicochet: false, canLightning: false,
     maxChainHits: 1, hasShield: true, armorTier: 1, throwRange: 14, throwDamageMultiplier: 1.85,
   }),
   weapon('war', 'ΠΟΛΕΜΙΚΟ ΣΦΥΡΙ', 10, {wood: 16, scrap: 18, crystal: 2}, {
-    power: 46, size: 1.08, range: 3.05, jumpVelocity: 19.5, jumpCooldown: 2,
+    power: 46, size: 1.10, range: 3.40, jumpVelocity: 19.5, jumpCooldown: 2,
     canAirSmash: true, canReturn: true, canRicochet: false, canLightning: false,
     maxChainHits: 1, hasShield: true, armorTier: 2, throwRange: 17, throwDamageMultiplier: 2,
   }),
   weapon('storm', 'ΣΦΥΡΙ ΤΗΣ ΚΑΤΑΙΓΙΔΑΣ', 15, {wood: 20, scrap: 30, crystal: 6}, {
-    power: 54, size: 1.16, range: 3.25, jumpVelocity: 22.5, jumpCooldown: 2.2,
+    power: 54, size: 1.18, range: 3.65, jumpVelocity: 22.5, jumpCooldown: 2.2,
     canAirSmash: true, canReturn: true, canRicochet: true, canLightning: true,
     maxChainHits: 5, hasShield: true, armorTier: 3, throwRange: 20, throwDamageMultiplier: 2.2,
   }),

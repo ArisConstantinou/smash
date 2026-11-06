@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js';
+import { makeProp } from './models.js?v=20261106-feel1';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
 import { createCityNavigation } from './city-navigation.js';
@@ -124,7 +124,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     const rx=range(.45,1.25),rz=range(.2,.6);patch(x,z,rx,rz,puddleMat,.06,8,.25);patch(x-.08,z-.05,rx*.63,rz*.11,puddleGlint,.064,5,.1);
   }
 
-  const stats={townhouse:[190,4],apartment:[250,5],shop:[210,4],office:[290,5],townhall:[420,7],police:[340,6],hospital:[380,6],skyscraper:[540,9],construction:[280,5],warehouse:[240,5],car:[100,2],policecar:[110,2],ambulance:[115,2],wall:[75,1],crate:[34,1],barrel:[38,1],tree:[65,1],lamp:[45,1],bench:[42,1]};
+  const stats={townhouse:[480,4],apartment:[680,5],shop:[520,4],office:[760,5],townhall:[1100,7],police:[900,6],hospital:[1000,6],skyscraper:[1400,9],construction:[700,5],warehouse:[620,5],car:[260,2],policecar:[300,2],ambulance:[320,2],wall:[160,1],crate:[44,1],barrel:[60,1],tree:[90,1],lamp:[70,1],bench:[65,1]};
   const fallbackDimensions={car:[1.8,3.6,1.45],wall:[3.4,.6,1.3],crate:[1,1,1],barrel:[.85,.85,1.1],tree:[.68,.68,4.45],lamp:[.45,.45,3.8],bench:[1.8,.7,1]};
   const spatial=new Map(),spatialCell=22;
   const bucketKey=(x,z)=>`${x},${z}`;

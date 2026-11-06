@@ -27,7 +27,7 @@ test('city contains 100 substantial, damageable buildings with civic and skyline
   for(const o of world.buildingObjects){
     assert.ok(o.w>=5&&o.d>=5&&o.h>=3,`${o.type} must be a substantial building`);
     assert.ok(o.w<=14.2&&o.d<=14.2,`${o.type} must fit its lot`);
-    assert.ok(o.hp>=180&&o.hp<=650&&o.hp===o.maxHp&&o.weight>=4);
+    assert.ok(o.hp>=450&&o.hp<=1600&&o.hp===o.maxHp&&o.weight>=4);
     assert.ok(o.mesh.userData.worldObjectIndex>=0);
     let vertices=0;
     o.mesh.traverse(n=>{if(n.isMesh)vertices+=n.geometry.attributes.position.count;});

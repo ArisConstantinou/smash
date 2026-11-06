@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261106-growth1">
+  <link rel="stylesheet" href="./style.css?v=20261106-feel1">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -171,30 +171,49 @@
       <button id="upgradesToggle" class="upgrades-toggle" type="button" aria-expanded="false" aria-controls="upgradePanel" aria-label="Άνοιγμα αναβαθμίσεων — U" title="Αναβαθμίσεις · U" data-desktop-label="Άνοιγμα αναβαθμίσεων — U" data-touch-label="Άνοιγμα αναβαθμίσεων">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gem"/></svg><span>ΑΝΑΒΑΘΜΙΣΕΙΣ</span><b id="pendingUpgradeCount" class="pending-upgrade-count" aria-label="Διαθέσιμες επιλογές">0</b><kbd>U</kbd><svg class="upgrade-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
       </button>
-      <section id="upgradePanel" class="upgrade-drawer" aria-label="Οπλοστάσιο και διαθέσιμες αναβαθμίσεις" hidden>
-        <header class="upgrade-drawer-heading"><div><span class="upgrade-eyebrow">ΤΟ ΣΦΥΡΙ ΣΟΥ. ΟΙ ΕΠΙΛΟΓΕΣ ΣΟΥ.</span><h2>ΟΠΛΟΣΤΑΣΙΟ</h2></div><span class="loadout-level">ΕΠΙΠΕΔΟ <b id="levelValue">1</b></span><button id="upgradeCloseButton" class="upgrade-close" type="button" aria-label="Κλείσιμο αναβαθμίσεων — U" title="Κλείσιμο · U" data-desktop-label="Κλείσιμο αναβαθμίσεων — U" data-touch-label="Κλείσιμο αναβαθμίσεων"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cross"/></svg></button></header>
-        <section class="forge-card" aria-label="Εξοπλισμός και κατασκευή">
-          <div class="equipped-heading"><strong id="equippedWeapon">ΚΟΥΤΣΟΥΡΟ</strong><span id="characterXpText">0 / 8 XP</span></div>
-          <div class="character-xp"><span id="forgeXpFill"></span></div>
-          <p id="weaponAbilities">Μικρό άλμα · μάζεψε το όπλο μετά τη ρίψη</p>
-          <div class="material-inventory" aria-label="Συλλεγμένα υλικά"><span class="material-wood">ΞΥΛΟ <b id="material-wood">0</b></span><span class="material-scrap">ΜΕΤΑΛΛΟ <b id="material-scrap">0</b></span><span class="material-crystal">ΚΡΥΣΤΑΛΛΟΙ <b id="material-crystal">0</b></span></div>
-          <div class="next-weapon"><small>ΕΠΟΜΕΝΗ ΚΑΤΑΣΚΕΥΗ</small><strong id="nextWeaponName">ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ</strong><p id="forgeRequirements">LV 3 · Ξύλο 0/8</p><button id="forgeButton" type="button" disabled>ΜΑΖΕΨΕ ΤΑ ΥΛΙΚΑ</button></div>
+      <section id="upgradePanel" class="upgrade-drawer" data-tab="powers" aria-label="Οπλοστάσιο και διαθέσιμες αναβαθμίσεις" hidden>
+        <header class="upgrade-drawer-heading">
+          <div class="upgrade-tabs" role="tablist" aria-label="Κατηγορία αναβαθμίσεων">
+            <button id="upgradePowerTab" class="upgrade-tab" type="button" role="tab" aria-selected="true" aria-controls="upgradePowerView" tabindex="0"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bolt"/></svg><span>ΔΥΝΑΜΕΙΣ</span></button>
+            <button id="upgradeGearTab" class="upgrade-tab" type="button" role="tab" aria-selected="false" aria-controls="upgradeGearView" tabindex="-1"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-hammer"/></svg><span>ΕΞΟΠΛΙΣΜΟΣ</span></button>
+          </div>
+          <button id="upgradeCloseButton" class="upgrade-close" type="button" aria-label="Κλείσιμο αναβαθμίσεων — U" title="Κλείσιμο · U" data-desktop-label="Κλείσιμο αναβαθμίσεων — U" data-touch-label="Κλείσιμο αναβαθμίσεων"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cross"/></svg></button>
+        </header>
+        <section id="upgradePowerView" class="upgrade-view" role="tabpanel" aria-labelledby="upgradePowerTab">
+          <div id="upgradeChoices" class="upgrade-choices"></div>
+          <div class="upgrade-queue-heading"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gem"/></svg><p id="upgradeQueueText">Βρες θησαυρούς για νέες αναβαθμίσεις.</p></div>
         </section>
-        <button id="mobileStanceButton" class="loadout-stance touch-only" type="button" aria-pressed="false" aria-label="Αλλαγή λαβής: ασπίδα στην πλάτη και σφυρί δύο χεριών. Πάτησε ξανά για επιστροφή." data-touch-label="Αλλαγή λαβής: ασπίδα στην πλάτη και σφυρί δύο χεριών. Πάτησε ξανά για επιστροφή.">
-          <svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-stance"/></svg><span><b>ΑΛΛΑΓΗ ΛΑΒΗΣ</b><strong id="mobileStanceValue">ΣΦΥΡΙ + ΑΣΠΙΔΑ</strong></span><svg class="stance-switch-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
-        </button>
-        <div class="loadout-stats" aria-label="Τρέχουσα δύναμη πολεμιστή">
-          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-power"/></svg><strong id="powerValue">1.0×</strong><small>ΔΥΝΑΜΗ</small></div>
-          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-size"/></svg><strong id="sizeValue">1.0×</strong><small>ΜΕΓΕΘΟΣ</small></div>
-          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-range"/></svg><strong id="rangeValue">1.0×</strong><small>ΕΜΒΕΛΕΙΑ</small></div>
-          <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-speed"/></svg><strong id="speedValue">1.0×</strong><small>ΤΑΧΥΤΗΤΑ</small></div>
-        </div>
-        <div id="relicSlots" class="relic-slots" aria-label="Ενεργά ευρήματα"></div>
-        <div class="upgrade-queue-heading"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gem"/></svg><p id="upgradeQueueText">Σπάσε, εξερεύνησε και βρες νέες αναβαθμίσεις.</p></div>
-        <div id="upgradeChoices" class="upgrade-choices"></div>
-        <footer class="upgrade-drawer-footnote"><span class="desktop-only"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> επιλογή όταν το πάνελ είναι ανοιχτό</span><span class="touch-only">Πάτησε την αναβάθμιση που θέλεις.</span><span class="upgrade-live"><i></i> Η ΜΑΧΗ ΣΥΝΕΧΙΖΕΤΑΙ</span></footer>
+        <section id="upgradeGearView" class="upgrade-view" role="tabpanel" aria-labelledby="upgradeGearTab" hidden>
+          <div class="gear-topline">
+            <section class="forge-card" aria-label="Τρέχον όπλο">
+              <div class="equipped-heading"><strong id="equippedWeapon">ΚΟΥΤΣΟΥΡΟ</strong><span class="loadout-level">LV <b id="levelValue">1</b></span></div>
+              <div class="gear-experience"><span id="characterXpText">0 / 8 XP</span><div class="character-xp"><span id="forgeXpFill"></span></div></div>
+              <p id="weaponAbilities">Μικρό άλμα · μάζεψε το όπλο μετά τη ρίψη</p>
+            </section>
+            <button id="mobileStanceButton" class="loadout-stance touch-only" type="button" aria-pressed="false" aria-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών." data-touch-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών.">
+              <svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-stance"/></svg><span><b>ΛΑΒΗ</b><strong id="mobileStanceValue">ΔΥΟ ΧΕΡΙΑ</strong></span><svg class="stance-switch-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
+            </button>
+          </div>
+          <div class="material-inventory" aria-label="Συλλεγμένα υλικά"><span class="material-wood">ΞΥΛΟ <b id="material-wood">0</b></span><span class="material-scrap">ΜΕΤΑΛΛΟ <b id="material-scrap">0</b></span><span class="material-crystal">ΚΡΥΣΤΑΛΛΟΙ <b id="material-crystal">0</b></span></div>
+          <section class="next-weapon" aria-label="Επόμενη κατασκευή"><small>ΕΠΟΜΕΝΟ ΟΠΛΟ</small><strong id="nextWeaponName">ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ</strong><p id="forgeRequirements">LV 3 · Ξύλο 0/8</p><button id="forgeButton" type="button" disabled>ΛΕΙΠΟΥΝ ΥΛΙΚΑ</button></section>
+          <div class="loadout-stats" aria-label="Τρέχουσα δύναμη πολεμιστή">
+            <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-power"/></svg><strong id="powerValue">1.0×</strong><small>ΔΥΝΑΜΗ</small></div>
+            <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-size"/></svg><strong id="sizeValue">1.0×</strong><small>ΜΕΓΕΘΟΣ</small></div>
+            <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-range"/></svg><strong id="rangeValue">1.0×</strong><small>ΕΜΒΕΛΕΙΑ</small></div>
+            <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-speed"/></svg><strong id="speedValue">1.0×</strong><small>ΤΑΧΥΤΗΤΑ</small></div>
+          </div>
+          <div id="relicSlots" class="relic-slots" aria-label="Ενεργά ευρήματα"></div>
+        </section>
+        <footer class="upgrade-drawer-footnote"><span class="desktop-only upgrade-key-hint"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> επίλεξε δύναμη</span><span class="upgrade-live"><i></i> Η ΜΑΧΗ ΣΥΝΕΧΙΖΕΤΑΙ</span></footer>
       </section>
     </section>
+
+    <div id="comboHud" class="combo-hud" aria-label="Συνεχόμενα επιτυχημένα χτυπήματα" hidden>
+      <div class="combo-caption"><strong id="comboCount">0 HIT</strong></div>
+      <div class="combo-track" aria-hidden="true"><i id="comboFill"></i></div>
+      <span id="comboReward" class="combo-reward">×1.00 XP</span>
+    </div>
+    <div id="comicBurst" class="comic-burst" aria-hidden="true" hidden>ΜΠΑΜ!</div>
 
     <div id="bossHud" class="boss-panel" hidden>
       <div class="boss-heading"><svg><use href="#i-skull"/></svg><span>THE IRON COLOSSUS</span><strong id="bossValue">100%</strong></div>
@@ -330,6 +349,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261106-growth1"></script>
+  <script type="module" src="./game.js?v=20261106-feel1"></script>
 </body>
 </html>
