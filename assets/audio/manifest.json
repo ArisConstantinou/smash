@@ -1,0 +1,252 @@
+{
+  "sampleRate": 44100,
+  "clips": {
+    "flesh-1": {
+      "file": "flesh-1.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactPunch_heavy_000.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.4588,
+      "bytes": 6313,
+      "sha256": "42a17b1b5476aed20127220697ca3a1233a6cb55acc535e95e4008a1e39f2808"
+    },
+    "flesh-2": {
+      "file": "flesh-2.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactPunch_heavy_001.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.3895,
+      "bytes": 5373,
+      "sha256": "15e2c1175be6b23645ac417e07b6a309d9474db72dbb2dd264fdbffec02512bd"
+    },
+    "flesh-3": {
+      "file": "flesh-3.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactPunch_heavy_002.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.3373,
+      "bytes": 4746,
+      "sha256": "77ec26d5489cb7ec4a9294f6bdc88efeaf1193d7b9dd847a66a7829684382d17"
+    },
+    "metal-1": {
+      "file": "metal-1.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactMetal_heavy_000.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.1648,
+      "bytes": 2865,
+      "sha256": "a2376828c8344e570e1888b2698727b71d89c3bbb1c87484f8eed71e72587cb4"
+    },
+    "metal-2": {
+      "file": "metal-2.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactMetal_heavy_001.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.3564,
+      "bytes": 5059,
+      "sha256": "e873362a0df3dd04b8b132566f7576e8d20ff7aaf232445a61b69547d70e196c"
+    },
+    "metal-3": {
+      "file": "metal-3.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactMetal_heavy_002.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.1144,
+      "bytes": 2238,
+      "sha256": "09f03cbe9efcfaa384df3102d12c31a55cbf3bdc427a08419b9e1fec82ec09e1"
+    },
+    "masonry-1": {
+      "file": "masonry-1.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactMining_000.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.6069,
+      "bytes": 8194,
+      "sha256": "8fc21e5d5428f551056de519375fa707dbc9e3dbe1270727df9419ab6ba9a432"
+    },
+    "masonry-2": {
+      "file": "masonry-2.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactMining_001.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.5576,
+      "bytes": 7567,
+      "sha256": "27490e0bb464c9ca07725f5b5b0162a0ff9ea826f1a91bb8919bc79b6d4d4a16"
+    },
+    "masonry-3": {
+      "file": "masonry-3.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactMining_002.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.4829,
+      "bytes": 6626,
+      "sha256": "fcbef6d529c4481d4e770c3b6aba1c69dca5d6c88b9f115a0113c83ff8cbbc60"
+    },
+    "wood-1": {
+      "file": "wood-1.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactWood_heavy_000.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.3101,
+      "bytes": 4432,
+      "sha256": "f2f852e227825f73fb4afdbe35f40c32f6f69acec8161cc8cabeed6e712f0084"
+    },
+    "wood-2": {
+      "file": "wood-2.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactWood_heavy_001.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.3101,
+      "bytes": 4432,
+      "sha256": "821a8b264426b9b99e23b4233a8bcefaffe62a9920f7f4c2ad20dc5debfd238d"
+    },
+    "wood-3": {
+      "file": "wood-3.mp3",
+      "source": {
+        "pack": "Kenney Impact Sounds",
+        "file": "Audio/impactWood_heavy_002.ogg",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.3101,
+      "bytes": 4432,
+      "sha256": "e7079351c7eb00559ef7f5214803f5881e2608f506f39cfc7fc97254a39c3401"
+    },
+    "exert-1": {
+      "file": "exert-1.mp3",
+      "source": {
+        "author": "tinsin",
+        "file": "Valiant Genericus (Effort Noises).wav",
+        "excerpt": [
+          0.235,
+          0.48
+        ],
+        "license": "CC-BY-3.0"
+      },
+      "seconds": 0.2361,
+      "bytes": 3805,
+      "sha256": "f440390fcc645b1d2af3a88b227b2e169c2d1b4a5745fb56d3abe158d0dcdebb"
+    },
+    "exert-2": {
+      "file": "exert-2.mp3",
+      "source": {
+        "author": "tinsin",
+        "file": "Valiant Genericus (Effort Noises).wav",
+        "excerpt": [
+          0.75,
+          1.1
+        ],
+        "license": "CC-BY-3.0"
+      },
+      "seconds": 0.3462,
+      "bytes": 5059,
+      "sha256": "ed9567834f40b402158404a1e6c80ec59ca7bd6d9f8aab9eb1b112a61d050b4f"
+    },
+    "exert-3": {
+      "file": "exert-3.mp3",
+      "source": {
+        "author": "tinsin",
+        "file": "Valiant Genericus (Effort Noises).wav",
+        "excerpt": [
+          1.5,
+          1.98
+        ],
+        "license": "CC-BY-3.0"
+      },
+      "seconds": 0.4376,
+      "bytes": 5999,
+      "sha256": "c257d7f819dfb66fb226014af68a434a8175174c4926cc09d878bf819d739064"
+    },
+    "pain-1": {
+      "file": "pain-1.mp3",
+      "source": {
+        "author": "EZduzziteh",
+        "file": "hurt_01.mp3",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.2666,
+      "bytes": 4119,
+      "sha256": "8c26f2e39758e852ecaed93f9361af8f40fab6a466378397cea74a5ebf2adafa"
+    },
+    "pain-2": {
+      "file": "pain-2.mp3",
+      "source": {
+        "author": "EZduzziteh",
+        "file": "hurt_02.mp3",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.2623,
+      "bytes": 4119,
+      "sha256": "fafc409e23df3976d63154c6fc4cc38713223d44df571341f8e8b3c7edca4252"
+    },
+    "pain-3": {
+      "file": "pain-3.mp3",
+      "source": {
+        "author": "EZduzziteh",
+        "file": "hurt_03.mp3",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.1839,
+      "bytes": 3178,
+      "sha256": "576e7e7919bd5f9dfeaf287f646bd0b86d0fe3f3a1f871c82d02dffeccc5dc33"
+    },
+    "pain-4": {
+      "file": "pain-4.mp3",
+      "source": {
+        "author": "EZduzziteh",
+        "file": "hurt_04.mp3",
+        "license": "CC0-1.0"
+      },
+      "seconds": 0.2362,
+      "bytes": 3805,
+      "sha256": "b6e9b4606ef1e9a0e78ad49d9c3cf645430092dc1960a4229826dbd89815f677"
+    }
+  },
+  "sources": {
+    "impact.zip": {
+      "url": "https://kenney.nl/assets/impact-sounds",
+      "sha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8"
+    },
+    "hero.wav": {
+      "url": "https://opengameart.org/sites/default/files/Valiant%20Genericus%20%28Effort%20Noises%29.wav",
+      "sha256": "d4d2ccd76df9697a9dd1c0709e00443894cf2cba8811f94ebc9c55d975593bcf"
+    },
+    "hurt_01.mp3": {
+      "url": "https://opengameart.org/sites/default/files/hurt_01.mp3",
+      "sha256": "45f19e4f637ff0e8936186977aa7cb131f67a95ca68660686476a47da224322e"
+    },
+    "hurt_02.mp3": {
+      "url": "https://opengameart.org/sites/default/files/hurt_02.mp3",
+      "sha256": "7c4cd404830bf3cd5f10ff3340266f573922399d06bfb4573daf9093c5b69833"
+    },
+    "hurt_03.mp3": {
+      "url": "https://opengameart.org/sites/default/files/hurt_03.mp3",
+      "sha256": "9950c1dbbf3f2c75952510f1f2a2ab6f36586ba7e62f4f1e74ad64e82db2aa52"
+    },
+    "hurt_04.mp3": {
+      "url": "https://opengameart.org/sites/default/files/hurt_04.mp3",
+      "sha256": "a6249c89f037553c71529ece4eb443bd3cc06ab33b833c5b3d47121da284d7d8"
+    }
+  }
+}

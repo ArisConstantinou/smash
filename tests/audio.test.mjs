@@ -74,7 +74,7 @@ test('audio waits for a gesture and recovers the same context from interrupted s
   const { audio, document, audioSession } = environment(t);
   audio.bindUnlock(document); audio.bindUnlock(document);
   assert.equal(Context.made.length, 0, 'Binding must not autoplay or request audio focus');
-  assert.equal(document.count(), 4, 'A second bind must not double listeners');
+  assert.equal(document.count(), 6, 'A second bind must not double listeners');
   document.emit('pointerdown'); await flush();
   const ctx = audio.ctx;
   assert.equal(ctx.resumeCalls, 1); assert.equal(audio.ready, true); assert.equal(audioSession.type, 'playback');
@@ -182,4 +182,44 @@ test('finished voices free their filters, and a closed context can be rebuilt wi
   assert.equal(await audio.unlock(), true); assert.notEqual(audio.ctx, old); assert.equal(Context.made.length, 2);
   assert.ok(old.nodes.every(node => node.disconnected));
   assert.equal(audio.play('hit', .7, { material: 'masonry' }), true);
+});
+
+test('recorded material impacts and human reactions use decoded buffers and free their nodes', async t => {
+  const { audio } = environment(t); await audio.unlock();
+  const flesh={duration:.18}, pain={duration:.32}, exert={duration:.21};
+  audio.samples.buffers.set('flesh-1',flesh);audio.samples.buffers.set('pain-1',pain);audio.samples.buffers.set('exert-1',exert);
+  audio.play('hit',.6,{material:'flesh',weapon:'wood'});
+  assert.ok([...audio._sources].some(source=>source.buffer===flesh));
+  audio.play('enemyHurt',.6,{type:'zombie'});
+  const voice=[...audio._voices][0];assert.equal(voice.buffer,pain);assert.ok(voice.playbackRate.value<1);
+  voice.finish();assert.equal(audio._voices.size,0);assert.ok(voice.disconnected);
+  audio.play('exert',.5);assert.ok([...audio._voices].some(source=>source.buffer===exert));
+  for(const source of [...audio._sources])source.finish();
+  assert.equal(audio._sources.size,0);assert.equal(audio._cleanups.size,0);
+});
+
+test('dedicated audio controls own their click without capture-phase premature unlocking', async t=>{
+  const {audio,document}=environment(t);audio.bindUnlock(document);
+  for(const fn of document.events.get('pointerdown'))fn({target:{closest:()=>({})}});
+  for(const fn of document.events.get('click'))fn({target:{closest:()=>({})}});
+  assert.equal(Context.made.length,0);
+  assert.equal(await audio.unlock(),true);assert.equal(audio.muted,false);
+});
+
+test('preview is audible scheduling, repeatable, and cancelled immediately by mute or disposal',async t=>{
+  const {audio}=environment(t);assert.equal(await audio.preview(),true);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(audio._previewTimers.size,3);assert.ok(audio._sources.size>0);
+  audio.toggle();assert.equal(audio._previewTimers.size,0);assert.equal(audio._sources.size,0);
+  assert.equal(await audio.preview(),false,'Testing must not override explicit mute in the engine');
+  audio.toggle();assert.equal(await audio.preview(),true);assert.equal(audio._previewTimers.size,4);
+  audio.dispose();assert.equal(audio._previewTimers.size,0);assert.equal(audio._sources.size,0);
+});
+
+test('status changes distinguish blocked, playing, muted and background audio',async t=>{
+  const {audio,document}=environment(t);const states=[];audio.onStatusChange=()=>states.push(audio.state);
+  assert.equal(audio.state,'blocked');audio.bindUnlock(document);await audio.unlock();
+  assert.equal(audio.state,'ready');audio.setVolume(0);assert.equal(audio.state,'muted');
+  audio.setVolume(.7);document.hidden=true;document.emit('visibilitychange');await flush();
+  assert.equal(audio.state,'background');assert.ok(states.includes('ready'));assert.ok(states.includes('muted'));assert.ok(states.includes('background'));
 });
