@@ -185,7 +185,7 @@ export const __integration = {
   get elapsed(){return elapsed;}, get round(){return round;}, get relics(){return relics;},
   get kills(){return kills;}, get bolts(){return bolts;}, get score(){return score;},
   get scene(){return scene;}, get keys(){return keys;}, get pointer(){return pointer;},
-  get touch(){return touch;}, get touchThrowAim(){return touchThrowAim;},
+  get touch(){return touch;}, get touchThrowAim(){return touchThrowAim;}, get touchThrowQueued(){return touchThrowQueued;},
   get camera(){return camera;}, get renderer(){return renderer;},
   get wave(){return wave;}, get sector(){return sector;},
   get upgradeQueue(){return upgradeQueue;}, get upgradePanelOpen(){return upgradePanelOpen;},
@@ -193,6 +193,7 @@ export const __integration = {
   get stance(){return stance;}, get stanceTarget(){return stanceTarget;},
   get guarding(){return guarding;}, get aim(){return aim;}, get aimPreview(){return aimPreview;},
   get leap(){return leap;}, get throwWindup(){return throwWindup;}, get throwFlight(){return throwFlight;},
+  get throwCooldown(){return throwCooldown;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
   updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnDrop, hitEnemy,
@@ -304,7 +305,9 @@ function arena() {
 function touchArena(callback) {
   try {
     setViewport(390, 844, { coarse: true }); arena();
-    elements.get('joystick').rect = { left: 18, top: 500, width: 112, height: 112 };
+    // Representative phone controls: movement at the lower left and the
+    // action finger at the lower right. Layout pixels are checked in-browser.
+    elements.get('joystick').rect = { left: 18, top: 714, width: 112, height: 112 };
     callback();
   } finally {
     api.clearInput(); elements.get('joystick').rect = undefined;
@@ -318,6 +321,26 @@ function moveStick(type, horizontal = 0, vertical = 0, pointerId = 101) {
     clientX: rect.left + rect.width / 2 + horizontal * radius,
     clientY: rect.top + rect.height / 2 + vertical * radius,
   });
+}
+function throwTouch(type, dx = 0, dy = 0, pointerId = 202) {
+  return pointerEvent('throwButton', type, {
+    pointerId, pointerType: 'touch', clientX: 326 + dx, clientY: 746 + dy,
+  });
+}
+function catchShortTouchThrow() {
+  api.setFacing(0, 1); api.poseHero(1);
+  const wall = placeObject('wall', 0, 3.4, { w: 5, d: .04, h: 3, hp: 1000, maxHp: 1000 });
+  throwTouch('pointerdown'); throwTouch('pointerup');
+  let projectile = null, returning = false;
+  for (let i = 0; (api.throwWindup || api.throwFlight) && i < 240; i++) {
+    api.updatePlayer(1 / 120);
+    if (api.throwFlight) { projectile = api.throwFlight; returning ||= projectile.returning; }
+  }
+  assert.ok(projectile && returning, 'The setup must complete a real outward flight and collision return');
+  assert.equal(api.throwFlight, null); assert.equal(api.throwWindup, null);
+  assert.equal(api.hero.userData.weaponHeld, true);
+  assert.ok(api.throwCooldown > .5, 'A near-wall catch leaves time to test the next gesture during recovery');
+  return { wall, projectile };
 }
 function aimAt(x, z) {
   const p = api.screenPoint(x, api.player.y + 1.2, z);
@@ -366,6 +389,8 @@ test('the visible control deck maps Space to jump and exposes the illustrated no
   for (const id of ['power', 'size', 'range', 'speed', 'vitality', 'quake']) assert.ok(elements.has('upgrade-' + id));
   for (const id of ['upgradesToggle', 'upgradePanel', 'upgradeChoices', 'pendingUpgradeCount', 'upgradeQueueText', 'waveEnemiesValue', 'waveStatus']) assert.ok(elements.has(id));
   assert.equal(elements.has('upgradeMenu'), false, 'The former blocking upgrade overlay is removed');
+  assert.equal(elements.has('slamButton'), false, 'Air smash is a jump followed by attack, without a separate action button');
+  assert.ok(elements.has('mobileStanceButton'), 'The touch armory retains access to the alternate hammer grip');
   assert.match(html, /id="upgradePanel" class="upgrade-drawer"/);
 });
 
@@ -741,7 +766,7 @@ test('all four illustrated WASD buttons move continuously and release on pointer
   }
 });
 
-test('the illustrated attack, held spin and combined smash buttons execute their pictured actions', () => {
+test('the illustrated attack and held spin buttons execute their pictured actions', () => {
   arena();
   pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
   assert.ok(api.swing); assert.equal(api.swing.charged, false); assert.equal(api.spin, null);
@@ -753,9 +778,6 @@ test('the illustrated attack, held spin and combined smash buttons execute their
   pointerEvent('chargeButton', 'pointerup');
   assert.equal(api.spin, null); assert.equal(api.swing, null);
   playerSteps(.4); assert.equal(api.swing, null, 'Releasing the spin button must not charge or swing');
-  arena();
-  pointerEvent('slamButton', 'pointerdown'); pointerEvent('slamButton', 'pointerup');
-  assert.ok(api.leap); assert.equal(api.leap.slam, true);
 });
 
 test('touch controls and accessible labels follow phone, landscape, tablet and desktop input modes', () => {
@@ -768,7 +790,7 @@ test('touch controls and accessible labels follow phone, landscape, tablet and d
       setViewport(width, height, { coarse, anyCoarse }); api.updateHUD(true);
       assert.equal(document.body.dataset.touchControls, String(expected));
       assert.equal(elements.get('touchControls').hidden, !expected);
-      for (const id of ['attackButton', 'chargeButton', 'guardButton', 'leapButton', 'slamButton', 'throwButton', 'stanceButton', 'dashButton']) {
+      for (const id of ['attackButton', 'chargeButton', 'guardButton', 'leapButton', 'throwButton', 'stanceButton', 'dashButton']) {
         const button = elements.get(id), label = expected ? button.dataset.touchLabel : button.dataset.desktopLabel;
         assert.ok(label, `${id} needs an accessible description for the current control surface`);
         assert.equal(button.getAttribute('aria-label'), label);
@@ -837,6 +859,87 @@ test('a moving thumb can tap a real hammer hit or trigger an aimed leap with ano
     assert.ok(api.leap); close(api.leap.dir.x, direction.x); close(api.leap.dir.z, direction.z);
     playerSteps(.2); assert.ok(api.player.y > 3);
     assert.ok(api.touch.x > .99);
+  });
+});
+
+test('mobile air smash requires a fresh attack during the jump and its one button follows the landing state', () => {
+  touchArena(() => {
+    api.updateHUD();
+    assert.equal(elements.get('attackIcon').getAttribute('href'), '#a-swing');
+    pointerEvent('chargeButton', 'pointerdown', { pointerId: 202 }); playerSteps(.25);
+    assert.ok(api.spin);
+    pointerEvent('leapButton', 'pointerdown', { pointerId: 203 });
+    pointerEvent('leapButton', 'pointerup', { pointerId: 203 }); playerSteps(.15);
+    assert.ok(api.leap && api.player.y > 2); assert.equal(api.leap.slam, false);
+    assert.equal(api.spin, null);
+    // The preceding spin changes heading: place ground targets around this
+    // actual forward jump, not along an assumed fixed world axis.
+    const direction = api.leap.dir;
+    const left = stationaryEnemy('brute', direction.x * 5.6 - direction.z * 2, direction.z * 5.6 + direction.x * 2);
+    const right = stationaryEnemy('brute', direction.x * 5.6 + direction.z * 2, direction.z * 5.6 - direction.x * 2);
+    const outside = stationaryEnemy('brute', direction.x * 5.6 + direction.z * 10, direction.z * 5.6 - direction.x * 10);
+    const targets = [left, right], hp = targets.map(enemy => enemy.hp);
+    pointerEvent('chargeButton', 'pointerup', { pointerId: 202 });
+    pointerEvent('chargeButton', 'pointerdown', { pointerId: 204 }); playerSteps(.12);
+    pointerEvent('chargeButton', 'pointerup', { pointerId: 204 });
+    assert.equal(api.leap.slam, false, 'The spin tile is not an airborne smash shortcut');
+    api.updateHUD();
+    assert.equal(elements.get('attackIcon').getAttribute('href'), '#a-slam');
+    assert.equal(elements.get('attackButton').classList.contains('air-smash-ready'), true);
+    assert.equal(elements.get('leapButton').classList.contains('airborne'), true);
+    assert.match(elements.get('attackButton').getAttribute('aria-label'), /στον αέρα/);
+    playerSteps(.2);
+    pointerEvent('attackButton', 'pointerdown', { pointerId: 205 });
+    pointerEvent('attackButton', 'pointerup', { pointerId: 205 });
+    assert.equal(api.leap.slam, true); assert.equal(api.swing, null);
+    api.updateHUD();
+    assert.equal(elements.get('attackButton').classList.contains('air-smash-armed'), true);
+    assert.equal(elements.get('attackButton').classList.contains('air-smash-ready'), false);
+    assert.deepEqual(targets.map(enemy => enemy.hp), hp, 'Arming the jump is not a ground hit');
+    for (let i = 0; api.leap && i < 240; i++) {
+      api.updatePlayer(1 / 120);
+      if (api.leap) assert.deepEqual(targets.map(enemy => enemy.hp), hp);
+    }
+    assert.equal(api.leap, null);
+    assert.ok(targets.every((enemy, i) => hp[i] - enemy.hp > api.stats.power * 2));
+    assert.equal(outside.hp, outside.maxHp);
+    const after = targets.map(enemy => enemy.hp); playerSteps(.4); api.updateHUD();
+    assert.deepEqual(targets.map(enemy => enemy.hp), after, 'The landing applies its area damage once');
+    assert.equal(elements.get('attackIcon').getAttribute('href'), '#a-swing');
+    assert.equal(elements.get('attackName').textContent, 'ΣΦΥΡΙΑ');
+    assert.equal(elements.get('attackButton').classList.contains('air-smash-armed'), false);
+    assert.equal(elements.get('leapButton').classList.contains('airborne'), false);
+    pointerEvent('attackButton', 'pointerdown', { pointerId: 206 });
+    pointerEvent('attackButton', 'pointerup', { pointerId: 206 });
+    assert.ok(api.swing); assert.equal(api.leap, null, 'An attack after landing is an ordinary swing');
+  });
+});
+
+test('the mobile armory changes grip without pausing and the toolbar sound picture follows mute', () => {
+  touchArena(() => {
+    elements.get('upgradesToggle').click();
+    assert.equal(api.upgradePanelOpen, true); assert.equal(api.phase, 'playing');
+    for (const target of [1, 0]) {
+      const before = api.stanceTarget;
+      pointerEvent('mobileStanceButton', 'pointerdown', { pointerId: 202 });
+      assert.equal(api.stanceTarget, before, 'Touching the scrollable drawer must not immediately change grip');
+      pointerEvent('mobileStanceButton', 'pointermove', { pointerId: 202, clientY: 120 });
+      pointerEvent('mobileStanceButton', 'pointercancel', { pointerId: 202 });
+      assert.equal(api.stanceTarget, before, 'A scroll gesture must leave the current grip unchanged');
+      elements.get('mobileStanceButton').click();
+      assert.equal(api.stanceTarget, target); playerSteps(1.1); api.updateHUD();
+      close(api.stance, target);
+      assert.equal(elements.get('mobileStanceButton').getAttribute('aria-pressed'), String(target === 1));
+      assert.equal(elements.get('mobileStanceValue').textContent, elements.get('stanceValue').textContent);
+      assert.equal(api.phase, 'playing');
+    }
+    elements.get('upgradeCloseButton').click(); assert.equal(api.upgradePanelOpen, false);
+    const mutedInitially = elements.get('soundButton').getAttribute('aria-pressed') === 'true';
+    for (const muted of [!mutedInitially, mutedInitially]) {
+      elements.get('soundButton').click();
+      for (const id of ['soundButton', 'muteButton']) assert.equal(elements.get(id).getAttribute('aria-pressed'), String(muted));
+      for (const id of ['soundIcon', 'muteIcon']) assert.equal(elements.get(id).getAttribute('href'), muted ? '#a-sound-off' : '#a-sound-on');
+    }
   });
 });
 
@@ -1033,6 +1136,182 @@ test('a cancelled or interrupted touch throw cannot fire when its stale finger i
   }
 });
 
+test('mobile throws in vertical and diagonal screen directions hit once, return, and restore a reusable hammer', () => {
+  for (const [dx, dy, mode] of [
+    [0, -60, 'still'], [0, 60, 'guard'], [-60, 0, 'moving'],
+    [60, 0, 'spin'], [-50, -50, 'moving'], [50, 50, 'still'],
+  ]) touchArena(() => {
+    if (mode === 'moving') { moveStick('pointerdown', 1, 0); playerSteps(.05); }
+    const priorAction = mode === 'guard' ? 'guardButton' : mode === 'spin' ? 'chargeButton' : null;
+    if (priorAction) { pointerEvent(priorAction, 'pointerdown', { pointerId: 303 }); playerSteps(.25); }
+    throwTouch('pointerdown'); throwTouch('pointermove', dx, dy);
+    assert.ok(api.touchThrowAim);
+    assert.equal(api.spin, null); assert.equal(api.guarding, false);
+    if (priorAction) pointerEvent(priorAction, 'pointerup', { pointerId: 303 });
+    playerSteps(.08);
+    const direction = { ...api.aim };
+    const projectedOrigin = api.screenPoint(api.player.x, api.player.y + 1.2, api.player.z);
+    const projectedTarget = api.screenPoint(api.player.x + direction.x * 6, api.player.y + 1.2, api.player.z + direction.z * 6);
+    const screenDX = projectedTarget.x - projectedOrigin.x, screenDY = projectedTarget.y - projectedOrigin.y;
+    assert.ok((screenDX * dx + screenDY * dy) / (Math.hypot(screenDX, screenDY) * Math.hypot(dx, dy)) > .999,
+      'An off-center action thumb must aim along its drag, including vertical screen travel');
+    const enemy = stationaryEnemy('brute', api.player.x + direction.x * 6.5, api.player.z + direction.z * 6.5), hp = enemy.hp;
+    throwTouch('pointerup', dx, dy);
+    throwTouch('lostpointercapture', dx, dy); // Native release also relinquishes pointer capture.
+    assert.ok(api.throwWindup); assert.equal(api.touchThrowAim, null);
+    close(api.throwWindup.dir.x, direction.x); close(api.throwWindup.dir.z, direction.z);
+    let projectile = null, returning = false;
+    playerSteps(2.4, 1 / 120, () => {
+      const flyingMeshes = api.scene.children.filter(child => child.userData.kind === 'hammer-projectile');
+      if (api.throwFlight) {
+        projectile ||= api.throwFlight; assert.equal(api.throwFlight, projectile);
+        returning ||= projectile.returning;
+        assert.ok([projectile.x, projectile.y, projectile.z].every(Number.isFinite));
+        assert.equal(flyingMeshes.length, 1); assert.equal(api.hero.userData.weaponHeld, false);
+      } else assert.equal(flyingMeshes.length, 0);
+    });
+    assert.ok(projectile && returning); assert.equal(api.throwFlight, null);
+    assert.equal(enemy.hp, hp - Math.round(api.stats.power * 2.2), 'Outbound collision and return together must damage the target once');
+    assert.equal(projectile.mesh.parent, null);
+    assert.equal(api.hero.userData.weaponHeld, true); assert.equal(api.hero.userData.hammerPivot.visible, true);
+    assert.equal(api.hero.userData.leftGrip.visible, true); assert.equal(api.hero.userData.rightGrip.visible, true);
+    if (mode === 'moving') assert.ok(api.touch.x > .99, 'Catching the hammer must not release the movement thumb');
+    throwTouch('pointerdown'); throwTouch('pointerup');
+    assert.ok(api.throwWindup, 'The caught hammer must be available for another deliberate throw');
+  });
+});
+
+test('a mobile throw blocked beside the warrior damages the close wall once and returns without hitting through it', () => {
+  touchArena(() => {
+    api.setFacing(0, 1); api.poseHero(1);
+    const wall = placeObject('wall', 0, .8, { w: 5, d: .04, h: 3, hp: 1000, maxHp: 1000 });
+    const enemy = stationaryEnemy('robot', 0, 7), hp = enemy.hp;
+    api.updateAim(); assert.equal(api.aimPreview.contact?.target, wall);
+    throwTouch('pointerdown'); throwTouch('pointerup');
+    let returned = false;
+    playerSteps(1.8, 1 / 120, () => { returned ||= !!api.throwFlight?.returning; });
+    assert.equal(returned, true); assert.equal(api.throwFlight, null);
+    assert.equal(wall.hp, 1000 - Math.round(api.stats.power * 2.2));
+    assert.equal(enemy.hp, hp, 'A projectile already touching a wall must not escape to the enemy beyond it');
+    assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
+test('a mobile throw respects target height and hits the ground enemy beyond an elevated one', () => {
+  touchArena(() => {
+    api.setFacing(0, 1); api.poseHero(1);
+    const high = stationaryEnemy('brute', 0, 5), ground = stationaryEnemy('brute', 0, 9);
+    high.y = 8; high.mesh.position.y = 8;
+    const hp = ground.hp;
+    api.updateAim(); assert.equal(api.aimPreview.contact?.target, ground);
+    throwTouch('pointerdown'); throwTouch('pointerup'); playerSteps(2);
+    assert.equal(high.hp, high.maxHp);
+    assert.equal(ground.hp, hp - Math.round(api.stats.power * 2.2));
+    assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
+test('holding the next mobile aim through cooldown or a returning hammer does not discard the eventual release', () => {
+  for (const recovery of ['cooldown', 'return']) touchArena(() => {
+    if (recovery === 'cooldown') catchShortTouchThrow();
+    else {
+      throwTouch('pointerdown'); throwTouch('pointerup');
+      for (let i = 0; !api.throwFlight?.returning && i < 240; i++) api.updatePlayer(1 / 120);
+      assert.ok(api.throwFlight?.returning);
+    }
+    assert.ok(api.throwCooldown > 0 || api.throwFlight);
+    throwTouch('pointerdown'); throwTouch('pointermove', 0, -65);
+    assert.ok(api.touchThrowAim, 'A throw finger begun during recovery must retain gesture ownership');
+    const direction = { ...api.aim };
+    playerSteps(1.5);
+    assert.equal(api.throwFlight, null); assert.equal(api.throwWindup, null);
+    close(api.throwCooldown, 0); assert.ok(api.touchThrowAim);
+    assert.equal(api.hero.userData.weaponHeld, true, 'Holding the next aim must not auto-launch at readiness');
+    throwTouch('pointerup', 0, -65); throwTouch('lostpointercapture', 0, -65);
+    assert.ok(api.throwWindup);
+    close(api.throwWindup.dir.x, direction.x, .001); close(api.throwWindup.dir.z, direction.z, .001);
+    playerSteps(.29); assert.ok(api.throwFlight);
+    playerSteps(2); assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
+test('a mobile release just before readiness launches once with its saved direction after native capture loss', () => {
+  touchArena(() => {
+    catchShortTouchThrow(); playerSteps(api.throwCooldown - .1);
+    throwTouch('pointerdown'); throwTouch('pointermove', -55, -35);
+    const direction = { ...api.aim }, swingsBefore = audioEvents.filter(event => event.name === 'swing').length;
+    // Safari can dispatch release outside the button, followed by capture loss.
+    emit('pointerup', { pointerId: 202, pointerType: 'touch', clientX: 271, clientY: 711, target: document.body });
+    throwTouch('lostpointercapture', -55, -35);
+    assert.ok(api.touchThrowQueued); assert.equal(api.throwWindup, null);
+    moveStick('pointerdown', 1, 0); playerSteps(.13);
+    assert.equal(api.touchThrowQueued, null); assert.ok(api.throwWindup);
+    close(api.throwWindup.dir.x, direction.x); close(api.throwWindup.dir.z, direction.z);
+    playerSteps(2.4);
+    assert.equal(audioEvents.filter(event => event.name === 'swing').length - swingsBefore, 1);
+    assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+    assert.ok(api.touch.x > .99);
+  });
+});
+
+test('an early mobile throw release expires instead of firing unexpectedly after a long cooldown', () => {
+  touchArena(() => {
+    catchShortTouchThrow();
+    const swingsBefore = audioEvents.filter(event => event.name === 'swing').length;
+    throwTouch('pointerdown'); throwTouch('pointermove', 0, -60); throwTouch('pointerup', 0, -60);
+    assert.ok(api.touchThrowQueued);
+    playerSteps(.35);
+    assert.equal(api.touchThrowQueued, null); assert.ok(api.throwCooldown > 0);
+    playerSteps(1.5);
+    assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null);
+    assert.equal(audioEvents.filter(event => event.name === 'swing').length, swingsBefore);
+    assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
+test('interruption or a new combat choice cancels a pending mobile throw before it can replay', () => {
+  for (const reason of ['pause', 'blur', 'resize', 'attackButton', 'guardButton', 'leapButton', 'mobileStanceButton']) touchArena(() => {
+    catchShortTouchThrow(); playerSteps(api.throwCooldown - .12);
+    throwTouch('pointerdown'); throwTouch('pointermove', 60, 0); throwTouch('pointerup', 60, 0);
+    assert.ok(api.touchThrowQueued);
+    if (reason === 'pause') api.pauseGame();
+    else if (reason === 'blur') emit('blur');
+    else if (reason === 'resize') setViewport(390, 780, { coarse: true });
+    else if (reason === 'mobileStanceButton') elements.get(reason).click();
+    else { pointerEvent(reason, 'pointerdown', { pointerId: 303 }); pointerEvent(reason, 'pointerup', { pointerId: 303 }); }
+    assert.equal(api.touchThrowQueued, null, `${reason} must abandon the previous released throw`);
+    if (api.phase === 'paused') elements.get('resumeButton').click();
+    throwTouch('pointerup', 60, 0); playerSteps(.5);
+    assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null);
+    assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
+test('a boosted mobile run keeps throw guidance aligned with the captured launch direction during windup', () => {
+  touchArena(() => {
+    api.levels.speed = 3; api.applyStats();
+    const screenRight = core.screenMovement(1, 0);
+    stationaryEnemy('zombie', screenRight.x * 7, screenRight.z * 7);
+    moveStick('pointerdown', 0, 1);
+    throwTouch('pointerdown'); throwTouch('pointermove', 65, 0); throwTouch('pointerup', 65, 0);
+    const direction = { ...api.throwWindup.dir };
+    assert.equal(api.pointer.active, false, 'The released virtual pointer must not continue steering from a stale screen coordinate');
+    for (let i = 0; i < 15; i++) {
+      advance(1 / 60); assert.ok(api.throwWindup);
+      close(api.aim.x, direction.x); close(api.aim.z, direction.z);
+      const preview = api.aimPreview;
+      const dx = preview.end.x - preview.start.x, dz = preview.end.z - preview.start.z;
+      if (Math.hypot(dx, dz) > .001) {
+        close(dx / Math.hypot(dx, dz), direction.x, .001);
+        close(dz / Math.hypot(dx, dz), direction.z, .001);
+      }
+    }
+    playerSteps(.05); assert.ok(api.throwFlight);
+    close(api.throwFlight.dir.x, direction.x); close(api.throwFlight.dir.z, direction.z);
+    playerSteps(2); assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+  });
+});
+
 test('holding the left mouse button continuously rotates the whole warrior and extended hammer through more than two full turns', () => {
   arena(); api.poseHero(1);
   mouseAttack(true); playerSteps(.24);
@@ -1160,7 +1439,7 @@ test('RMB, Space, R and Z cancel a held spin and carry out their own actions wit
     api.updatePlayer(.01);
     assert.equal(api.spin, null, `${action} must cancel the old spin`);
     if (action === 'RMB') assert.equal(api.guarding, true);
-    if (action === 'Space') { assert.ok(api.leap); assert.equal(api.leap.slam, true, 'Space inherits the held mouse attack as an armed smash'); }
+    if (action === 'Space') { assert.ok(api.leap); assert.equal(api.leap.slam, false, 'A spin held before take-off must not arm the jump impact'); }
     if (action === 'KeyR') assert.ok(api.throwWindup || api.throwFlight);
     if (action === 'KeyZ') assert.equal(api.stanceTarget, 1);
     if (action === 'RMB') chordButtons(1, { button: 2 });
@@ -1391,22 +1670,27 @@ test('an airborne left-click arms a large smash whose damage happens only on lan
   assert.deepEqual(targets.map(t => t.hp), after, 'The one landing must not repeatedly apply its area damage');
 });
 
-test('a left mouse button held before Space reliably arms the impact without adding a ground swing on release', () => {
+test('a mouse attack held before Space needs a fresh airborne press to arm the impact', () => {
   arena();
   mouseAttack(true); playerSteps(.12);
   assert.equal(api.spin, null, 'The mouse button is held but still below the spin threshold');
   key('Space', true); key('Space', false);
-  assert.ok(api.leap); assert.equal(api.leap.slam, true, 'The held mouse attack must survive the jump input');
+  assert.ok(api.leap); assert.equal(api.leap.slam, false, 'An attack begun on the ground is not a fresh airborne smash command');
   assert.equal(api.swing, null);
   for (let i = 0; api.leap && (api.leap.vy >= 0 || api.player.y > .55) && i < 480; i++) api.updatePlayer(1 / 240);
   assert.ok(api.leap, 'The fixture is introduced before the descending warrior touches the ground');
+  assert.equal(api.leap.slam, false, 'Continuing to hold the old mouse press must not arm the jump later');
+  mouseAttack(false);
+  assert.equal(api.leap.slam, false); assert.equal(api.swing, null);
   const enemy = stationaryEnemy('brute', api.player.x + 1.5, api.player.z), hp = enemy.hp;
+  mouseAttack(true); mouseAttack(false);
+  assert.equal(api.leap.slam, true, 'A fresh press after the jump begins arms this landing');
   for (let i = 0; api.leap && i < 120; i++) {
     api.updatePlayer(1 / 240);
     if (api.leap) assert.equal(enemy.hp, hp);
   }
   assert.equal(api.leap, null);
-  assert.ok(hp - enemy.hp > api.stats.power * 2, 'The held mouse and jump combination must cause the large smash');
+  assert.ok(hp - enemy.hp > api.stats.power * 2, 'The deliberate airborne press must cause the large smash');
   const after = enemy.hp, swingEvents = audioEvents.filter(e => e.name === 'swing').length;
   mouseAttack(false); playerSteps(.5);
   assert.equal(enemy.hp, after);

@@ -15,7 +15,7 @@ const settings = Object.assign({quality:'high',shake:true,volume:0.6,muted:false
 const keys = new Set();
 const touch = {x:0,y:0,attack:false};
 const inputResetters=[];
-let touchLayout=false,touchCanvasPointer=null,touchThrowAim=null;
+let touchLayout=false,touchCanvasPointer=null,touchThrowAim=null,touchThrowQueued=null;
 const audio = new GameAudio();
 audio.setVolume(settings.volume);
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
@@ -26,7 +26,7 @@ let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeFeedback='';
 let shake=0,hitStop=0,redFlash=0,combo=0,comboTimer=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
 let attackBuffer=null,spin=null,spinRecovery=null,holdElapsed=0;
-const SPIN_HOLD_SECONDS=.18,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
+const SPIN_HOLD_SECONDS=.18,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.30,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
 let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0},stats=calculateStats(levels);
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
@@ -90,11 +90,11 @@ function setPhase(next){
 }
 function clearInput(){
   for(const reset of inputResetters)reset();
-  keys.clear();touch.x=0;touch.y=0;touch.attack=false;touchCanvasPointer=null;touchThrowAim=null;
+  keys.clear();touch.x=0;touch.y=0;touch.attack=false;touchCanvasPointer=null;touchThrowAim=null;touchThrowQueued=null;
   combatPointer=null;mouseButtons=0;cancelAttack();guardHeld=false;guarding=false;
   if(touchLayout)pointer.active=false;
   document.querySelectorAll('[data-key]').forEach(e=>e.classList.remove('active'));
-  for(const id of ['attackButton','chargeButton','slamButton','guardButton'])$(id)?.classList.remove('active');
+  for(const id of ['attackButton','chargeButton','guardButton'])$(id)?.classList.remove('active');
   if($('joystickKnob'))$('joystickKnob').style.transform='translate(0,0)';
 }
 function prepareMaterials(group){
@@ -153,7 +153,7 @@ function resetWorld(keepUpgrades=false){
   for(const b of bolts){scene.remove(b.mesh);b.mesh.geometry.dispose();b.mesh.material.dispose();}bolts=[];
   for(const e of [...rings,...arcs])removeEffect(e.mesh);rings=[];arcs=[];
   if(throwFlight){disposeInstance(throwFlight);throwFlight=null;}
-  stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;
+  stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
   world?.dispose();
   world=createWorld(scene,{seed:1527+sector*173,round:sector});
@@ -365,6 +365,7 @@ function impact(from=headPrevious,to=headNow){
 }
 
 function toggleStance(){
+  if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
   if(phase!=='playing'||swing||throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005)return;
   cancelAttack();spinRecovery=null;stanceTarget=stanceTarget===0?1:0;guardHeld=false;guarding=false;
   audio.play('ui');
@@ -377,7 +378,12 @@ function updateAim(){
     const reach=Math.min(screenW,screenH)*.31;
     pointer.x=origin.x+g.dx/d*reach;pointer.y=origin.y+g.dy/d*reach;pointer.active=true;
   }
-  if(pointer.active){
+  const committedDirection=!touchThrowAim?.dragged&&(touchThrowQueued?.dir||throwWindup?.dir);
+  if(committedDirection){
+    // Guidance must show the direction the animation will actually release.
+    // A stale screen coordinate drifts as the warrior and camera move.
+    aim.x=committedDirection.x;aim.z=committedDirection.z;
+  }else if(pointer.active){
     aimPlane.constant=-(player.y+1.2);camera.updateMatrixWorld(true);raycaster.setFromCamera({x:pointer.x/screenW*2-1,y:1-pointer.y/screenH*2},camera);
     const point=raycaster.ray.intersectPlane(aimPlane,tempV);
     if(point){const d=normalize(point.x-player.x,point.z-player.z);if(d.x||d.z){aim.x=d.x;aim.z=d.z;}}
@@ -402,13 +408,15 @@ function updateAim(){
   if(contact&&nearbyTargets.includes(contact.target))focusedTarget=contact.target;
 }
 function startLeap(){
+  if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
   if(phase!=='playing'||leap||leapCooldown>0||throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
-  const attackWasHeld=chargeHeld||chargeStarted;
   cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;dashTime=0;swing=null;attackCooldown=0;landingRecovery=0;
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
   updateAim();const direction=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...(pointer.active?aim:facing)};facing={...direction};
-  leap={time:0,dir:direction,vy:22.5,slam:attackWasHeld,diving:false,startY:player.y};leapCooldown=2.2;
+  // A smash is a deliberate second input during this jump, never inherited
+  // from a mouse button or spin finger already held before take-off.
+  leap={time:0,dir:direction,vy:22.5,slam:false,diving:false,startY:player.y};leapCooldown=2.2;
   fragments.add(player.x,.1,player.z,15,[0xc7b78e,0x7d9690],5,.12);pulse(player.x,player.z,2.2,0xb9dac4,.25);audio.play('dash');return true;
 }
 function armAirSmash(){
@@ -433,10 +441,13 @@ function landLeap(){
   shake=slam?.38:.1;hitStop=slam?.022:.005;audio.play(slam?'break':'hit',slam?1:.2);checkGoal();
 }
 function canThrow(){return phase==='playing'&&!throwFlight&&!throwWindup&&throwCooldown<=0&&!swing&&!leap&&Math.abs(stance-stanceTarget)<=.005;}
-function startThrow(){
-  if(!canThrow())return;
-  updateAim();cancelAttack();spinRecovery=null;throwWindup={time:0,dir:{...aim},fromRotation:hero.userData.weaponRig.quaternion.clone()};
+function startThrow(direction=null){
+  if(!canThrow())return false;
+  if(direction){const d=normalize(direction.x,direction.z);aim.x=d.x;aim.z=d.z;}else updateAim();
+  const launchDirection={...aim};
+  cancelAttack();spinRecovery=null;throwWindup={time:0,dir:launchDirection,fromRotation:hero.userData.weaponRig.quaternion.clone()};
   const move=movementDirection();facing=move.x||move.z?move:{...aim};guardHeld=false;guarding=false;
+  return true;
 }
 function releaseHammer(){
   const dir=throwWindup.dir,mesh=hero.userData.createThrownHammer();
@@ -796,6 +807,13 @@ function updatePlayer(dt){
   }
   headPrevious.copy(headNow);
   updateThrownHammer(dt);
+  if(touchThrowQueued){
+    touchThrowQueued.life-=dt;
+    if(touchThrowQueued.life<0)touchThrowQueued=null;
+    else if(canThrow()){
+      const direction=touchThrowQueued.dir;touchThrowQueued=null;startThrow(direction);
+    }
+  }
   for(const hazard of world.hazards)if(player.y<.4&&Math.hypot(player.x-hazard.x,player.z-hazard.z)<hazard.r)hurtPlayer((hazard.damage||10)*.65,0,0,false);
   updateAim();
 }
@@ -857,7 +875,7 @@ function poseHero(dt,moving=false){
   u.updateGrip?.();
   flashMaterials(player,player.invincible>0&&player.hurtAgo<1?(Math.sin(visualTime*30)*.5+.5)*.55:0,0xff8b71);
   chargeRing.visible=!!spin;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(stats.range*.88);chargeRing.material.opacity=spin?.12+Math.sin(spin.rotation*2)*.04:0;chargeRing.material.color.setHex(0xffcb7d);
-  const markerDirection=touchThrowAim?.dragged?aim:facing;
+  const markerDirection=touchThrowAim?.dragged||touchThrowQueued||throwWindup?aim:facing;
   directionMarker.position.set(player.x+markerDirection.x*1.15,player.y+.055,player.z+markerDirection.z*1.15);directionMarker.rotation.y=Math.atan2(markerDirection.x,markerDirection.z);directionMarker.visible=phase==='playing';
   if(guardRing){const g=guardDimensions();guardRing.visible=guarding;guardRing.position.set(player.x+facing.x*.95,player.y+g.height,player.z+facing.z*.95);guardRing.scale.setScalar(g.radius/1.72);guardRing.rotation.set(0,Math.atan2(facing.x,facing.z),0);guardRing.material.opacity=.12+Math.sin(guardAngle*2)*.035;}
   if(groundShadow){groundShadow.position.set(player.x,.035,player.z);groundShadow.scale.setScalar(1+player.y*.035);groundShadow.material.opacity=clamp(.34-player.y*.018,.15,.34);groundShadow.visible=phase!=='menu';}
@@ -927,21 +945,30 @@ function updateHUD(force=false){
   $('chargeText').textContent=spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ: ΠΕΡΙΣΤΡΟΦΗ':touchLayout?'ΚΡΑΤΑ ΠΕΡΙΣΤΡΟΦΗ':'ΚΡΑΤΑ ΑΡ. ΚΛΙΚ: 360°';
   document.querySelector('[data-key="ShiftLeft"]')?.classList.toggle('cooldown',dashCooldown>0);
   if(boss){$('bossFill').style.width=Math.max(0,boss.hp/boss.maxHp*100)+'%';$('bossValue').textContent=(boss.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(boss.hp))+' / '+Math.ceil(boss.maxHp)+' HP';}
-  if($('stanceValue'))$('stanceValue').textContent=Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':'ΣΦΥΡΙ + ΑΣΠΙΔΑ';
+  const stanceLabel=Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':'ΣΦΥΡΙ + ΑΣΠΙΔΑ';
+  for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent=stanceLabel;
+  for(const id of ['stanceButton','mobileStanceButton'])$(id)?.setAttribute('aria-pressed',String(stanceTarget===1));
   if($('guardValue'))$('guardValue').textContent=guarding?'ΠΡΟΣΤΑΣΙΑ ΜΠΡΟΣΤΑ':throwFlight?'ΧΩΡΙΣ ΣΦΥΡΙ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
   if($('leapValue'))$('leapValue').textContent=leap?(leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΠΑΤΑ ΣΦΥΡΙΑ':'ΑΡ. ΚΛΙΚ: ΣΥΝΤΡΙΒΗ'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
-  if($('slamValue'))$('slamValue').textContent=leap?(leap.slam?'ΟΠΛΙΣΜΕΝΗ!':'ΠΑΤΑ ΓΙΑ ΣΥΝΤΡΙΒΗ'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΖΗΜΙΑ ΠΕΡΙΟΧΗΣ';
-  if($('throwValue'))$('throwValue').textContent=touchThrowAim?.dragged?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
+  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.dragged?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
-  $('attackButton')?.classList.toggle('active',!!swing);
+  const attackButton=$('attackButton');
+  attackButton?.classList.toggle('active',!!swing||!!leap?.slam);
+  attackButton?.classList.toggle('air-smash-ready',!!leap&&!leap.slam);
+  attackButton?.classList.toggle('air-smash-armed',!!leap?.slam);
+  $('attackIcon')?.setAttribute('href',leap?'#a-slam':'#a-swing');
+  if($('attackName'))$('attackName').textContent=leap?(leap.slam?'ΟΠΛΙΣΜΕΝΗ':'ΣΥΝΤΡΙΒΗ'):'ΣΦΥΡΙΑ';
+  const attackLabel=leap?(leap.slam?'Η μεγάλη συντριβή είναι οπλισμένη για την προσγείωση.':'Πάτησε τώρα, στον αέρα, για μεγάλη συντριβή στην προσγείωση.'):touchLayout?attackButton?.dataset.touchLabel:attackButton?.dataset.desktopLabel;
+  if(attackLabel){attackButton.setAttribute('aria-label',attackLabel);attackButton.setAttribute('title',attackLabel);}
   $('chargeButton')?.classList.toggle('active',chargeHeld||!!spin);
   $('guardButton')?.classList.toggle('active',guardHeld||guarding);
   $('leapButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
-  $('slamButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
-  $('slamButton')?.classList.toggle('active',!!leap?.slam);
+  $('leapButton')?.classList.toggle('airborne',!!leap);
   $('throwButton')?.classList.toggle('cooldown',!!(throwFlight||throwWindup)||throwCooldown>0);
   $('throwButton')?.classList.toggle('aiming',!!touchThrowAim?.dragged);
-  for(const [id,remaining] of [['leapButton',leapCooldown],['slamButton',leapCooldown],['throwButton',throwCooldown],['dashButton',dashCooldown]]){
+  $('throwButton')?.classList.toggle('returning',!!throwFlight?.returning);
+  $('throwButton')?.classList.toggle('queued',!!touchThrowQueued);
+  for(const [id,remaining] of [['leapButton',leapCooldown],['throwButton',throwCooldown],['dashButton',dashCooldown]]){
     const button=$(id);if(button)button.dataset.cooldown=remaining>0?remaining.toFixed(1):'';
   }
   if(force)drawMinimap();
@@ -1040,7 +1067,7 @@ function resize(){
 function pauseGame(){if(phase==='playing'){setPhase('paused');audio.play('ui');}else if(phase==='paused'){setPhase('playing');audio.play('ui');}}
 function pressAttack(){
   if(phase!=='playing')return;audio.unlock();
-  if(touchThrowAim)cancelTouchThrow();
+  if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
   if(leap){armAirSmash();return;}
   if(throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005||guardHeld||chargeHeld)return;
   chargeHeld=true;holdElapsed=0;chargeStarted=true;charge=0;
@@ -1048,6 +1075,7 @@ function pressAttack(){
   // into a sustained body-and-hammer spin, with no charged release attack.
 }
 function pressSpin(){
+  if(leap)return;
   pressAttack();
   if(chargeHeld){holdElapsed=SPIN_HOLD_SECONDS;startSpin();}
 }
@@ -1064,7 +1092,7 @@ function releaseAttack(){
   holdElapsed=0;
 }
 function quickAttack(){if(!spin){pressAttack();releaseAttack();}}
-function cancelAttack(){stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim)cancelTouchThrow();}
+function cancelAttack(){stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim||touchThrowQueued)cancelTouchThrow();}
 function pressGuard(){
   if(phase!=='playing')return;
   guardHeld=true;cancelAttack();spinRecovery=null;
@@ -1085,7 +1113,7 @@ function updateSoundButtons(){
     const button=$(id);if(!button)continue;
     button.classList.toggle('muted',settings.muted);button.setAttribute('aria-pressed',String(settings.muted));button.setAttribute('aria-label',label);button.setAttribute('title',label);
   }
-  $('muteIcon')?.setAttribute('href',settings.muted?'#a-sound-off':'#a-sound-on');
+  for(const id of ['muteIcon','soundIcon'])$(id)?.setAttribute('href',settings.muted?'#a-sound-off':'#a-sound-on');
   if($('muteValue'))$('muteValue').textContent=settings.muted?'ΚΛΕΙΣΤΟΣ':'ΣΙΓΑΣΗ';
 }
 function toggleSound(){audio.unlock();settings.muted=audio.toggle();updateSoundButtons();save('ironfall.settings',settings);}
@@ -1097,7 +1125,9 @@ function aimFromClient(e){
 }
 function beginTouchThrow(e){
   if(!isTouchPointer(e)){startThrow();return;}
-  if(!canThrow())return;
+  // A returning hammer or a short recovery must not discard the entire
+  // gesture. Aim can start now; only release commits an available throw.
+  if(phase!=='playing'||leap||Math.abs(stance-stanceTarget)>.005)return;
   cancelAttack();guardHeld=false;guarding=false;pointer.active=false;
   touchThrowAim={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,dx:0,dy:0,dragged:false};
 }
@@ -1120,17 +1150,26 @@ function releaseTouchThrow(e){
     pointer.active=false;
     const move=movementDirection();
     if(move.x||move.z)facing=move;
+    updateAim();
   }
-  touchThrowAim=null;
-  if(phase==='playing')startThrow();
+  const direction={...aim};
+  touchThrowAim=null;pointer.active=false;
+  if(phase==='playing'&&!leap&&Math.abs(stance-stanceTarget)<=.005&&!startThrow(direction)){
+    // Preserve a release made just before recovery ends, with its original
+    // direction. Never leave a delayed throw waiting indefinitely.
+    touchThrowQueued={dir:direction,life:TOUCH_THROW_BUFFER_SECONDS};
+  }
 }
-function cancelTouchThrow(){touchThrowAim=null;pointer.active=false;$('throwButton')?.classList.remove('aiming');}
+function cancelTouchThrow(){touchThrowAim=null;touchThrowQueued=null;pointer.active=false;$('throwButton')?.classList.remove('aiming','queued');}
 function initInput(){
   $('startButton').onclick=startGame;$('retryButton').onclick=startGame;$('restartButton').onclick=startGame;
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
   $('continueButton').onclick=()=>{round++;sector++;resetWorld(true);setPhase('playing');audio.play('start');announce('ΤΟΜΕΑΣ '+String(sector).padStart(2,'0'),'Η ορδή δυναμώνει. Οι αναβαθμίσεις σου παραμένουν.',3.2);};
   $('soundButton').onclick=toggleSound;if($('muteButton'))$('muteButton').onclick=toggleSound;
   $('upgradesToggle').onclick=()=>toggleUpgradePanel();$('upgradeCloseButton').onclick=()=>toggleUpgradePanel(false);
+  // This lives inside a scrolling drawer, so a completed tap (not the first
+  // touch of a scroll gesture) changes grip. Native click also supports AT.
+  if($('mobileStanceButton'))$('mobileStanceButton').onclick=toggleStance;
   $('settingsButton').onclick=()=>{previousPhase=phase;setPhase('settings');};
   $('closeSettingsButton').onclick=()=>{setPhase(previousPhase);save('ironfall.settings',settings);};
   $('qualitySelect').value=settings.quality;$('shakeToggle').checked=settings.shake;$('volumeRange').value=Math.round(settings.volume*100);
@@ -1229,7 +1268,6 @@ function initInput(){
   bindAction('chargeButton',pressSpin,releaseAttack,cancelAttack);
   bindAction('guardButton',pressGuard,releaseGuard);
   bindAction('leapButton',startLeap);
-  bindAction('slamButton',()=>{if(leap||startLeap())armAirSmash();});
   bindAction('throwButton',beginTouchThrow,releaseTouchThrow,cancelTouchThrow,moveTouchThrow);
   bindAction('stanceButton',toggleStance);
   bindAction('dashButton',dodge);
