@@ -161,6 +161,7 @@ export function destructionPercent(objects) {
   return total > 0 ? clamp(destroyed / total * 100, 0, 100) : 0;
 }
 export const UPGRADE_DEFS = [
+  {id:'kick',icon:'➜',name:'ΛΑΚΤΙΣΜΑ ΤΟΥ ΤΙΤΑΝΑ',label:'Δύναμη κλωτσιάς',text:'Περισσότερη ζημιά και ώθηση. Από +2 μετακινείς αυτοκίνητα.',color:'#efca87'},
   {id:'power',icon:'✦',name:'ΟΡΓΗ ΤΟΥ ΤΙΤΑΝΑ',label:'Δύναμη χτυπήματος',text:'+25% βασική ζημιά. Κάθε χτύπημα μετράει περισσότερο.',color:'#ffb958'},
   {id:'size',icon:'⬡',name:'ΣΦΥΡΙ ΓΙΓΑΝΤΑ',label:'Μεγαλύτερο σφυρί',text:'+18% μέγεθος κεφαλής και +8% εμβέλεια.',color:'#ff925b'},
   {id:'range',icon:'◎',name:'ΜΑΚΡΙΝΟΣ ΑΝΤΙΛΑΛΟΣ',label:'Μεγαλύτερη εμβέλεια',text:'+22% βασική εμβέλεια. Χτύπα περισσότερους μαζί.',color:'#83dfdb'},

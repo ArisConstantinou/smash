@@ -8,7 +8,7 @@
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261106-audio2">
-  <link rel="stylesheet" href="./controls.css?v=20261106-controls3">
+  <link rel="stylesheet" href="./controls.css?v=20261106-kick6">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -47,6 +47,17 @@
         <path d="m7 31 5-5m74 28 5-5" stroke="#84cbbf" stroke-width="2" opacity=".7"/>
         <text x="48" y="77" text-anchor="middle" fill="#ffe0a0" font-family="Courier New,monospace" font-weight="bold" font-size="11">360°</text>
       </symbol>
+      <symbol id="t-kick" viewBox="0 0 24 24"><path d="m4 4 5 1 2 7 9-1 1 4-12 3-3-5zM14 4l3 2-1 3m4-5 2 2"/></symbol>
+      <symbol id="a-kick" viewBox="0 0 96 80">
+        <ellipse cx="38" cy="74" rx="23" ry="4" fill="#86b7ad" opacity=".25"/>
+        <circle cx="36" cy="13" r="8" fill="#c9946c" stroke="#193541" stroke-width="2"/>
+        <path d="m28 21 18 1 3 25-17 3-8-19Z" fill="#6d9aac" stroke="#193541" stroke-width="3"/>
+        <path d="m27 27-9 14 17 3m9-17 12 9 8-7" fill="none" stroke="#bf956f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="m36 48-6 24m14-26 15-9 21 4" fill="none" stroke="#a0bcc4" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M22 69h13l2 6H22Zm56-34 9 2 3 12-12-2Z" fill="#d3b37e" stroke="#18343f" stroke-width="2"/>
+        <path d="m91 28-4 5m7 19-5-2M66 16l5 3m-9 5 9-1" stroke="#ffd58a" stroke-width="3" stroke-linecap="round"/>
+      </symbol>
+      <symbol id="upgrade-kick" viewBox="0 0 96 80"><use href="#a-kick"/></symbol>
       <symbol id="a-guard" viewBox="0 0 96 80"><use href="#a-warrior" transform="translate(29 47) scale(.76)"/><ellipse cx="66" cy="40" rx="17" ry="31" fill="none" stroke="#88dccc" stroke-width="3.3"/><path d="m78 16 6 10-11-2M54 63l-6-10 11 3" fill="#b5f2df"/><path d="M32 41H62M32 49H61" stroke="#b9d5da" stroke-width="5.5" stroke-linecap="round"/><use href="#a-hammer" transform="translate(65 16) scale(.52)"/><path d="m95 37-9 4 9 4" fill="#ffb96f"/><path d="M89 41H78" stroke="#ffc986" stroke-width="2"/><path d="m77 39-5-5m5 10-5 5" stroke="#ffe1a3" stroke-width="2"/></symbol>
       <symbol id="a-leap" viewBox="0 0 96 80"><ellipse cx="27" cy="72" rx="18" ry="4" fill="#82b4ac" opacity=".25"/><path d="M8 68H88" stroke="#6d9b99" stroke-width="2"/><path d="M18 62C30 9 57-4 84 27" fill="none" stroke="#a6e6d6" stroke-width="3" stroke-dasharray="5 5"/><path d="m75 27 14 7-3-14Z" fill="#a6e6d6"/><path d="m36 40-13 21 17-9" fill="#ffc477" opacity=".7"/><use href="#a-warrior" transform="translate(53 33) rotate(-22) scale(.66)"/><use href="#a-hammer" transform="translate(68 14) rotate(51) scale(.36)"/></symbol>
       <symbol id="a-slam" viewBox="0 0 96 80">
@@ -210,6 +221,7 @@
           </div>
           <div class="material-inventory" aria-label="Συλλεγμένα υλικά"><span class="material-wood">ΞΥΛΟ <b id="material-wood">0</b></span><span class="material-scrap">ΜΕΤΑΛΛΟ <b id="material-scrap">0</b></span><span class="material-crystal">ΚΡΥΣΤΑΛΛΟΙ <b id="material-crystal">0</b></span></div>
           <section class="next-weapon" aria-label="Επόμενη κατασκευή"><small>ΕΠΟΜΕΝΟ ΟΠΛΟ</small><strong id="nextWeaponName">ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ</strong><p id="forgeRequirements">LV 3 · Ξύλο 0/8</p><button id="forgeButton" type="button" disabled>ΛΕΙΠΟΥΝ ΥΛΙΚΑ</button></section>
+          <section class="kick-upgrade" aria-label="Αναβάθμιση κλωτσιάς"><button id="kickUpgradeButton" type="button">ΑΝΑΒΑΘΜΙΣΗ ΚΛΩΤΣΙΑΣ</button><small id="kickUpgradeHelp">Από +2 μετακινείς αυτοκίνητα.</small></section>
           <div class="loadout-stats" aria-label="Τρέχουσα δύναμη πολεμιστή">
             <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-power"/></svg><strong id="powerValue">1.0×</strong><small>ΔΥΝΑΜΗ</small></div>
             <div><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-size"/></svg><strong id="sizeValue">1.0×</strong><small>ΜΕΓΕΘΟΣ</small></div>
@@ -258,11 +270,15 @@
             <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg>LMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="attackIcon" href="#a-swing"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="attackTouchIcon" href="#t-attack"/></svg><span id="attackName" class="action-name">ΣΦΥΡΙΑ</span><small id="attackValue" class="action-status">ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°</small>
           </button>
+          <button id="kickButton" class="action-tile" data-key="KeyE" type="button" aria-label="E: κλωτσιά και ώθηση ανάλογα με τη μάζα" title="E: κλωτσιά. Από αναβάθμιση +2 μετακινείς αυτοκίνητα." data-desktop-label="E: κλωτσιά και ώθηση ανάλογα με τη μάζα" data-touch-label="Κλωτσιά: σπρώξε εχθρούς και χτύπα αντικείμενα.">
+            <kbd class="action-key">E</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-kick"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-kick"/></svg><span class="action-name">ΚΛΩΤΣΙΑ</span><small id="kickValue" class="action-status">ΕΤΟΙΜΗ</small>
+          </button>
           <button id="guardButton" class="action-tile" type="button" aria-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." title="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-desktop-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-touch-label="Κράτα την άμυνα για προστασία μπροστά σου. Άφησε για να σταματήσεις.">
             <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-right"/></svg>RMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-guard"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-guard"/></svg><span class="action-name">ΑΜΥΝΑ</span><small id="guardValue" class="action-status">ΚΡΑΤΑ RMB</small>
           </button>
-          <button id="leapButton" class="action-tile" data-key="Space" type="button" aria-label="Space: ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση." title="Space: ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση." data-desktop-label="Space: ψηλό άλμα προς τα εμπρός και χτύπημα στην προσγείωση." data-touch-label="Πάτησε για ψηλό άλμα προς τα εμπρός. Πάτα σφυριά στον αέρα για μεγάλη συντριβή.">
+          <button id="leapButton" class="action-tile" data-key="Space" type="button" aria-label="Space: άλμα σε κάθε επίπεδο. Πάτα LMB στον αέρα για μικρό smash, Shift για dash." title="Space: άλμα σε κάθε επίπεδο. Πάτα LMB στον αέρα για μικρό smash, Shift για dash." data-desktop-label="Space: άλμα σε κάθε επίπεδο. Πάτα LMB στον αέρα για μικρό smash, Shift για dash." data-touch-label="Άλμα σε κάθε επίπεδο. Πάτα χτύπημα για μικρό smash ή dash για εναέρια απόφυγη.">
             <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-jump"/></svg><span class="action-name"><span class="desktop-only">ΨΗΛΟ ΑΛΜΑ</span><span class="touch-only">ΑΛΜΑ</span></span><small id="leapValue" class="action-status">ΕΤΟΙΜΟ</small>
           </button>
@@ -323,7 +339,7 @@
         <dt>ΣΦΥΡΙΑ</dt><dd>Πάτησε για γρήγορο χτύπημα μπροστά σου.</dd>
         <dt>ΠΕΡΙΣΤΡΟΦΗ</dt><dd>Κράτα πατημένο για συνεχή περιστροφή 360°. Άφησε για να σταματήσεις.</dd>
         <dt>ΑΜΥΝΑ</dt><dd>Κράτα πατημένο για προστασία προς την κατεύθυνση που κοιτάς.</dd>
-        <dt>ΑΛΜΑ</dt><dd>Πάτησε για ψηλό άλμα προς τα εμπρός. Όσο βρίσκεσαι στον αέρα, η ΣΦΥΡΙΑ γίνεται ΣΥΝΤΡΙΒΗ: πάτησέ την για μεγάλη ζημιά στην προσγείωση.</dd>
+        <dt>ΑΛΜΑ</dt><dd>Άλμα σε κάθε επίπεδο. Στον αέρα, πάτησε ΧΤΥΠΗΜΑ για μικρό smash ή ΑΠΟΦΥΓΗ για dash. Με σιδερένιο ή καλύτερο σφυρί, κράτα ΧΤΥΠΗΜΑ για μεγάλη συντριβή.</dd>
         <dt>ΡΙΨΗ</dt><dd>Κράτα για κατακόρυφη περιστροφή, σύρε προς τον στόχο και άφησε. Το σφυρί αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με ηλεκτρική λάμψη.</dd>
         <dt>ΛΑΒΗ</dt><dd>Άνοιξε τις αναβαθμίσεις επάνω και πάτα ΑΛΛΑΓΗ ΛΑΒΗΣ. Βάζει την ασπίδα στην πλάτη και κρατά το σφυρί με δύο χέρια για +25% ζημιά. Πάτησε ξανά για επαναφορά.</dd>
         <dt>ΕΥΡΗΜΑΤΑ</dt><dd>Άνοιξε τις αναβαθμίσεις από το επάνω κουμπί και πάτα την επιλογή σου. Η μάχη συνεχίζεται.</dd></dl>
@@ -365,6 +381,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261106-impact4"></script>
+  <script type="module" src="./game.js?v=20261106-kick6"></script>
 </body>
 </html>

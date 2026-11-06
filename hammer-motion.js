@@ -60,11 +60,107 @@ const SWING_PROFILES = Object.freeze({
   },
 });
 
+// Additional physical silhouettes, not cosmetic trail swaps. All use the
+// same timed contact path as the visible weapon and retain the normal damage.
+const EXTRA_SWING_PROFILES = {
+  'one-lowcut': {
+    duration: .28,
+    yaw: [1.60, -.06, -1.30], pitch: [-.36, -.08, .30], yawVelocity: -12, pitchVelocity: 1.5,
+    gripX: [.48, .30, .24], gripY: [1.12, 1.08, 1.19], gripZ: [.13, .36, .22],
+    bodyYaw: [.26, -.65], bodyPitch: [.12, -.12], bodyRoll: [-.07, .13],
+    bodyDrop: [-.07, .035], legScale: .88,
+  },
+  'one-highback': {
+    duration: .30,
+    yaw: [-1.42, .05, 1.40], pitch: [.70, .03, -.20], yawVelocity: 10, pitchVelocity: -3.0,
+    gripX: [.23, .30, .44], gripY: [1.29, 1.10, 1.08], gripZ: [.17, .30, .15],
+    bodyYaw: [-.24, .58], bodyPitch: [-.10, .22], bodyRoll: [.07, -.14],
+    bodyDrop: [.015, -.065], legScale: .9,
+  },
+  'one-overhead': {
+    duration: .36, followEnd: .53, overhead: true,
+    yaw: [.28, .04, -.15], pitch: [1.60, .04, -.32], yawVelocity: -1.0, pitchVelocity: -9.0,
+    gripX: [.36, .25, .21], gripY: [1.43, 1.10, 1.02], gripZ: [.10, .37, .35],
+    bodyYaw: [.08, -.20], bodyPitch: [-.14, .36], bodyRoll: [-.05, .10],
+    bodyDrop: [.02, -.11], legScale: 1.0,
+  },
+  'two-reverse': {
+    duration: .31, twoHanded: true,
+    yaw: [-2.12, .06, 2.02], pitch: [-.10, -.06, .02], yawVelocity: 15, pitchVelocity: .30,
+    gripX: [.05, .06, .12], gripY: [1.04, 1.05, 1.06], gripZ: [.22, .29, .23],
+    bodyYaw: [-.30, .65], bodyPitch: [.07, .10], bodyRoll: [.09, -.18],
+    bodyDrop: [-.07, -.03], legScale: 1.35,
+  },
+  'two-diagonal': {
+    duration: .35, followEnd: .55, twoHanded: true,
+    yaw: [1.38, -.03, -1.42], pitch: [1.10, .02, -.34], yawVelocity: -10, pitchVelocity: -4.0,
+    gripX: [.06, .02, .02], gripY: [1.39, 1.04, .97], gripZ: [.10, .40, .31],
+    bodyYaw: [.43, -.95], bodyPitch: [-.13, .35], bodyRoll: [-.10, .21],
+    bodyDrop: [.03, -.13], legScale: 1.4,
+  },
+  'two-rising': {
+    duration: .33, twoHanded: true,
+    yaw: [-1.64, .06, 1.34], pitch: [-.36, -.02, .85], yawVelocity: 11, pitchVelocity: 3.5,
+    gripX: [.08, .12, .13], gripY: [1.06, 1.10, 1.32], gripZ: [.20, .27, .18],
+    bodyYaw: [-.28, .60], bodyPitch: [.08, -.10], bodyRoll: [.08, -.18],
+    bodyDrop: [-.05, .03], legScale: 1.25,
+  },
+};
+const ALL_SWING_PROFILES = Object.freeze({...SWING_PROFILES, ...EXTRA_SWING_PROFILES});
+export const HAMMER_MOVES = Object.freeze({
+  oneHanded: Object.freeze([...HAMMER_COMBOS.oneHanded, 'one-lowcut', 'one-highback', 'one-overhead']),
+  twoHanded: Object.freeze([...HAMMER_COMBOS.twoHanded, 'two-reverse', 'two-diagonal', 'two-rising']),
+});
+export const createSwingSequence = () => ({count: 0, bag: [], history: []});
+
+// A brief consistent opening teaches the controls. After that, draw from a
+// non-repeating bag with a preference for loading on the previous exit side.
+// Pick only when a strike actually starts: queued/rejected clicks cannot eat
+// moves or change an animation while its collision sweep is in flight.
+export function chooseHammerSwing(state, twoHanded, random = Math.random, moving = false) {
+  const key = twoHanded ? 'twoHanded' : 'oneHanded', pool = HAMMER_MOVES[key];
+  if (!state.bag.length) state.bag = [...pool];
+  let variant;
+  if (state.count < 3) variant = HAMMER_COMBOS[key][state.count];
+  else {
+    const last = state.history.at(-1), previous = ALL_SWING_PROFILES[last];
+    let candidates = state.bag.filter(id => !state.history.slice(-2).includes(id));
+    if (!candidates.length) candidates = state.bag.filter(id => id !== last);
+    if (!candidates.length) candidates = [...state.bag];
+    const weights = candidates.map(id => {
+      const profile = ALL_SWING_PROFILES[id];
+      const connected = previous && Math.sign(previous.yaw[2]) === Math.sign(profile.yaw[0]);
+      return (connected ? 2.4 : 1) * (moving && profile.overhead ? .65 : 1);
+    });
+    let pick = clamp01(random()) * weights.reduce((a,b) => a+b, 0);
+    variant = candidates.at(-1);
+    for (let n=0;n<candidates.length;n++) { pick -= weights[n]; if(pick<=0){variant=candidates[n];break;} }
+  }
+  state.bag.splice(state.bag.indexOf(variant), 1);
+  state.history.push(variant); if(state.history.length>3)state.history.shift(); state.count++;
+  return variant;
+}
+
+// A low, braced forward grip rather than the old across-the-chest sideways
+// rod. The pelvis turns while the shoulders lead and the feet alternate load.
+export function sampleHammerSpin(rotation, twoHanded = false) {
+  const step = Math.sin(rotation * 2), lift = Math.sin(rotation * 2 + .35);
+  const yaw = twoHanded ? -.65 : -.10, pitch = -.035 + step * .022;
+  return {
+    ...shaftDirection(yaw, pitch, true),
+    gripX: twoHanded ? .12 : .32, gripY: 1.04 + step * .018, gripZ: .34,
+    bodyYaw: -.20 + step * .055, bodyPitch: .11, bodyRoll: -.035,
+    bodyDrop: -.045 - Math.abs(lift) * .012,
+    leftLegPitch: -.08 + step * .20, rightLegPitch: .08 - step * .20,
+    leftLegRoll: -.11, rightLegRoll: .11,
+  };
+}
+
 // A short cut stays quick; the heavier silhouettes need enough visible load
 // and recovery to read as a different move. Contact remains at 40% of each:
 // the two-hand chain reaches the front at 120 / 136 / 160 milliseconds.
 export function getHammerSwingDuration(variant) {
-  return Object.prototype.hasOwnProperty.call(SWING_PROFILES, variant) ? SWING_PROFILES[variant].duration : .32;
+  return Object.prototype.hasOwnProperty.call(ALL_SWING_PROFILES, variant) ? ALL_SWING_PROFILES[variant].duration : .32;
 }
 
 const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
@@ -214,6 +310,6 @@ function sampleComboSwing(progress, profile, charge) {
 // it for the visible pose, swept contact, trails, and blocked recoil.
 export function sampleHammerSwing(progress, options = {}) {
   const variant = options?.variant;
-  if (!Object.prototype.hasOwnProperty.call(SWING_PROFILES, variant)) return sampleLegacySwing(progress, options);
-  return sampleComboSwing(progress, SWING_PROFILES[variant], clamp01(options?.charge));
+  if (!Object.prototype.hasOwnProperty.call(ALL_SWING_PROFILES, variant)) return sampleLegacySwing(progress, options);
+  return sampleComboSwing(progress, ALL_SWING_PROFILES[variant], clamp01(options?.charge));
 }

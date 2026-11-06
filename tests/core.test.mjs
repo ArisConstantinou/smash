@@ -244,7 +244,7 @@ test('both articulated arms stay attached to the hammer through charge and slam 
     for (const [arm, hand, anchor] of [[u.leftArm, u.leftGrip, u.leftGripAnchor], [u.rightArm, u.rightGrip, u.rightGripAnchor]]) {
       const forearmTip = arm.userData.fore.localToWorld(new THREE.Vector3(0, .5, 0));
       const handCenter = hand.getWorldPosition(new THREE.Vector3());
-      close(forearmTip.distanceTo(handCenter), 0, 1e-7);
+      close(forearmTip.distanceTo(hand.localToWorld(hand.userData.wristOffset.clone())), 0, 1e-7);
       close(handCenter.distanceTo(anchor.getWorldPosition(new THREE.Vector3())), 0, 1e-7);
       const upperStart = arm.userData.upper.localToWorld(new THREE.Vector3(0, -.5, 0));
       close(upperStart.distanceTo(arm.getWorldPosition(new THREE.Vector3())), 0, 1e-7);

@@ -21,7 +21,7 @@ function armsConnected(hero) {
     const foreEnd = arm.userData.fore.localToWorld(new THREE.Vector3(0, .5, 0));
     close(upperStart.distanceTo(worldPosition(arm)), 0, 'Upper arm detached from shoulder');
     close(upperEnd.distanceTo(foreStart), 0, 'Elbow detached');
-    close(foreEnd.distanceTo(worldPosition(hand)), 0, 'Wrist detached from hand');
+    close(foreEnd.distanceTo(hand.localToWorld(hand.userData.wristOffset.clone())), 0, 'Wrist detached from hand');
   }
 }
 function restingPose(hero, stance) {
@@ -237,7 +237,8 @@ test('an unreachable grip extends both bones proportionally and returns without 
     u.weaponRig.rotation.set(0, 0, 0);
     u.weaponRig.position.copy(shoulder).addScaledVector(direction, distance).sub(u.rightGripAnchor.position);
     u.updateGrip(); hero.updateMatrixWorld(true);
-    const extension = Math.max(1, distance / armLength);
+    const wristDirection=arm.worldToLocal(u.rightGrip.localToWorld(u.rightGrip.userData.wristOffset.clone()));
+    const extension = Math.max(1, wristDirection.length() / armLength);
     close(arm.userData.upper.scale.y, .44 * extension);
     close(arm.userData.fore.scale.y, .46 * extension);
     if (extension > 1) extendedFrames++;
@@ -245,7 +246,8 @@ test('an unreachable grip extends both bones proportionally and returns without 
     if (lastElbow) greatestStep = Math.max(greatestStep, elbowPoint.distanceTo(lastElbow));
     lastElbow = elbowPoint;
     const elbowLocal = arm.worldToLocal(elbowPoint.clone());
-    const bend = elbowLocal.addScaledVector(direction, -elbowLocal.dot(direction));
+    const reach=wristDirection.normalize();
+    const bend = elbowLocal.addScaledVector(reach, -elbowLocal.dot(reach));
     assert.ok(bend.dot(arm.userData.elbowPole) > -epsilon, 'The elbow must keep its outward bend when returning from full extension');
     contact(u.rightGrip, u.rightGripAnchor); armsConnected(hero);
   }

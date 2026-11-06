@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js?v=20261106-feel1';
+import { makeProp } from './models.js?v=20261106-kick6';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
 import { createCityNavigation } from './city-navigation.js';
@@ -334,6 +334,18 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     }
     for(const chunk of chunks.values())chunk.mesh.visible=Math.hypot(chunk.x-px,chunk.z-pz)<viewRadius+chunkSize*.72;
   }
+  function moveObject(o,x,z){
+    if(!o||o.dead||!Number.isFinite(x)||!Number.isFinite(z))return;
+    const x0=Math.floor((o.x-o.w/2)/spatialCell),x1=Math.floor((o.x+o.w/2)/spatialCell);
+    const z0=Math.floor((o.z-o.d/2)/spatialCell),z1=Math.floor((o.z+o.d/2)/spatialCell);
+    for(let bz=z0;bz<=z1;bz++)for(let bx=x0;bx<=x1;bx++){
+      const key=bucketKey(bx,bz),bucket=spatial.get(key);if(!bucket)continue;
+      const index=bucket.indexOf(o);if(index>=0)bucket.splice(index,1);if(!bucket.length)spatial.delete(key);
+    }
+    o.x=Math.max(-CITY_BOUNDS+o.w/2,Math.min(CITY_BOUNDS-o.w/2,x));
+    o.z=Math.max(-CITY_BOUNDS+o.d/2,Math.min(CITY_BOUNDS-o.d/2,z));
+    o.mesh.position.set(o.x,o.baseY??.065,o.z);indexObject(o);navigation.invalidateNavigation();
+  }
   function rebuildSpatialIndex(){spatial.clear();objects.forEach(indexObject);navigation.invalidateNavigation();}
 
   function update(dt,time,player,weather) {
@@ -443,7 +455,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   updateVisibility({x:0,z:0});
   update(0,0,{x:0,z:0},'rain');
   return {
-    group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,
+    group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,moveObject,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,
     buildingCount:buildingObjects.length,buildingObjects,
     getChaseDirection:navigation.getChaseDirection,

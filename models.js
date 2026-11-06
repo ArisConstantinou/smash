@@ -243,8 +243,16 @@ export function makeWarrior() {
   box(body, P.gold, 0, 1.96, -.025, .06, .12, .29);
   compact(body);
 
-  const leftLeg = limb(root, 'leftLeg', -.205, .62, 0, P.blueDark, P.steel, P.ink);
-  const rightLeg = limb(root, 'rightLeg', .205, .62, 0, P.blueDark, P.steel, P.ink);
+  function warriorLeg(side) {
+    const leg=group(root,side<0?'leftLeg':'rightLeg',side*.205,.62,0);
+    const thigh=group(leg,'thigh'),knee=group(leg,'knee',0,-.30,0),shin=group(knee,'shin');
+    box(thigh,P.blueDark,0,-.15,0,.25,.30,.28);compact(thigh);
+    box(shin,P.steel,0,-.10,.025,.27,.22,.30);
+    box(shin,P.ink,0,-.23,.075,.31,.16,.43);compact(shin);
+    const foot=group(knee,'soleContact',0,-.255,.245);
+    leg.userData={thigh,knee,shin,foot};return leg;
+  }
+  const leftLeg=warriorLeg(-1),rightLeg=warriorLeg(1);
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
@@ -262,7 +270,7 @@ export function makeWarrior() {
     box(fore, P.timberDark, 0, 0, 0, .205, 1, .225);
     box(fore, P.steel, 0, .22, .015, .26, .49, .27);
     compact(fore);
-    const elbowPole = new THREE.Vector3(side * .65, -.9, 0).normalize();
+    const elbowPole = new THREE.Vector3(side * .4, -.9, .3).normalize();
     arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone() };
     return arm;
   }
@@ -401,6 +409,28 @@ export function makeWarrior() {
   const reachDirection = new THREE.Vector3();
   const bendDirection = new THREE.Vector3();
   const upperArmLength = .44, forearmLength = .46;
+  const wristOffset=new THREE.Vector3(0,0,-.16);
+  leftGrip.userData.wristOffset=wristOffset.clone();rightGrip.userData.wristOffset=wristOffset.clone();
+  const handAxis=new THREE.Vector3(),handBack=new THREE.Vector3(),handX=new THREE.Vector3(),handZ=new THREE.Vector3(),previousBack=new THREE.Vector3();
+  const wristTarget=new THREE.Vector3(),handBasis=new THREE.Matrix4(),armInverse=new THREE.Quaternion();
+  function solveArm(target,arm){
+    const distance=target.length();reachDirection.copy(target).divideScalar(Math.max(distance,1e-8));
+    if(distance<1e-8)reachDirection.set(0,0,1);
+    const extension=Math.max(1,distance/(upperArmLength+forearmLength));
+    const upperLength=upperArmLength*extension,foreLength=forearmLength*extension;
+    const along=Math.max(-upperLength,Math.min(upperLength,(upperLength**2-foreLength**2+distance**2)/(2*Math.max(distance,1e-8))));
+    const bend=Math.sqrt(Math.max(0,upperLength**2-along**2));
+    bendDirection.copy(arm.userData.elbowPole).addScaledVector(reachDirection,-arm.userData.elbowPole.dot(reachDirection));
+    if(bendDirection.lengthSq()<1e-6){
+      bendDirection.copy(arm.userData.elbowBend).addScaledVector(reachDirection,-arm.userData.elbowBend.dot(reachDirection));
+      if(bendDirection.lengthSq()<1e-6)bendDirection.set(0,0,-1).addScaledVector(reachDirection,reachDirection.z);
+    }
+    bendDirection.normalize();
+    // Never preserve the old, flipped bend hemisphere. Elbows remain on
+    // their anatomical outward/downward side even after a full revolution.
+    arm.userData.elbowBend.copy(bendDirection);
+    elbow.copy(reachDirection).multiplyScalar(along).addScaledVector(bendDirection,bend);
+  }
   function poseSegment(segment, start, end) {
     segment.position.copy(start).add(end).multiplyScalar(.5);
     segmentDelta.subVectors(end, start);
@@ -445,44 +475,42 @@ export function makeWarrior() {
     leftGrip.visible = true; rightGrip.visible = true;
     root.updateMatrixWorld(true);
     for (const [arm, grip] of [[leftArm, leftGrip], [rightArm, rightGrip]]) {
-      grip.getWorldPosition(gripTarget);
-      arm.worldToLocal(gripTarget);
-      const distance = gripTarget.length();
-      reachDirection.copy(gripTarget).divideScalar(Math.max(distance, 1e-8));
-      if (distance < 1e-8) reachDirection.set(0, 0, 1);
-      // A real two-bone chain bends at the elbow instead of growing and
-      // shrinking with each swing. Extreme guard/stance poses may put a grip
-      // outside the arm span; extend both bones proportionally to retain contact.
-      const extension = Math.max(1, distance / (upperArmLength + forearmLength));
-      const upperLength = upperArmLength * extension, foreLength = forearmLength * extension;
-      const along = Math.max(-upperLength, Math.min(upperLength,
-        (upperLength * upperLength - foreLength * foreLength + distance * distance) / (2 * Math.max(distance, 1e-8))));
-      const bend = Math.sqrt(Math.max(0, upperLength * upperLength - along * along));
-      bendDirection.copy(arm.userData.elbowPole).addScaledVector(reachDirection, -arm.userData.elbowPole.dot(reachDirection));
-      if (bendDirection.lengthSq() < 1e-5) {
-        // Keep the previous bend plane if the hand crosses the pole axis.
-        bendDirection.copy(arm.userData.elbowBend).addScaledVector(reachDirection, -arm.userData.elbowBend.dot(reachDirection));
-        if (bendDirection.lengthSq() < 1e-5) {
-          bendDirection.set(0, 0, 1).addScaledVector(reachDirection, -reachDirection.z);
-          if (bendDirection.lengthSq() < 1e-5) bendDirection.set(arm.userData.side, 0, 0);
-        }
+      grip.getWorldPosition(gripTarget);arm.worldToLocal(gripTarget);
+      grip.getWorldQuaternion(armInverse);handAxis.set(0,1,0).applyQuaternion(armInverse);
+      arm.getWorldQuaternion(armInverse).invert();handAxis.applyQuaternion(armInverse).normalize();
+      wristTarget.copy(gripTarget);
+      // Hand +Y still follows the shaft, but roll the palm toward its own
+      // forearm, not blindly with the weapon. The wrist ends BEHIND the palm,
+      // never inside the handle. This removes the reversed/crossed fists.
+      // Damped fixed-point solve avoids a two-pose wrist flip when the pole
+      // and shaft nearly align; it converges without temporal elbow hysteresis.
+      for(let pass=0;pass<20;pass++){
+        previousBack.copy(handBack);
+        solveArm(wristTarget,arm);
+        handBack.subVectors(elbow,gripTarget).addScaledVector(handAxis,-handBack.dot(handAxis));
+        if(handBack.lengthSq()<1e-7)handBack.set(0,0,-1).addScaledVector(handAxis,handAxis.z);
+        if(handBack.lengthSq()<1e-7)handBack.set(arm.userData.side,0,0);
+        handBack.normalize();
+        if(pass>0)handBack.lerp(previousBack,.65).normalize();
+        wristTarget.copy(gripTarget).addScaledVector(handBack,.16);
       }
-      bendDirection.normalize();
-      if (bendDirection.dot(arm.userData.elbowBend) < 0) bendDirection.negate();
-      arm.userData.elbowBend.copy(bendDirection);
-      elbow.copy(reachDirection).multiplyScalar(along).addScaledVector(bendDirection, bend);
-      poseSegment(arm.userData.upper, zero, elbow);
-      poseSegment(arm.userData.fore, elbow, gripTarget);
+      solveArm(wristTarget,arm);
+      handZ.copy(handBack).negate();handX.crossVectors(handAxis,handZ).normalize();
+      handBasis.makeBasis(handX,handAxis,handZ);
+      grip.quaternion.setFromRotationMatrix(handBasis).premultiply(arm.quaternion);
+      poseSegment(arm.userData.upper,zero,elbow);
+      poseSegment(arm.userData.fore,elbow,wristTarget);
     }
+    root.updateMatrixWorld(true);
   }
 
   function setStance(progress) {
     stance = Math.max(0, Math.min(1, Number(progress) || 0));
     // Metadata only: the game owns weaponRig position/quaternion animations.
-    weaponRest.x = .22 + (.55 - .22) * stance;
+    weaponRest.x = .22 + ((equipmentTier < 2 ? .68 : .55) - .22) * stance;
     weaponRest.y = 0;
-    weaponRest.z = -.24 + (-.72 + .24) * stance;
-    weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
+    weaponRest.z = -.24 + ((equipmentTier < 2 ? -.43 : -.72) + .24) * stance;
+    weaponRestPosition.set(.53 * (1 - stance) - (equipmentTier < 2 ? .08 * stance : 0), .98 + (equipmentTier < 2 ? -.015 : .06) * stance, .23 + .15 * stance);
     root.userData.stance = stance;
     root.userData.shieldStored = shieldEquipped && stance >= .65;
     updateGrip();
@@ -704,7 +732,7 @@ export function makeWarrior() {
   const weaponKinds = ['log', 'banded-club', 'iron-hammer', 'war-hammer', 'storm-hammer'];
   const equipmentNames = ['Κούτσουρο', 'Δεμένο ρόπαλο', 'Σιδερένιο σφυρί', 'Πολεμικό σφυρί', 'Σφυρί της καταιγίδας'];
   const weaponSlots = new Set([handle, shaft, collar, hammerHead]);
-  const appearanceSlots = [body, leftLeg, rightLeg,
+  const appearanceSlots = [body, leftLeg.userData.thigh, leftLeg.userData.shin, rightLeg.userData.thigh, rightLeg.userData.shin,
     leftArm.getObjectByName('pauldron'), leftArm.userData.upper, leftArm.userData.fore,
     rightArm.getObjectByName('pauldron'), rightArm.userData.upper, rightArm.userData.fore,
     cape, shield, leftGrip, rightGrip, handle, shaft, collar, hammerHead];
@@ -803,21 +831,20 @@ export function makeWarrior() {
         if (tier === 3) box(g, 0xa86b44, 0, 1.92, -.065, .09, .17, .30);
       }
     });
-    for (const [side, leg] of [[-1, leftLeg], [1, rightLeg]]) draw(leg, g => {
-      beveledBox(g, cloth, 0, -.16, 0, .25, .36, .28, .02);
-      beveledBox(g, cloth, 0, -.39, .035, .27, .24, .30, .02);
-      box(g, 0x7c8678, side * .127, -.19, .035, .018, .31, .035);
-      box(g, tier ? 0x443b30 : skin, 0, -.515, .075, .30, .15, .42);
-      box(g, tier ? 0x272e2d : skinShadow, 0, -.59, .075, .31, .035, .43);
-      if (!tier) for (let toe = 0; toe < 3; toe++) {
-        box(g, skinShadow, -.08 + toe * .08, -.50, .28, .016, .05, .02);
-      }
-      if (tier === 1) box(g, 0x99754f, 0, -.41, .205, .24, .055, .03);
-      if (tier >= 2) {
-        beveledBox(g, iron, 0, -.34, .18, .27, .22, .09, .025);
-        box(g, 0xc2c6b8, 0, -.24, .222, .12, .035, .025);
-      }
-    });
+    for (const [side,leg] of [[-1,leftLeg],[1,rightLeg]]) {
+      draw(leg.userData.thigh,g=>{
+        beveledBox(g,cloth,0,-.15,0,.25,.30,.28,.02);
+        box(g,0x7c8678,side*.127,-.16,.035,.018,.26,.035);
+      });
+      draw(leg.userData.shin,g=>{
+        beveledBox(g,cloth,0,-.09,.035,.27,.24,.30,.02);
+        box(g,tier?0x443b30:skin,0,-.215,.075,.30,.15,.42);
+        box(g,tier?0x272e2d:skinShadow,0,-.29,.075,.31,.035,.43);
+        if(!tier)for(let toe=0;toe<3;toe++)box(g,skinShadow,-.08+toe*.08,-.20,.28,.016,.05,.02);
+        if(tier===1)box(g,0x99754f,0,-.11,.205,.24,.055,.03);
+        if(tier>=2){beveledBox(g,iron,0,-.04,.18,.27,.22,.09,.025);box(g,0xc2c6b8,0,.06,.222,.12,.035,.025);}
+      });
+    }
     for (const arm of [leftArm, rightArm]) {
       const side = arm.userData.side;
       draw(arm.getObjectByName('pauldron'), g => {
@@ -844,11 +871,22 @@ export function makeWarrior() {
       });
     }
     for (const grip of [leftGrip, rightGrip]) draw(grip, g => {
-      beveledBox(g, tier >= 2 ? 0x7c8e94 : skin, 0, 0, 0, .23, .18, .23, .023);
-      for (let finger = 0; finger < 4; finger++) box(g, tier >= 2 ? 0xb8c1b9 : skinShadow,
-        -.08 + finger * .053, .04, .124, .041, .07, .035);
-      box(g, tier >= 2 ? iron : skin, .125, -.03, .04, .07, .13, .11, 0, 0, -.20);
-      if (tier) box(g, tier >= 2 ? 0xa39068 : 0x775039, 0, -.083, -.01, .245, .045, .25);
+      // A wrapped hand has a hollow centre for the handle. The old solid
+      // cube swallowed the shaft and the identical thumbs read as two right
+      // hands. Four curved fingers and mirrored thumbs make the grip legible.
+      const palm = tier >= 2 ? 0x7c8e94 : skin, digits = tier >= 2 ? 0xb8c1b9 : skinShadow;
+      const side = grip === leftGrip ? -1 : 1;
+      beveledBox(g, palm, 0, 0, -.105, .235, .18, .075, .018);
+      for (let finger=0;finger<4;finger++) {
+        const y = -.064 + finger * .043;
+        for (const angle of [-1.12, -.45, .30, 1.04]) {
+          const radius = .115;
+          box(g, digits, Math.sin(angle)*radius, y, Math.cos(angle)*radius,
+            .085, .034, .048, 0, angle);
+        }
+      }
+      box(g, palm, side*.13, .055, .015, .070, .13, .10, 0, 0, side*-.35);
+      if (tier) box(g, tier >= 2 ? 0xa39068 : 0x775039, 0, -.108, -.085, .245, .045, .12);
     });
     draw(cape, g => {
       if (tier < 3) return;
