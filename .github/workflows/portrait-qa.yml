@@ -2,7 +2,7 @@ name: Verify portrait melee update
 on:
   push:
     branches: [work/portrait-melee-build-20261106]
-    paths: [tools/portrait.patch.gz.b64]
+    paths: [tools/portrait-payload/04.b64]
 permissions:
   contents: write
 jobs:
@@ -16,22 +16,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply exact tested update to the original release
+      - name: Reconstruct the exact tested source on the original release
         shell: bash
         run: |
           set -euo pipefail
           cp tools/portrait-manifest.json /tmp/portrait-manifest.json
-          base64 --decode tools/portrait.patch.gz.b64 | gzip -d > /tmp/portrait.patch
+          cat tools/portrait-payload/0{1,2,3,4}.b64 > /tmp/portrait-payload.b64
           git checkout --detach e126c48e33e4caab056ba942bc49d318a9ed7992
-          git apply --check /tmp/portrait.patch
-          git apply /tmp/portrait.patch
           python3 - <<'PY'
-          import hashlib, json, pathlib
+          import base64, hashlib, json, lzma, pathlib
           manifest = json.loads(pathlib.Path('/tmp/portrait-manifest.json').read_text())
-          for name, expected in manifest.items():
-              actual = hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()
-              if actual != expected:
-                  raise SystemExit(f'Hash mismatch: {name}: {actual} != {expected}')
+          encoded = pathlib.Path('/tmp/portrait-payload.b64').read_text()
+          edits = json.loads(lzma.decompress(base64.b64decode(encoded)))
+          assert set(edits) == set(manifest), 'Unexpected file list'
+          for name, operations in edits.items():
+              path = pathlib.Path(name)
+              assert not path.is_absolute() and '..' not in path.parts
+              lines = path.read_text().splitlines(keepends=True) if path.exists() else []
+              for start, end, replacement in reversed(operations):
+                  assert 0 <= start <= end <= len(lines)
+                  lines[start:end] = [replacement]
+              data = ''.join(lines).encode()
+              actual = hashlib.sha256(data).hexdigest()
+              assert actual == manifest[name], f'Hash mismatch: {name}: {actual}'
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(data)
           print(f'Verified {len(manifest)} exact source files.')
           PY
           git diff --check
