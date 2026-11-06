@@ -23,5 +23,12 @@ if set(files)!=set(paths): raise RuntimeError('Unexpected changed-file set')
 for path in paths:
     target=pathlib.Path(path);target.parent.mkdir(parents=True,exist_ok=True)
     target.write_text(files[path],encoding='utf-8')
+# Preview harness only: independent poses do not inherit cooldown, and Three
+# visibility must be false rather than undefined when isolating the actual rig.
+p=pathlib.Path('tools/verify-kick6.mjs')
+s=p.read_text().replace('clearInput();kicking.reset();spin=null;','clearInput();kicking.reset();attackCooldown=0;spin=null;').replace('n.visible=n===hero||n.isLight;','n.visible=n===hero||!!n.isLight;')
+p.write_text(s)
+blob=hashlib.sha1(b'blob '+str(len(s.encode())).encode()+b'\0'+s.encode()).hexdigest()
+if blob!='a9570d3bd5afbc7abd325cf2e488db005f87ca34': raise RuntimeError('Preview script checksum mismatch')
 pathlib.Path('/tmp/kick6-paths.json').write_text(json.dumps(paths))
 print('All 16 source files reconstructed and checksum-verified.')
