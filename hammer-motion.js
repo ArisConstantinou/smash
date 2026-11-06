@@ -17,42 +17,42 @@ export const HAMMER_COMBOS = Object.freeze({
 // reach of the articulated arms, including when the torso turns underneath.
 const SWING_PROFILES = Object.freeze({
   'one-forehand': {
-    duration: .38,
+    duration: .24,
     yaw: [1.75, -.08, -1.35], pitch: [.08, .03, .02], yawVelocity: -12, pitchVelocity: -.10,
     gripX: [.50, .30, .25], gripY: [1.08, 1.10, 1.09], gripZ: [.10, .36, .26],
     bodyYaw: [.26, -.72], bodyPitch: [-.04, .14], bodyRoll: [-.06, .15],
     bodyDrop: [-.025, -.025], legScale: .80,
   },
   'one-backhand': {
-    duration: .42,
+    duration: .27,
     yaw: [-1.45, .08, 1.45], pitch: [-.32, .05, .72], yawVelocity: 11, pitchVelocity: 3.1,
     gripX: [.24, .30, .48], gripY: [1.06, 1.08, 1.26], gripZ: [.12, .24, .14],
     bodyYaw: [-.22, .55], bodyPitch: [.10, -.18], bodyRoll: [.07, -.14],
     bodyDrop: [-.07, .055], legScale: .80,
   },
   'one-diagonal': {
-    duration: .48, followEnd: .54,
+    duration: .32, followEnd: .54,
     yaw: [.68, 0, -.58], pitch: [1.05, .08, -.28], yawVelocity: -4.8, pitchVelocity: -6,
     gripX: [.42, .25, .18], gripY: [1.32, 1.12, 1.00], gripZ: [.10, .36, .35],
     bodyYaw: [.12, -.40], bodyPitch: [-.12, .31], bodyRoll: [-.10, .22],
     bodyDrop: [.01, -.10], legScale: .95,
   },
   'two-broadside': {
-    duration: .48, twoHanded: true,
+    duration: .30, twoHanded: true,
     yaw: [2.25, -.08, -2.15], pitch: [-.14, -.08, -.02], yawVelocity: -16, pitchVelocity: .30,
     gripX: [.12, .02, .05], gripY: [.98, .93, .96], gripZ: [.22, .46, .30],
     bodyYaw: [.58, -1.22], bodyPitch: [.06, .10], bodyRoll: [-.10, .21],
     bodyDrop: [-.075, -.035], legScale: 1.45,
   },
   'two-cross': {
-    duration: .58, twoHanded: true,
+    duration: .34, twoHanded: true,
     yaw: [-1.68, .08, 1.55], pitch: [1.15, .02, -.36], yawVelocity: 11, pitchVelocity: -3.0,
     gripX: [.12, .14, .20], gripY: [1.43, 1.10, 1.00], gripZ: [.06, .31, .28],
     bodyYaw: [-.48, 1.05], bodyPitch: [-.12, .32], bodyRoll: [.12, -.24],
     bodyDrop: [.025, -.13], legScale: 1.40,
   },
   'two-overhead': {
-    duration: .68, followEnd: .50, twoHanded: true, overhead: true,
+    duration: .40, followEnd: .50, twoHanded: true, overhead: true,
     yaw: [0, 0, 0], pitch: [2.05, .06, -.38], yawVelocity: 0, pitchVelocity: -12,
     gripX: [.02, .02, .02], gripY: [1.50, 1.10, 1.00], gripZ: [.05, .48, .48],
     bodyYaw: [0, 0], bodyPitch: [-.19, .52], bodyRoll: [0, 0],
@@ -62,7 +62,7 @@ const SWING_PROFILES = Object.freeze({
 
 // A short cut stays quick; the heavier silhouettes need enough visible load
 // and recovery to read as a different move. Contact remains at 40% of each:
-// the two-hand chain reaches the front at 192 / 232 / 272 milliseconds.
+// the two-hand chain reaches the front at 120 / 136 / 160 milliseconds.
 export function getHammerSwingDuration(variant) {
   return Object.prototype.hasOwnProperty.call(SWING_PROFILES, variant) ? SWING_PROFILES[variant].duration : .32;
 }

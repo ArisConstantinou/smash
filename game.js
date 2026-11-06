@@ -4,11 +4,11 @@ import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261106-feel1
 import {createWorld} from './world.js?v=20261106-feel1';
 import {GameAudio} from './audio.js?v=20261106-audio2';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
-import {findBattleOccluders,occludesBattlePoint,applyOccluderFade} from './occlusion.js?v=20261106-controls3';
+import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261106-impact4';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-combos1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
-import {HAMMER_COMBOS,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-feel1';
+import {HAMMER_COMBOS,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-impact4';
 import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261106-feel1';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
@@ -44,7 +44,7 @@ let battleOccluders=new Set(),silhouetteParts=[];
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
 const swingComboSteps=[0,0];
 let attackBuffer=null,spin=null,spinRecovery=null,holdElapsed=0;
-const SPIN_HOLD_SECONDS=.22,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.45,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
+const SPIN_HOLD_SECONDS=.22,SPIN_TURN_SECONDS=.52,ATTACK_BUFFER_SECONDS=.45,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
 let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0},stats=calculateStats(levels);
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
@@ -176,18 +176,19 @@ function updateBattleVisibility(dt){
   if(occlusionTimer<=0){
     occlusionTimer=.055;
     const direction=new THREE.Vector3().subVectors(camera.position,cameraTarget);
-    const heroPoints=[{x:player.x,y:player.y+.25,z:player.z},{x:player.x,y:player.y+1.1,z:player.z},{x:player.x,y:player.y+2.05,z:player.z}];
-    const points=[...heroPoints];
-    // Never cast at an imaginary ring of empty space: only actors and the
-    // actual weapon can justify fading a building. Points inside a struck
-    // building are rejected by occludesBattlePoint.
-    for(const e of enemies)if(!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<4.5)points.push({x:e.x,y:e.y+Math.min(1.25,e.height*.6),z:e.z});
-    if(boss&&!boss.dead&&Math.hypot(boss.x-player.x,boss.z-player.z)<5.5)points.push({x:boss.x,y:boss.y+2,z:boss.z});
-    if(hero.userData.weaponHeld){hero.updateMatrixWorld(true);const p=hero.userData.hammerHead.getWorldPosition(new THREE.Vector3());points.push({x:p.x,y:p.y,z:p.z});}
-    if(throwFlight?.grounded&&Math.hypot(throwFlight.x-player.x,throwFlight.z-player.z)<4)points.push({x:throwFlight.x,y:throwFlight.groundY+.3,z:throwFlight.z});
+    // Only the visible body is protected. Idle weapons, hidden enemies and
+    // an empty area around the hero must never erase an unrelated building.
+    const side={x:Math.cos(hero.rotation.y)*.28,z:-Math.sin(hero.rotation.y)*.28};
+    const heroPoints=[
+      {x:player.x,y:player.y+.85,z:player.z},
+      {x:player.x,y:player.y+1.35,z:player.z},
+      {x:player.x,y:player.y+1.85,z:player.z},
+      {x:player.x+side.x,y:player.y+1.35,z:player.z+side.z},
+      {x:player.x-side.x,y:player.y+1.35,z:player.z-side.z}
+    ];
     const candidates=world.objects.filter(o=>!o.dead&&o.h>1.7&&o.renderActive!==false&&Math.hypot(o.x-player.x,o.z-player.z)<65);
-    battleOccluders=phase==='menu'?new Set():findBattleOccluders(candidates,points,direction);
-    heroOccluded=[...battleOccluders].some(o=>points.slice(0,3).some(p=>occludesBattlePoint(o,p,direction)));
+    battleOccluders=phase==='menu'?new Set():findBattleOccluders(candidates,heroPoints,direction);
+    heroOccluded=battleOccluders.size>0;
   }
   for(const o of world.objects)if(!o.dead&&(battleOccluders.has(o)||o.occlusionFade>0))applyOccluderFade(o,battleOccluders.has(o),dt);
   if(!heroSilhouette)rebuildHeroSilhouette();
@@ -492,11 +493,11 @@ function beginSwing(){
   chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q,{variant,duration:swing.duration,weapon:characterStats.weaponTier<2?'wood':'metal',exert:true});
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);
 }
-function startSpin(){
+function startSpin(previousHits=null){
   if(spin)return true;
   if(phase!=='playing'||swing||weaponBusy()||guardHeld)return false;
   const rig=hero.userData.weaponRig;
-  spin={time:0,angle:hero.rotation.y,rotation:0,cycle:0,hitTimes:new Map(),trailTime:0,soundTime:-1,recoil:0,
+  spin={time:0,angle:hero.rotation.y,rotation:0,cycle:0,hitTimes:new Map(),entryHits:new Set(previousHits||[]),trailTime:0,soundTime:-1,recoil:0,
     damage:Math.round(stats.power*.9*stancePower()),knockback:4.6,lift:1.1,
     fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone()};
   spinRecovery=null;chargeStarted=false;charge=0;attackBuffer=null;attackCooldown=0;guarding=false;
@@ -519,7 +520,10 @@ function spinImpact(from,to){
   const objects=nearbyObjects(player.x,player.z,stats.range+stats.size+2);
   const headWall=firstHammerHit(from,to,objects,radius),shaftWall=firstHammerHit(grip,to,objects,shaftRadius);
   const wall=shaftWall||headWall;
-  const ready=e=>s.time-(s.hitTimes.get(e)??-Infinity)>=SPIN_TURN_SECONDS-1e-7;
+  // A carried opening hit is blocked only while the weapon still touches
+  // it. Starting a fresh full-turn cooldown here skipped the entire next pass.
+  for(const target of s.entryHits)if(target.dead||(!firstHammerHit(from,to,[target],radius)&&!firstHammerHit(grip,to,[target],shaftRadius)))s.entryHits.delete(target);
+  const ready=e=>!s.entryHits.has(e)&&s.time-(s.hitTimes.get(e)??-Infinity)>=SPIN_TURN_SECONDS-1e-7;
   let hits=0,breaks=0;
   for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
     if(!ready(e))continue;
@@ -530,20 +534,20 @@ function spinImpact(from,to){
     if(lineOfContact&&lineOfContact.target!==e)continue;
     s.hitTimes.set(e,s.time);hits++;
     const dir=normalize(e.x-player.x,e.z-player.z);
-    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift);
+    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,headContact||shaftContact);
   }
   if(wall&&ready(wall.target)){
     s.hitTimes.set(wall.target,s.time);hits++;
     if(hurtObject(wall.target,s.damage,.15))breaks++;else s.recoil=1;
   }
   if(hits){
-    shake=Math.max(shake,breaks?.09:.045);
+    shake=Math.max(shake,breaks?.10:.065);
     if(s.time-s.soundTime>.09)s.soundTime=s.time;
     // No hit-stop on a sustained spin: contact sparks and recoil carry the hit.
     checkGoal();
   }
 }
-function hitEnemy(e,damage,dir,strength,lift){
+function hitEnemy(e,damage,dir,strength,lift,contact=null){
   if(e.dead||!Number.isFinite(damage)||damage<=0)return;
   recordCombatContact(e);
   const force=clamp(Number.isFinite(strength)?strength:0,0,18);
@@ -557,6 +561,11 @@ function hitEnemy(e,damage,dir,strength,lift){
     amplitude:(.38+Math.min(force/18,1)*.13)/mass**.35,bounced:false,
     axis:new THREE.Vector3(direction.z,0,-direction.x),rotation:new THREE.Quaternion(),fromRotation:e.mesh.quaternion.clone()};
   e.hp-=damage;e.flash=.16;e.stagger=Math.max(e.stagger||0,duration);
+  // Put a visible recoil on the mesh in the SAME contact step, including the
+  // frozen impact frame. Do not wait for a 45 ms animation blend after damage.
+  e.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(e.impact.axis,e.impact.amplitude*.30));
+  e.mesh.updateMatrixWorld(true);
+  const hitPoint=contact||{x:e.x,y:e.y+Math.min(1.1,e.height*.6),z:e.z};
   // A normal hit moves a light enemy about .7m, not an unlimited launch.
   // Heavy bodies keep a clear flinch while resisting most of the displacement.
   e.vx=direction.x*impulse;e.vz=direction.z*impulse;
@@ -564,12 +573,12 @@ function hitEnemy(e,damage,dir,strength,lift){
   e.hurtTimer=2.4;
   const interrupted=interruptEnemyAttack(e,duration+.18);if(interrupted)removeEffect(interrupted);
   applyEnemyFlash(e.materials,1);
-  impactClouds?.emit(e.x,e.y,e.z,direction,Math.min(1.5,e.radius*1.6));
+  impactClouds?.emit(hitPoint.x,hitPoint.y,hitPoint.z,direction,Math.min(1.5,e.radius*1.6));
   frightenNearby(e.x,e.z,.55+characterStats.weaponTier*.2,3.6+characterStats.weaponTier*.35,e);
   showHitPoints(e,damage);
   audio.play('hit',Math.min(1,damage/100),{material:impactMaterial(e),weapon:characterStats.weaponTier<2?'wood':'metal'});
   audio.play('enemyHurt',Math.min(1,damage/100),{type:e.type,fatal:e.hp<=0});
-  fragments.add(e.x,e.y+1,e.z,8,e.palette==='organic'?[0x8fbea2,0xb6d5b4,0x83ceaa]:[0xffc271,0xf9e5b1,0x7eacb9],4,.07);
+  fragments.add(hitPoint.x,hitPoint.y,hitPoint.z,8,e.palette==='organic'?[0x8fbea2,0xb6d5b4,0x83ceaa]:[0xffc271,0xf9e5b1,0x7eacb9],4,.07);
   if(e.hp<=0)killEnemy(e);
 }
 function killEnemy(e){
@@ -640,10 +649,10 @@ function impact(from=headPrevious,to=headNow){
     const lineOfContact=firstHammerHit(grip,{x:e.x,y:grip.y,z:e.z},[...objects,e],shaftRadius);
     if(lineOfContact&&lineOfContact.target!==e)continue;
     const dir=normalize(e.x-player.x+s.fx*.3,e.z-player.z+s.fz*.3);s.hits.add(e);hits++;
-    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift);
+    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,headContact||shaftContact);
   }
   if(wall){s.hits.add(wall.target);hits++;if(hurtObject(wall.target,s.damage,s.q))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
-  if(hits){s.hit=true;shake=Math.max(shake,(.07+s.q*.14)*(breaks?1.2:1));if(!s.feedbackDone){s.feedbackDone=true;s.contactTime=s.time;hitStop=(s.variant==='two-overhead'?.032:s.variant==='two-cross'?.023:.016)+s.q*.006;}}
+  if(hits){s.hit=true;shake=Math.max(shake,(.105+s.q*.14)*(breaks?1.2:1));if(!s.feedbackDone){s.feedbackDone=true;s.contactTime=s.time;hitStop=(s.variant==='two-overhead'?.032:s.variant==='two-cross'?.026:.022)+s.q*.006;}}
   if(hits&&s.charged&&!s.quakeDone){
     s.quakeDone=true;const radius=2.3+stats.quake*.7;pulse(to.x,to.z,radius,0xffd48b,.35);
     for(const e of [...enemies])if(!s.hits.has(e)&&Math.hypot(e.x-to.x,e.z-to.z)<radius){s.hits.add(e);hitEnemy(e,s.damage*(.25+stats.quake*.12),normalize(e.x-to.x,e.z-to.z),s.knockback*.7,s.lift);}
@@ -1013,14 +1022,13 @@ function updateEnemies(dt){
     u.animate?.(e,dt,visualTime);
     if(!falling)poseEnemyReaction(e,visualTime);
     if(!i)return;
-    const kick=smooth(i.time/.05),recover=1-smooth((i.time-.08)/(i.duration-.08));
+    const kick=.30+.70*smooth(i.time/.035),recover=1-smooth((i.time-.08)/(i.duration-.08));
     const recoil=kick*recover,fall=falling?smooth(e.deathTime/(e.deathDuration*.85)):0;
     const tilt=i.amplitude*recoil+fall*1.27;
     i.rotation.setFromAxisAngle(i.axis,tilt);
     // Apply AFTER every species' walking/weapon animation. Tilting the whole
     // articulated rig keeps shoulders, hands and feet attached during recoil.
     e.mesh.quaternion.premultiply(i.rotation);
-    if(i.time<.045)e.mesh.quaternion.slerpQuaternions(i.fromRotation,e.mesh.quaternion.clone(),smooth(i.time/.045));
     e.mesh.position.y+=Math.sin(tilt)*Math.min(.3,e.radius*.45);
     const localX=i.dirX*Math.cos(e.facingYaw)-i.dirZ*Math.sin(e.facingYaw);
     const localZ=i.dirX*Math.sin(e.facingYaw)+i.dirZ*Math.cos(e.facingYaw);
@@ -1263,16 +1271,16 @@ function updatePlayer(dt){
     if(!spin&&holdElapsed>=SPIN_HOLD_SECONDS&&!weaponBusy()&&!guardHeld){
       let previousHits=null;
       if(swing&&swing.time/swing.duration>=SWING_CONTACT_END){previousHits=swing.hits;swing=null;attackCooldown=0;}
-      if(!swing&&attackCooldown<=0&&startSpin()&&previousHits)for(const target of previousHits)spin.hitTimes.set(target,0);
+      if(!swing&&attackCooldown<=0)startSpin(previousHits);
     }
   }
-  if(attackBuffer&&!chargeHeld&&!spin&&swing&&swing.time/swing.duration>=.82&&!weaponBusy()&&!guardHeld){swing=null;attackCooldown=0;}
+  if(attackBuffer&&!chargeHeld&&!spin&&swing&&swing.time/swing.duration>=.74&&!weaponBusy()&&!guardHeld){swing=null;attackCooldown=0;}
   if(attackBuffer&&!chargeHeld&&!spin&&!swing&&attackCooldown<=0&&!weaponBusy()&&!guardHeld){
     attackBuffer=null;chargeStarted=true;charge=0;beginSwing();
   }
   if(spin){
     const s=spin,oldCycle=s.cycle;s.time+=dt;const turn=dt*Math.PI*2/SPIN_TURN_SECONDS;
-    s.rotation+=turn;s.angle+=turn;s.cycle=Math.floor(s.rotation/(Math.PI*2));s.recoil=Math.max(0,s.recoil-dt*12);
+    s.rotation+=turn;s.angle-=turn;s.cycle=Math.floor(s.rotation/(Math.PI*2));s.recoil=Math.max(0,s.recoil-dt*12);
     if(s.cycle>oldCycle){
       audio.play('swing',.25,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});
       for(const target of s.hitTimes.keys())if(target.dead)s.hitTimes.delete(target);
@@ -1334,7 +1342,7 @@ function poseHero(dt,moving=false){
   const settle=swing?.blocked?1-smooth((swing.time-swing.blockTime)/.12):1;
   const impactRecoil=swing?.contactTime!==undefined?Math.sin(clamp((swing.time-swing.contactTime)/.085,0,1)*Math.PI)*.055:0;
   const torque=spin?-.20:motion?motion.bodyYaw*settle:guarding?-.08:0;
-  const spinStep=spin?Math.sin(spin.rotation*2)*.24:0;
+  const spinStep=spin?Math.sin(-spin.rotation*2)*.24:0;
   if(u.leftLeg){u.leftLeg.rotation.x=leap?-.55:spin?-.12+spinStep:motion?motion.leftLegPitch*settle+walk*.38:walk*.58;u.leftLeg.rotation.z=spin?-.18:motion?motion.leftLegRoll*settle:0;}
   if(u.rightLeg){u.rightLeg.rotation.x=leap?.45:spin?.12-spinStep:motion?motion.rightLegPitch*settle-walk*.38:-walk*.58;u.rightLeg.rotation.z=spin?.18:motion?motion.rightLegRoll*settle:0;}
   if(u.body){
@@ -1342,7 +1350,7 @@ function poseHero(dt,moving=false){
     u.body.rotation.y=torque;u.body.rotation.z=motion?motion.bodyRoll*settle:spin?-.06:0;
     u.body.position.y=landingRecovery>0?-.12:spin?-.045:motion?motion.bodyDrop*settle:Math.sin(visualTime*2)*.015;
   }
-  if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:spin?.55:motion?.18+Math.abs(torque)*.3:moving?.25:0);u.cape.rotation.z=spin?-.3+Math.sin(spin.rotation)*.1:motion?-torque*.38:Math.sin(visualTime*3)*.045;}
+  if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:spin?.55:motion?.18+Math.abs(torque)*.3:moving?.25:0);u.cape.rotation.z=spin?.3-Math.sin(spin.rotation)*.1:motion?-torque*.38:Math.sin(visualTime*3)*.045;}
   u.setStance?.(stance);
   const rest=u.weaponRest||{x:.55,y:0,z:-.72},rp=u.weaponRestPosition||{x:0,y:1.04,z:.38};
   const rig=u.weaponRig,restQuaternion=new THREE.Quaternion().setFromEuler(new THREE.Euler(rest.x,rest.y,rest.z));
@@ -1363,7 +1371,7 @@ function poseHero(dt,moving=false){
     }
   }else if(spin){
     const reachOut=smooth(spin.time/.10);
-    const target=new THREE.Quaternion().setFromUnitVectors(shaftUp,poseDirection.set(1,.025+spin.recoil*.18,.12).normalize());
+    const target=new THREE.Quaternion().setFromUnitVectors(shaftUp,poseDirection.set(-1,.025+spin.recoil*.18,.12).normalize());
     rig.position.lerpVectors(spin.fromPosition,new THREE.Vector3(stance>.9?.08:.2,1.22,.48),reachOut);
     rig.quaternion.copy(spin.fromRotation).slerp(target,reachOut);
   }else if(guarding){

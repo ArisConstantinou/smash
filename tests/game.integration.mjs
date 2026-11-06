@@ -621,12 +621,12 @@ test('a continuous swing crosses many poses and damages a target only once', () 
   assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 480 Hz sample`);
 });
 
-test('a quick left-click connects during acceleration and completes its readable 380 ms forehand', () => {
+test('a quick left-click connects during acceleration and completes its responsive 240 ms forehand', () => {
   arena(); api.poseHero(1);
   const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
   mouseAttack(true); mouseAttack(false);
   const plannedDuration = api.swing.duration;
-  close(plannedDuration, .38);
+  close(plannedDuration, .24);
   let contactTime = null, duration = 0;
   while (api.swing && duration < .5) {
     api.updatePlayer(1 / 240); duration += 1 / 240;
@@ -731,8 +731,8 @@ test('an active combo stroke stays fixed and rejected recovery inputs do not ski
 
 test('every combo stroke hits close and forward enemies promptly once without damaging enemies behind', () => {
   const durations = {
-    'one-forehand': .38, 'one-backhand': .42, 'one-diagonal': .48,
-    'two-broadside': .48, 'two-cross': .58, 'two-overhead': .68,
+    'one-forehand': .24, 'one-backhand': .27, 'one-diagonal': .32,
+    'two-broadside': .30, 'two-cross': .34, 'two-overhead': .40,
   };
   for (const twoHanded of [false, true]) for (const sizeLevel of [0, 2]) for (const distance of [.9, 2.3]) {
     arena();
@@ -1664,8 +1664,8 @@ test('holding the left mouse button continuously rotates the whole warrior and e
     poses.add([nextBody, head.x, head.y, head.z].map(n => n.toFixed(3)).join(','));
     close(worldPosition(api.hero.userData.rightGrip).distanceTo(worldPosition(api.hero.userData.rightGripAnchor)), 0);
   });
-  assert.ok(bodyTravel > Math.PI * 4, `The body rotated only ${(bodyTravel / Math.PI / 2).toFixed(2)} turns`);
-  close(bodyTravel, 2.1 / .62 * Math.PI * 2, .025);
+  assert.ok(bodyTravel < -Math.PI * 4, `The body rotated only ${(bodyTravel / Math.PI / 2).toFixed(2)} turns`);
+  close(bodyTravel, -2.1 / .52 * Math.PI * 2, .025);
   close(headTravel, bodyTravel, .15);
   assert.ok(minimumRadius > 1.8, 'The hammer must extend visibly out from the spinning warrior');
   assert.ok(poses.size > 180 && largestStep < .15, 'Body and hammer need continuous poses, not a frame swap');
@@ -1705,10 +1705,10 @@ test('a sustained spin hits real targets on every side no more than once per rev
     if (t < .04) assert.ok(events.some(hits => hits.length === 0), 'The entire circle must not be damaged instantly');
   });
   events.forEach((hits, index) => {
-    assert.ok(hits.length >= 3 && hits.length <= 4, `Side ${index} received ${hits.length} hits over 2.3 seconds`);
+    assert.ok(hits.length >= 4 && hits.length <= 5, `Side ${index} received ${hits.length} hits over 2.3 seconds`);
     for (let i = 1; i < hits.length; i++) {
-      assert.ok(hits[i] - hits[i - 1] >= .62 - 1 / 240 - 1e-7, 'A target must not be hit twice at the turn boundary');
-      assert.ok(hits[i] - hits[i - 1] <= .66, 'Each subsequent physical revolution should reconnect');
+      assert.ok(hits[i] - hits[i - 1] >= .52 - 1 / 240 - 1e-7, 'A target must not be hit twice at the turn boundary');
+      assert.ok(hits[i] - hits[i - 1] <= .56, 'Each subsequent physical revolution should reconnect');
     }
     assert.ok(targets[index].stagger > 0 && Math.hypot(targets[index].vx, targets[index].vz) > 1);
   });
@@ -2954,7 +2954,7 @@ test('actual camera visibility fades an obstructing tower and restores its mater
   assert.ok(tower.materials.every(m=>m.opacity<.08));
   assert.equal(api.heroSilhouette.visible,true);
   assert.ok(api.world.nearObjects(5,7,0).includes(tower),'Fading must not erase physical obstacles');
-  tower.x=-15;tower.z=-15;
+  tower.x=-15;tower.z=-15;tower.mesh.position.set(tower.x,tower.baseY,tower.z);
   for(let n=0;n<30;n++)api.updateBattleVisibility(.06);
   assert.equal(api.battleOccluders.has(tower),false);assert.equal(tower.occlusionFade,0);
   for(const m of tower.materials){const b=m.userData.occlusionBaseline;assert.equal(m.opacity,b.opacity);assert.equal(m.depthWrite,b.depthWrite);}
@@ -3039,4 +3039,56 @@ test('building HP anchors remain on their facade instead of following the player
   assert.ok(first.y>1&&first.y<building.h);
   building.hurtTimer=2;building.hp=500;building.maxHp=700;api.drawFX();
   assert.ok(elements.get('fxCanvas').context.textCalls.some(call=>call.text==='500 / 700 HP'));
+});
+
+
+test('a hit applies HP, visible recoil, flash and impact sound in the same contact step',()=>{
+  arena(1,{test:false});const enemy=stationaryEnemy('brute',0,2.0);
+  const rotation=enemy.mesh.quaternion.clone(),hp=enemy.hp;
+  mouseAttack(true);mouseAttack(false);const before=audioEvents.length;
+  let contactTime=0;
+  for(;enemy.hp===hp&&contactTime<.25;contactTime+=1/240)api.updatePlayer(1/240);
+  assert.ok(enemy.hp<hp);assert.ok(contactTime<=.16,`Opening log contact took ${contactTime}`);
+  assert.ok(enemy.mesh.quaternion.angleTo(rotation)>.08,'The contact frame must already contain a visible flinch');
+  assert.ok(enemy.flash>.15);assert.ok(enemy.stagger>0);
+  assert.equal(audioEvents.slice(before).filter(e=>e.name==='hit').length,1);
+  assert.equal(api.combatCombo.hits,1);
+});
+
+test('holding from the opening wood strike reconnects on the next visible pass without a lost revolution',()=>{
+  arena(1,{test:false});const enemy=stationaryEnemy('brute',0,2.1);enemy.hp=enemy.maxHp=10000;
+  const hitTimes=[];let lastHp=enemy.hp,t=0;
+  mouseAttack(true);
+  playerSteps(1.5,1/240,dt=>{t+=dt;if(enemy.hp!==lastHp){hitTimes.push(t);lastHp=enemy.hp;}});
+  mouseAttack(false);
+  assert.ok(hitTimes.length>=3,`Only ${hitTimes.length} real contacts`);
+  assert.ok(hitTimes[0]<.16);
+  assert.ok(hitTimes[1]-hitTimes[0]<.7,`First repeat was delayed ${hitTimes[1]-hitTimes[0]}s`);
+  for(let i=2;i<hitTimes.length;i++)assert.ok(hitTimes[i]-hitTimes[i-1]>=.52-1/120);
+});
+
+test('the held spin continues the opening leftward cut instead of reversing the body and weapon',()=>{
+  arena(1,{test:false});api.poseHero(1);mouseAttack(true);playerSteps(.17);
+  let previousHead=headAzimuth(),previousBody=api.hero.rotation.y;
+  let spinHeadTravel=0,spinBodyTravel=0,maxReverse=0;
+  playerSteps(.75,1/240,()=>{
+    const head=headAzimuth(),body=api.hero.rotation.y;
+    if(api.spin){const delta=angleStep(previousHead,head);maxReverse=Math.max(maxReverse,delta);spinHeadTravel+=delta;spinBodyTravel+=angleStep(previousBody,body);}
+    previousHead=head;previousBody=body;
+  });
+  mouseAttack(false);
+  assert.ok(spinBodyTravel<-Math.PI*2);assert.ok(spinHeadTravel<-Math.PI*2);
+  assert.ok(maxReverse<.025,`Weapon snapped backwards by ${maxReverse} radians at the spin join`);
+});
+
+test('a building cannot fade only to reveal a nearby enemy or the idle weapon',()=>{
+  arena(1,{test:false});api.camera.position.set(13,23,18);
+  const building=api.world.buildingObjects.find(o=>o.h>20);
+  Object.assign(building,{x:5,z:0,w:2,d:2,h:24,renderActive:true});
+  // Put an enemy behind this wall while all body sight rays miss it.
+  building.mesh.position.set(5,building.baseY,0);
+  stationaryEnemy('brute',4,-2.0);
+  for(let i=0;i<8;i++)api.updateBattleVisibility(.06);
+  assert.equal(api.battleOccluders.has(building),false);
+  assert.ok(!building.occlusionFade);
 });
