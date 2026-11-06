@@ -1,37 +1,52 @@
-name: Prepare recorded combat audio
+name: Build and validate recorded combat audio
 on:
   push:
     branches: [audio-recorded-sfx]
     paths: ['.github/workflows/audio-assets.yml']
 permissions:
-  contents: read
+  contents: write
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
-      - name: Download licensed source recordings
-        shell: python
+      - uses: actions/checkout@v4
+        with:
+          ref: audio-recorded-sfx
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply tested implementation
         run: |
-          import hashlib,json,pathlib,urllib.request
-          out=pathlib.Path('audio-sources');out.mkdir()
-          def get(url):
-            req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://kenney.nl/assets/impact-sounds'})
-            with urllib.request.urlopen(req,timeout=40) as r: return r.read(20000000),r.headers.get('Content-Type','')
-          link,_=get('https://kenney.nl/download-link/6173736574732f696d706163742d736f756e6473')
-          signed=json.loads(link)['url']
-          sources={'impact.zip':signed,'hero.wav':'https://opengameart.org/sites/default/files/Valiant%20Genericus%20%28Effort%20Noises%29.wav'}
-          for i in range(1,7): sources[f'hurt_{i:02}.mp3']=f'https://opengameart.org/sites/default/files/hurt_{i:02}.mp3'
-          report={}
-          for name,url in sources.items():
-            data,kind=get(url)
-            if 'text/html' in kind or len(data)<256: raise ValueError('Invalid asset: '+name)
-            (out/name).write_bytes(data)
-            report[name]={'url':'https://kenney.nl/assets/impact-sounds' if name=='impact.zip' else url,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
-          (out/'sources.json').write_text(json.dumps(report,indent=2))
-          print(json.dumps(report,indent=2))
+          git apply --check audio-upgrade.patch
+          git apply audio-upgrade.patch
+          git diff --check
+      - name: Install audio encoder
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          fi
+      - name: Build hash-verified licensed recordings
+        run: python3 tools/build-audio.py
+      - name: Run complete regression suite
+        run: |
+          set -o pipefail
+          npm test | tee audio-validation.log
+      - name: Commit validated implementation to preparation branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add audio.js audio-samples.js game.js index.html style.css tests/audio.test.mjs tests/audio-samples.test.mjs tools/build-audio.py assets/audio
+          git commit -m 'Add recorded material impacts, human vocals and explicit mobile audio test'
+          git push origin HEAD:audio-recorded-sfx
+          git rev-parse HEAD > validated-commit.txt
+          git archive --format=tar HEAD > validated-source.tar
       - uses: actions/upload-artifact@v4
         with:
-          name: licensed-audio-sources
-          path: audio-sources/
+          name: validated-recorded-audio
+          path: |
+            validated-source.tar
+            validated-commit.txt
+            audio-validation.log
           retention-days: 7
