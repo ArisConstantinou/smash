@@ -1,4 +1,5 @@
 import test from 'node:test';
+import * as THREE from '../vendor/three.module.js';
 import assert from 'node:assert/strict';
 import {occludesBattlePoint,findBattleOccluders,applyOccluderFade} from '../occlusion.js';
 
@@ -38,4 +39,30 @@ test('nearby buildings outside actual actor rays stay fully opaque',()=>{
   const player={x:0,y:1,z:0};const rear={x:0,z:-4,w:6,d:6,h:8};
   const blocked=findBattleOccluders([rear,tower],[player],view);
   assert.equal(blocked.has(rear),false);assert.equal(blocked.has(tower),true);
+});
+
+
+test('empty space inside an oversized building bounding box must not fade its actual facade',()=>{
+  const mesh=new THREE.Group();
+  const facade=new THREE.Mesh(new THREE.BoxGeometry(2,12,2),new THREE.MeshBasicMaterial());
+  facade.position.set(-5,6,0);mesh.add(facade);mesh.position.set(5,0,7);
+  const building={...tower,w:12,d:12,mesh};
+  const point={x:0,y:1,z:0};
+  assert.equal(occludesBattlePoint({...building,mesh:undefined},point,view),true,'The conservative box alone is a false positive');
+  assert.equal(occludesBattlePoint(building,point,view),false,'The actual wall misses the body ray');
+  facade.position.set(0,6,0);
+  assert.equal(occludesBattlePoint(building,point,view),true,'Moving the real wall into the ray must reveal the player');
+  const material=facade.material;building.materials=[material];
+  for(let i=0;i<40;i++)applyOccluderFade(building,true,.016);
+  assert.equal(occludesBattlePoint(building,point,view),true,'A faded occluder must not flicker on/off by testing its temporary opacity');
+  facade.visible=false;
+  assert.equal(occludesBattlePoint(building,point,view),false,'Invisible child meshes cannot justify fading');
+  facade.geometry.dispose();material.dispose();
+});
+
+test('a cleared view restores a building promptly rather than leaving a ghost behind',()=>{
+  const material={opacity:1,transparent:false,depthWrite:true,userData:{}},o={materials:[material]};
+  applyOccluderFade(o,true,1);
+  for(let i=0;i<24;i++)applyOccluderFade(o,false,1/60);
+  assert.equal(o.occlusionFade,0);assert.equal(material.opacity,1);assert.equal(material.depthWrite,true);
 });
