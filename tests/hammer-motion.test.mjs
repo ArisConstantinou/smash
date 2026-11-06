@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
 import { makeWarrior } from '../models.js';
-import { HAMMER_COMBOS, getHammerSwingDuration, sampleHammerSwing, SWING_CONTACT_START, SWING_CONTACT_END } from '../hammer-motion.js';
+import { HAMMER_COMBOS, createSwingSequence, selectHammerSwing, sampleSpinMotion, getHammerSwingDuration, sampleHammerSwing, SWING_CONTACT_START, SWING_CONTACT_END } from '../hammer-motion.js';
 
 const delta = 1e-4;
 const angularSpeed = p => Math.abs(sampleHammerSwing(p + delta).yaw - sampleHammerSwing(p - delta).yaw) / (2 * delta);
@@ -95,9 +95,9 @@ test('recovery ends at neutral body pose and progress is safely clamped', () => 
 });
 
 test('both hand modes have visibly different forehand, reverse and finishing trajectories', () => {
-  assert.equal(HAMMER_COMBOS.oneHanded.length, 3); assert.equal(HAMMER_COMBOS.twoHanded.length, 3);
+  assert.equal(HAMMER_COMBOS.oneHanded.length, 6); assert.equal(HAMMER_COMBOS.twoHanded.length, 6);
   const variants = [...HAMMER_COMBOS.oneHanded, ...HAMMER_COMBOS.twoHanded];
-  assert.equal(new Set(variants).size, 6, 'Each hand mode needs its own three strokes');
+  assert.equal(new Set(variants).size, 12, 'Each hand mode needs six genuinely different strokes');
   const at = (variant, progress) => sampleHammerSwing(progress, { variant });
   for (const [forward, reverse] of [HAMMER_COMBOS.oneHanded, HAMMER_COMBOS.twoHanded]) {
     assert.ok(at(forward, .16).yaw > .8 && at(forward, .68).yaw < -.8);
@@ -133,7 +133,7 @@ test('combo rhythms leave a distinct heavy finish while front contact stays resp
       assert.ok(duration * .40 <= .161, 'The heaviest front contact must arrive within 160 ms');
     }
   }
-  for (let index = 0; index < quick.length; index++) assert.ok(heavy[index] > quick[index]);
+  for (let index = 0; index < 3; index++) assert.ok(heavy[index] > quick[index]);
   assert.ok(heavy[2] - heavy[0] >= .099, 'The overhead needs a clearly longer load and recovery than the sweep');
   const finish = sampleHammerSwing(.55, { variant: 'two-overhead' });
   assert.equal(finish.trail, 0, 'The downstroke must arrest at its planted finish before recovery');
@@ -200,7 +200,7 @@ test('the hammer striking faces track the stroke plane without rolling onto an e
   }
 });
 
-test('all six combo profiles remain finite and preserve velocity across their animation phases', () => {
+test('all twelve combo profiles remain finite and preserve velocity across their animation phases', () => {
   for (const [mode, variants] of Object.entries(HAMMER_COMBOS)) for (const variant of variants) for (const charge of [0, 1]) {
     const options = { variant, twoHanded: mode === 'twoHanded', charge };
     for (let step = 0; step <= 500; step++) {
@@ -224,7 +224,7 @@ test('all six combo profiles remain finite and preserve velocity across their an
   }
 });
 
-test('all six physical hammer paths keep both hands attached without stretching either arm', () => {
+test('all twelve physical hammer paths keep both hands attached without stretching either arm', () => {
   const paths = [];
   for (const [mode, variants] of Object.entries(HAMMER_COMBOS)) for (const variant of variants) {
     const twoHanded = mode === 'twoHanded', hero = makeWarrior(), u = hero.userData;
@@ -263,5 +263,44 @@ test('all six physical hammer paths keep both hands attached without stretching 
   for (let a = 0; a < paths.length; a++) for (let b = a + 1; b < paths.length; b++) {
     const maxSeparation = Math.max(...paths[a].path.map((point, i) => point.distanceTo(paths[b].path[i])));
     assert.ok(maxSeparation > .45, `${paths[a].variant} and ${paths[b].variant} repeat effectively the same hammer path`);
+  }
+});
+
+
+test('adaptive swing bags cover all strokes without repeats or a fixed repeating phrase', () => {
+  for (const twoHanded of [false, true]) {
+    let seed = 51; const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+    const state = createSwingSequence(), names = [];
+    for (let i = 0; i < 60; i++) names.push(selectHammerSwing(state, {twoHanded, moving:i%3===0, random}));
+    for (let i = 1; i < names.length; i++) assert.notEqual(names[i], names[i-1]);
+    for (let i = 0; i < names.length; i += 6) assert.equal(new Set(names.slice(i,i+6)).size,6);
+    assert.ok(new Set(Array.from({length:10}, (_,i)=>names.slice(i*6,i*6+6).join(','))).size >= 5,
+      'Changing a fixed 3-cycle into a fixed 6-cycle is not enough');
+    assert.ok(names.every(name => (twoHanded?HAMMER_COMBOS.twoHanded:HAMMER_COMBOS.oneHanded).includes(name)));
+  }
+});
+
+test('a sustained spin holds the real weapon in front with both hands attached and bent elbows', () => {
+  for (const tier of [0,1,2,4]) for (const stance of tier < 2 ? [1] : [0,1]) {
+    const hero=makeWarrior(), u=hero.userData; u.setEquipment(tier);u.setStance(stance);u.setReach(1.2);
+    let maxReach=0, maxStep=0, previous=null, minFloor=Infinity;
+    for(let i=0;i<=240;i++){
+      const rotation=i/240*Math.PI*4,p=sampleSpinMotion(rotation,{twoHanded:!!stance});
+      hero.rotation.y=-rotation;u.body.rotation.set(p.bodyPitch,p.bodyYaw,p.bodyRoll);u.body.position.y=p.bodyDrop;
+      u.weaponRig.position.set(p.gripX,p.gripY,p.gripZ);
+      u.weaponRig.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.directionX,p.directionY,p.directionZ))
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),p.shaftTwist));
+      u.updateGrip();hero.updateMatrixWorld(true);
+      for(const [arm,hand,anchor] of [[u.rightArm,u.rightGrip,u.rightGripAnchor],[u.leftArm,u.leftGrip,stance?u.leftGripAnchor:u.shieldGripAnchor]]){
+        const h=hand.getWorldPosition(new THREE.Vector3());maxReach=Math.max(maxReach,h.distanceTo(arm.getWorldPosition(new THREE.Vector3())));
+        assert.ok(h.distanceTo(anchor.getWorldPosition(new THREE.Vector3()))<1e-7);
+      }
+      const h=u.hammerHead.getWorldPosition(new THREE.Vector3());if(previous)maxStep=Math.max(maxStep,h.distanceTo(previous));previous=h;
+      minFloor=Math.min(minFloor,u.getHeadFloorY());
+      assert.ok(p.directionZ>.9,'Weapon stays in a forward carry rather than a sideways T-pose');
+    }
+    assert.ok(maxReach<.90,`tier ${tier}, stance ${stance}: arms stretched to ${maxReach}`);
+    assert.ok(maxStep<.20,`tier ${tier}: head teleported ${maxStep}`);
+    assert.ok(minFloor>0,'Spinning wood must not pass through the floor');
   }
 });

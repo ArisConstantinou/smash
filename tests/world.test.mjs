@@ -201,3 +201,12 @@ test('snow, rain, fire, wind and construction cranes animate while resource clea
   assert.ok([...resources].every(r=>counts.get(r)===1),'Every owned geometry and current material is disposed exactly once');
   assert.equal(sourceDisposals.length,0,'Shared model prototype materials remain available for future cities');
 });
+
+test('relocating a vehicle updates its model, new buckets and navigation without leaving stale old occupancy',()=>{
+ const car=world.objects.find(o=>o.type==='car'),old={x:car.x,z:car.z};
+ world.relocateObject(car,0,0);assert.ok(world.nearObjects(0,0,0).includes(car));assert.equal(world.nearObjects(old.x,old.z,0).includes(car),false);
+ assert.equal(car.mesh.position.x,0);assert.equal(car.mesh.position.z,0);
+ world.relocateObject(car,44,0);assert.ok(world.nearObjects(44,0,0).includes(car));assert.equal(world.nearObjects(0,0,0).includes(car),false);
+ assert.equal(world.nearObjects(44,0,5).filter(o=>o===car).length,1);
+ world.relocateObject(car,old.x,old.z);
+});

@@ -19,6 +19,7 @@ import * as characterProgression from '../character-progression.js';
 import * as enemyReactions from '../enemy-reactions.js';
 import * as combatFeedback from '../combat-feedback.js';
 import * as occlusion from '../occlusion.js';
+import * as kickPhysics from '../kick-physics.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -46,7 +47,7 @@ function context2D() {
       if (key in target) return target[key];
       if (key === 'createRadialGradient' || key === 'createLinearGradient') return () => ({ addColorStop() {} });
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
-      if (key === 'fillText') return (text, x, y) => target.textCalls.push({ text: String(text), x, y });
+      if (key === 'fillText') return (text, x, y) => target.textCalls.push({ text: String(text), x, y, color:target.fillStyle });
       return () => {};
     },
     set(target, key, value) { target[key] = value; return true; },
@@ -181,11 +182,13 @@ const imports = new Map([
   ['./enemy-reactions.js', synthetic(enemyReactions, 'real-enemy-reactions')],
   ['./combat-feedback.js', synthetic(combatFeedback, 'real-combat-feedback')],
   ['./occlusion.js', synthetic(occlusion, 'real-occlusion')],
+  ['./kick-physics.js', synthetic(kickPhysics, 'real-kick-physics')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
   get phase(){return phase;}, get combatCombo(){return combatCombo;}, get comboXpCarry(){return comboXpCarry;}, get battleOccluders(){return battleOccluders;}, get heroSilhouette(){return heroSilhouette;}, get upgradeTab(){return upgradeTab;}, get comicState(){return comicState;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
@@ -203,7 +206,7 @@ export const __integration = {
   get stance(){return stance;}, get stanceTarget(){return stanceTarget;},
   get guarding(){return guarding;}, get guardRing(){return guardRing;}, get aim(){return aim;}, get aimPreview(){return aimPreview;},
   get leap(){return leap;}, get throwWindup(){return throwWindup;}, get throwFlight(){return throwFlight;},
-  get throwCooldown(){return throwCooldown;},
+  get throwCooldown(){return throwCooldown;}, get dashTime(){return dashTime;}, get dashCooldown(){return dashCooldown;}, dodge,
   get hammerLightning(){return hammerLightning;}, get hammerAura(){return hammerAura;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   buildingHudAnchor, recordCombatContact, updateComboDisplay, updateBattleVisibility, startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
@@ -415,12 +418,12 @@ test('game initializes using its actual HTML ids, world and warrior, and renders
 
 test('the visible control deck maps Space to jump and exposes the illustrated nonmodal armory', () => {
   assert.equal(dataKeys.get('Space')?.id, 'leapButton');
-  assert.equal(dataKeys.has('KeyE'), false);
+  assert.equal(dataKeys.get('KeyE')?.id, 'kickButton');
   assert.notEqual(dataKeys.get('Space'), elements.get('attackButton'));
   assert.ok(elements.has('a-mouse-left'));
   assert.ok(elements.has('a-mouse-right'));
   assert.equal(dataKeys.has('KeyQ'), false, 'The defense is pictured on the right mouse button');
-  for (const id of ['power', 'size', 'range', 'speed', 'vitality', 'quake']) assert.ok(elements.has('upgrade-' + id));
+  for (const id of ['power', 'size', 'range', 'speed', 'vitality', 'quake', 'kick']) assert.ok(elements.has('upgrade-' + id));
   for (const id of ['upgradesToggle', 'upgradePanel', 'upgradeChoices', 'pendingUpgradeCount', 'upgradeQueueText', 'waveEnemiesValue', 'waveStatus']) assert.ok(elements.has(id));
   assert.equal(elements.has('upgradeMenu'), false, 'The former blocking upgrade overlay is removed');
   assert.equal(elements.has('slamButton'), false, 'Air smash is a jump followed by attack, without a separate action button');
@@ -428,7 +431,7 @@ test('the visible control deck maps Space to jump and exposes the illustrated no
   assert.match(html, /id="upgradePanel" class="upgrade-drawer"/);
 });
 
-test('right mouse holds defense and release stops it; the former Q and E keys do nothing', () => {
+test('right mouse holds defense; Q stays unbound and E kicks without triggering defense', () => {
   arena();
   mouseGuard(true);
   playerSteps(.3);
@@ -436,10 +439,10 @@ test('right mouse holds defense and release stops it; the former Q and E keys do
   assert.equal(api.swing, null); assert.equal(api.spin, null); assert.equal(api.leap, null);
   mouseGuard(false); playerSteps(.03);
   assert.equal(api.guarding, false);
-  for (const code of ['KeyQ', 'KeyE']) {
-    key(code, true); playerSteps(.1); key(code, false);
-    assert.equal(api.guarding, false);
-  }
+  key('KeyQ', true); playerSteps(.1); key('KeyQ', false);
+  assert.equal(api.kick, null); assert.equal(api.guarding, false);
+  key('KeyE', true); playerSteps(.1); key('KeyE', false);
+  assert.ok(api.kick); assert.equal(api.guarding, false);
   assert.equal(api.swing, null); assert.equal(api.spin, null); assert.equal(api.leap, null);
   key('Space', true); key('Space', false);
   assert.ok(api.leap); assert.equal(api.leap.slam, false, 'Space alone starts a normal leap without arming the mouse attack');
@@ -686,25 +689,16 @@ test('the wider near-body sweep still stops at a surviving wall before the enemy
   assert.equal(strike.blocked, true);
 });
 
-test('each hand mode cycles its own three-stroke combo and a new run resets both sequences', () => {
-  arena();
-  const chains = hammerMotion.HAMMER_COMBOS;
-  const attack = expected => {
-    pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
-    assert.ok(api.swing); assert.equal(api.swing.variant, expected);
-    assert.equal(api.swing.twoHanded, api.stance > .9);
-    playerSteps(api.swing.duration + .04);
-    assert.equal(api.swing, null, 'Changing hand modes waits for the actual stroke to finish');
-  };
-  for (let i = 0; i < 4; i++) {
-    attack(chains.oneHanded[i % 3]);
-    key('KeyZ', true); key('KeyZ', false); playerSteps(1.1);
-    attack(chains.twoHanded[i % 3]);
-    key('KeyZ', true); key('KeyZ', false); playerSteps(1.1);
+test('each hand mode keeps an independent six-move bag and a new run resets the opener', () => {
+  arena();const names=[[],[]];
+  for(let i=0;i<6;i++)for(const mode of [0,1]){
+    if(api.stance!==mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    mouseAttack(true);mouseAttack(false);assert.ok(api.swing);names[mode].push(api.swing.variant);
+    assert.equal(api.swing.twoHanded,!!mode);playerSteps(api.swing.duration+.04);assert.equal(api.swing,null);
   }
-  arena(); attack(chains.oneHanded[0]);
-  key('KeyZ', true); key('KeyZ', false); playerSteps(1.1);
-  attack(chains.twoHanded[0]);
+  assert.deepEqual(new Set(names[0]),new Set(hammerMotion.HAMMER_COMBOS.oneHanded));
+  assert.deepEqual(new Set(names[1]),new Set(hammerMotion.HAMMER_COMBOS.twoHanded));
+  arena();mouseAttack(true);mouseAttack(false);assert.equal(api.swing.variant,'one-forehand');
 });
 
 test('an active combo stroke stays fixed and rejected recovery inputs do not skip the next stroke', () => {
@@ -722,10 +716,11 @@ test('an active combo stroke stays fixed and rejected recovery inputs do not ski
   }
   const observed = new Set([first]);
   playerSteps(.8, 1 / 240, () => { if (api.swing) observed.add(api.swing); });
-  assert.deepEqual([...observed].map(s => s.variant), chain.slice(0, 2),
-    'Repeated inputs during recovery queue one actual attack and must not consume extra combo steps');
+  assert.equal(observed.size,2,'Repeated inputs must queue only one actual stroke');
+  assert.equal(new Set([...observed].map(s=>s.variant)).size,2);
   mouseAttack(true); mouseAttack(false);
-  assert.equal(api.swing.variant, chain[2]);
+  assert.ok(chain.includes(api.swing.variant));
+  assert.ok(![...observed].some(s=>s.variant===api.swing.variant),'An unplayed stroke remains in the bag');
   playerSteps(.4);
 });
 
@@ -733,6 +728,7 @@ test('every combo stroke hits close and forward enemies promptly once without da
   const durations = {
     'one-forehand': .24, 'one-backhand': .27, 'one-diagonal': .32,
     'two-broadside': .30, 'two-cross': .34, 'two-overhead': .40,
+    'one-overhead': .30, 'one-rising': .29, 'one-cross': .31, 'two-return': .29, 'two-rising': .33, 'two-cleave': .35,
   };
   for (const twoHanded of [false, true]) for (const sizeLevel of [0, 2]) for (const distance of [.9, 2.3]) {
     arena();
@@ -741,10 +737,11 @@ test('every combo stroke hits close and forward enemies promptly once without da
     const front = stationaryEnemy('brute', 0, distance), rear = stationaryEnemy('brute', 0, -1.1);
     front.hp = front.maxHp = rear.hp = rear.maxHp = 10000;
     const chain = twoHanded ? hammerMotion.HAMMER_COMBOS.twoHanded : hammerMotion.HAMMER_COMBOS.oneHanded;
-    for (const variant of chain) {
+    const visited=new Set();
+    for (let n=0;n<chain.length;n++) {
       const before = front.hp; let previousHp = before, changes = 0, contactTime = null, duration = 0;
       mouseAttack(true); mouseAttack(false);
-      const strike = api.swing; assert.equal(strike?.variant, variant);
+      const strike = api.swing, variant=strike?.variant;assert.ok(chain.includes(variant));assert.ok(!visited.has(variant));visited.add(variant);
       close(strike.duration, durations[variant]);
       while (api.swing && duration < .85) {
         api.updatePlayer(1 / 240); duration += 1 / 240;
@@ -772,10 +769,11 @@ test('all combo angles including the overhead smash stop at a surviving wall bef
     const wall = placeObject('wall', 0, 1.7, { w: 5, d: .08, h: 3, hp: 10000, maxHp: 10000 });
     const enemy = stationaryEnemy('brute', 0, 2.9);
     const chain = twoHanded ? hammerMotion.HAMMER_COMBOS.twoHanded : hammerMotion.HAMMER_COMBOS.oneHanded;
-    for (const variant of chain) {
+    const visited=new Set();
+    for (let n=0;n<chain.length;n++) {
       const before = wall.hp;
       mouseAttack(true); mouseAttack(false);
-      const strike = api.swing; assert.equal(strike?.variant, variant);
+      const strike = api.swing, variant=strike?.variant;assert.ok(chain.includes(variant));assert.ok(!visited.has(variant));visited.add(variant);
       playerSteps(.45, 1 / 240);
       assert.equal(wall.hp, before - strike.damage, `${variant}: the blocking wall receives one physical hit`);
       assert.equal(enemy.hp, enemy.maxHp, `${variant}: the new angle must not damage through a solid wall`);
@@ -1035,6 +1033,7 @@ test('mobile air smash requires a fresh attack during the jump and its one butto
     assert.match(elements.get('attackButton').getAttribute('aria-label'), /στον αέρα/);
     playerSteps(.2);
     pointerEvent('attackButton', 'pointerdown', { pointerId: 205 });
+    playerSteps(.23);
     pointerEvent('attackButton', 'pointerup', { pointerId: 205 });
     assert.equal(api.leap.slam, true); assert.equal(api.swing, null);
     api.updateHUD();
@@ -2122,7 +2121,7 @@ test('Space makes a high forward leap and damages nearby targets once on its ord
   const after = enemy.hp; playerSteps(.4); assert.equal(enemy.hp, after, 'One landing applies damage once');
 });
 
-test('an airborne left-click arms a large smash whose damage happens only on landing', () => {
+test('holding an airborne left-click arms a large smash whose damage happens only on landing', () => {
   arena();
   const nearLeft = stationaryEnemy('brute', -2, 5.6), nearRight = stationaryEnemy('brute', 2, 5.6);
   const distant = stationaryEnemy('brute', 10, 5.6);
@@ -2130,7 +2129,7 @@ test('an airborne left-click arms a large smash whose damage happens only on lan
   const targets = [nearLeft, nearRight, wall], before = targets.map(t => t.hp);
   key('Space', true); key('Space', false); playerSteps(.5);
   assert.ok(api.player.y > 6); assert.ok(api.leap); assert.equal(api.leap.slam, false);
-  mouseAttack(true); mouseAttack(false);
+  mouseAttack(true);playerSteps(.23);mouseAttack(false);
   assert.equal(api.leap.slam, true); assert.equal(api.swing, null);
   assert.deepEqual(targets.map(t => t.hp), before, 'Arming the slam is not an impact');
   for (let i = 0; api.leap && i < 120; i++) {
@@ -2158,20 +2157,20 @@ test('a mouse attack held before Space needs a fresh airborne press to arm the i
   assert.equal(api.leap.slam, false); assert.equal(api.swing, null);
   const enemy = stationaryEnemy('brute', api.player.x + 1.5, api.player.z), hp = enemy.hp;
   mouseAttack(true); mouseAttack(false);
-  assert.equal(api.leap.slam, true, 'A fresh press after the jump begins arms this landing');
+  assert.equal(api.leap.strike,true);assert.equal(api.leap.slam,false,'A fresh tap arms a small strike, not the held heavy one');
   for (let i = 0; api.leap && i < 120; i++) {
     api.updatePlayer(1 / 240);
     if (api.leap) assert.equal(enemy.hp, hp);
   }
   assert.equal(api.leap, null);
-  assert.ok(hp - enemy.hp > api.stats.power * 2, 'The deliberate airborne press must cause the large smash');
+  assert.ok(hp-enemy.hp>0&&hp-enemy.hp<api.stats.power,'The fresh tap produces modest damage');
   const after = enemy.hp, swingEvents = audioEvents.filter(e => e.name === 'swing').length;
   mouseAttack(false); playerSteps(.5);
   assert.equal(enemy.hp, after);
   assert.equal(audioEvents.filter(e => e.name === 'swing').length, swingEvents);
 });
 
-test('a left-click just before touchdown upgrades that landing to a huge smash exactly once', () => {
+test('a left-click just before touchdown gives one small smash without an unearned large blast', () => {
   arena(); key('Space', true); key('Space', false);
   for (let i = 0; api.leap && (api.leap.vy >= 0 || api.player.y > .45) && i < 480; i++) api.updatePlayer(1 / 240);
   assert.ok(api.leap); assert.equal(api.leap.slam, false);
@@ -2179,15 +2178,15 @@ test('a left-click just before touchdown upgrades that landing to a huge smash e
   const outer = stationaryEnemy('brute', api.player.x + 4.1, api.player.z);
   const before = [near.hp, outer.hp];
   mouseAttack(true); mouseAttack(false);
-  assert.equal(api.leap.slam, true);
+  assert.equal(api.leap.strike,true);assert.equal(api.leap.slam,false);
   assert.deepEqual([near.hp, outer.hp], before);
   for (let i = 0; api.leap && i < 120; i++) {
     api.updatePlayer(1 / 240);
     if (api.leap) assert.deepEqual([near.hp, outer.hp], before);
   }
   assert.equal(api.leap, null);
-  assert.ok(before[0] - near.hp > api.stats.power * 2);
-  assert.ok(outer.hp < before[1], 'An armed landing also damages beyond the ordinary jump radius');
+  assert.ok(before[0]-near.hp>0&&before[0]-near.hp<api.stats.power);
+  assert.equal(outer.hp,before[1],'A tap must not acquire the heavy smash radius');
   const after = [near.hp, outer.hp]; playerSteps(.5);
   assert.deepEqual([near.hp, outer.hp], after);
 });
@@ -2329,7 +2328,7 @@ test('a relic queues three illustrated choices without pausing or opening the ar
   const choices = elements.get('upgradeChoices').children;
   assert.equal(choices.length, 3);
   assert.ok(choices.every(button => /<svg\b[^>]*class="upgrade-icon"/.test(button.innerHTML)));
-  assert.ok(choices.every(button => /href="#upgrade-(power|size|range|speed|vitality|quake)"/.test(button.innerHTML)));
+  assert.ok(choices.every(button => /href="#upgrade-(power|size|range|speed|vitality|quake|kick)"/.test(button.innerHTML)));
   key('Digit1', true); key('Digit1', false);
   assert.equal(api.upgradeQueue.length, 1, 'Number keys must not spend a hidden upgrade');
   choices[0].click();
@@ -2341,11 +2340,20 @@ test('a relic queues three illustrated choices without pausing or opening the ar
   assert.ok(api.elapsed > before.elapsed + .18, 'Opening the drawer must not stop simulation time');
   assert.ok(Math.hypot(api.player.x - before.x, api.player.z - before.z) > .5, 'The warrior keeps moving while choices are visible');
   const oldStats = { ...api.stats };
+  const selectedId = api.upgradeQueue[0][0].id;
+  const oldKick = kickPhysics.kickStats(api.level, api.levels.kick);
   key('Digit1', true); key('Digit1', false);
   assert.equal(api.phase, 'playing'); assert.equal(api.relics, 1);
   assert.equal(api.upgradeQueue.length, 0);
   assert.equal(Object.values(api.levels).reduce((a, b) => a + b, 0), 1);
-  assert.ok(Object.keys(oldStats).some(k => oldStats[k] !== api.stats[k]));
+  assert.equal(api.levels[selectedId], 1, 'The selected, visible upgrade is the one consumed');
+  if (selectedId === 'kick') {
+    const upgradedKick = kickPhysics.kickStats(api.level, api.levels.kick);
+    assert.ok(upgradedKick.damage > oldKick.damage && upgradedKick.impulse > oldKick.impulse);
+    assert.deepEqual({ ...api.stats }, oldStats, 'A kick upgrade does not silently change weapon stats');
+  } else {
+    assert.ok(Object.keys(oldStats).some(k => oldStats[k] !== api.stats[k]));
+  }
   assert.equal(api.hero.userData.hammerHead.scale.x, api.stats.size);
   api.player.hp = 50;
   api.spawnDrop(api.player.x, api.player.z, 'heart'); api.updateDrops(.5);
@@ -2496,7 +2504,7 @@ test('boss fear and hit recoil stay bounded over many pose steps and its arm rol
   const boss = api.boss;
   boss.x = 0; boss.z = 3; boss.y = 0; boss.state = 'recover'; boss.timer = 100;
   api.startLeap(); api.player.y = 8; api.armAirSmash();
-  assert.equal(api.leap.slam, true);
+  assert.equal(api.leap.strike, true);
   api.hitBoss(1, {x: 1, z: 0}, 0);
   assert.ok(boss.impact, 'The fixture must combine a real hammer recoil with the airborne threat');
   const {leftArm, rightArm, head} = boss.mesh.userData;
@@ -2901,7 +2909,7 @@ test('level-one log starts in both hands and four real contacts defeat a starter
     assert.equal(api.combatCombo.hits,strike+1,'Each real contact counts once; killing adds no second count');
     if(strike<3)assert.equal(enemy.dead,false);
   }
-  assert.deepEqual(names,['two-broadside','two-cross','two-overhead','two-broadside']);
+  assert.equal(names[0],'two-broadside');assert.equal(new Set(names).size,4,'The starter must not repeat a scripted 3-hit cycle');
   assert.equal(enemy.dead,true);assert.equal(api.kills,1);
   assert.equal(api.characterStats.canLightning,false);
 });
@@ -3014,7 +3022,7 @@ test('click spam stores only one follow-up and never creates a delayed attack ba
 
 test('the separate spin button is removed and desktop images have dedicated touch-icon alternatives',()=>{
   assert.equal(elements.has('chargeButton'),false);
-  assert.equal((html.match(/class="action-icon"/g)||[]).length,6);
+  assert.equal((html.match(/class="action-icon"/g)||[]).length,7);
   assert.match(html,/id="attackTouchIcon" href="#t-attack"/);
   assert.match(html,/id="attackIcon" href="#a-swing"/);
 });
@@ -3091,4 +3099,101 @@ test('a building cannot fade only to reveal a nearby enemy or the idle weapon',(
   for(let i=0;i<8;i++)api.updateBattleVisibility(.06);
   assert.equal(api.battleOccluders.has(building),false);
   assert.ok(!building.occlusionFade);
+});
+
+// Kicks use real poses, event handlers, world colliders and enemy/vehicle state.
+function kickSimulation(seconds){for(let t=0;t<seconds;t+=1/240){api.updatePlayer(1/240);api.updateMovingVehicles(1/240);api.updateEnemies(1/240);}}
+function resilientEnemy(type,x,z){const e=stationaryEnemy(type,x,z);e.hp=e.maxHp=1000;return e;}
+
+test('E starts a visible kick and the extended foot applies exactly one synchronized hit',()=>{
+ arena(1,{test:false});const e=resilientEnemy('zombie',.18,1.0),hp=e.hp;const before=audioEvents.length;
+ key('KeyE',true);assert.ok(api.kick);assert.equal(e.hp,hp);assert.ok(audioEvents.slice(before).some(e=>e.name==='kick'));
+ playerSteps(.08);assert.equal(e.hp,hp);assert.ok(api.hero.userData.rightLeg.userData.shin.rotation.x>.5);
+ playerSteps(.15);assert.equal(e.hp,hp-kickPhysics.kickStats(1,0).damage);assert.ok(e.flash>.15&&e.vz>6);assert.ok(e.impact&&e.stagger>0);
+ const after=e.hp;playerSteps(.25);assert.equal(e.hp,after);assert.equal(api.kick,null);key('KeyE',false);
+ assert.equal(audioEvents.slice(before).filter(e=>e.name==='hit').length,1);
+});
+test('holding E cannot spam damage and the dedicated touch icon triggers the same action',()=>{
+ arena(1,{test:false});key('KeyE',true);const first=api.kick;
+ emit('keydown',{code:'KeyE',repeat:true});assert.equal(api.kick,first);key('KeyE',false);playerSteps(.45);
+ assert.equal(api.startKick(),false);playerSteps(.30);
+ pointerEvent('kickButton','pointerdown');assert.ok(api.kick);pointerEvent('kickButton','pointerup');playerSteps(.4);assert.equal(api.kick,null);
+});
+test('a kick cannot damage a distant or rear enemy or strike through the first wall',()=>{
+ for(const fixture of ['far','rear','wall']){
+  arena(1,{test:false});const e=resilientEnemy('zombie',.15,fixture==='far'?2.8:fixture==='rear'?-1:1.2);
+  const wall=fixture==='wall'?placeObject('wall',0,.67,{w:3,d:.04,h:3,hp:1000,maxHp:1000}):null;
+  api.startKick();playerSteps(.45);assert.equal(e.hp,1000,fixture);if(wall)assert.ok(wall.hp<1000);
+ }
+});
+test('direct kicks give heavier enemies less displacement than light enemies',()=>{
+ const speeds=[];for(const type of ['zombie','brute','titan']){
+  arena(1,{test:false});const e=resilientEnemy(type,.15,1.0);api.startKick();playerSteps(.23);assert.ok(e.hp<1000);speeds.push(Math.hypot(e.vx,e.vz));
+ }
+ assert.ok(speeds[0]>speeds[1]*2&&speeds[1]>speeds[2]*2);
+});
+test('a launched light enemy pushes another light enemy but only slows a much heavier enemy',()=>{
+ for(const type of ['zombie','titan']){
+  arena(1,{test:false});const front=resilientEnemy('zombie',.15,1.0),back=resilientEnemy(type,.15,1.0+frontRadius(type));
+  api.startKick();let sawCollision=false;
+  for(let t=0;t<.5;t+=1/240){api.updatePlayer(1/240);api.updateEnemies(1/240);if(back.hp<1000){sawCollision=true;break;}}
+  assert.ok(sawCollision,`Kick never reached the ${type} behind`);
+  if(type==='titan'){assert.ok(back.slowTime>0);assert.equal(back.stagger,0);assert.ok(Math.hypot(back.vx,back.vz)<1);assert.equal(back.kickFlight,null);}
+  else{assert.ok(back.kickFlight);assert.ok(back.vz>1&&back.stagger>0);}
+ }
+ function frontRadius(type){return type==='titan'?1.65:1.1;}
+});
+test('wall impacts injure and stun launched enemies without repeated wall damage',()=>{
+ arena(1,{test:false});const e=resilientEnemy('zombie',.15,1.0),wall=placeObject('wall',0,2.35,{w:4,d:.08,h:3,hp:1000,maxHp:1000});
+ api.startKick();kickSimulation(.42);
+ assert.ok(e.hp<1000-kickPhysics.kickStats(1,0).damage);assert.ok(e.stunTime>0);assert.ok(wall.hp<1000);assert.ok(e.z<wall.z-wall.d/2);
+ const hp=wall.hp;api.updateEnemies(.15);assert.equal(wall.hp,hp);
+});
+test('base kick damages cars but only an upgraded kick translates their real collider and model',()=>{
+ for(const upgraded of [false,true]){
+  arena(1,{test:false});if(upgraded)api.levels.kick=2;
+  const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:1000,maxHp:1000});const oldZ=car.z;
+  api.startKick();playerSteps(.25);assert.ok(car.hp<1000);
+  for(let t=0;t<.6;t+=1/120)api.updateMovingVehicles(1/120);
+  if(upgraded){assert.ok(car.z>oldZ+.4);close(car.mesh.position.z,car.z);assert.ok(api.world.nearObjects(car.x,car.z,0).includes(car));}
+  else{close(car.z,oldZ);assert.equal(api.movingVehicles.has(car),false);}
+ }
+});
+test('kicked cars hurt and shove enemies at the car body, not at the player',()=>{
+ arena(1,{test:false});api.levels.kick=4;
+ const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:1000,maxHp:1000});const e=resilientEnemy('zombie',.1,4.38);
+ api.startKick();let collision=false;
+ for(let t=0;t<1;t+=1/240){api.updatePlayer(1/240);api.updateMovingVehicles(1/240);api.updateEnemies(1/240);if(e.hp<1000){collision=true;break;}}
+ assert.ok(collision);assert.ok(e.kickFlight);assert.ok(e.vz>1);assert.ok(car.z>2.3);assert.ok(car.hp<1000);
+});
+test('a kicked car hits a thin building wall once and never moves the building or tunnels through it',()=>{
+ arena(1,{test:false});api.levels.kick=5;
+ const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:1000,maxHp:1000});const wall=placeObject('wall',0,4.25,{w:6,d:.04,h:3,hp:1000,maxHp:1000});
+ api.startKick();playerSteps(.25);for(let i=0;i<80;i++)api.updateMovingVehicles(1/60);
+ assert.ok(wall.hp<1000);close(wall.z,4.25);assert.ok(car.z+car.d/2<=wall.z-wall.d/2+.001);assert.ok(car.hp<1000-kickPhysics.kickStats(1,5).damage);
+ const hp=wall.hp;for(let i=0;i<80;i++)api.updateMovingVehicles(1/60);assert.equal(wall.hp,hp);
+});
+test('pause cancels a kick, jump can interrupt it, and knees return to the walking rig',()=>{
+ arena(1,{test:false});api.startKick();playerSteps(.10);api.pauseGame();assert.equal(api.kick,null);
+ api.setPhase('playing');playerSteps(.75);api.startKick();assert.ok(api.kick);api.startLeap();assert.equal(api.kick,null);assert.ok(api.leap);playerSteps(1);api.poseHero(.1);
+ close(api.hero.userData.leftLeg.userData.shin.rotation.x,0);close(api.hero.userData.rightLeg.userData.shin.rotation.x,0);
+});
+test('enemies display their level at full health using the level tier colour',()=>{
+ arena(1,{test:false});const a=stationaryEnemy('zombie',0,3),b=stationaryEnemy('titan',3,3);b.level=15;
+ api.drawFX();const calls=elements.get('fxCanvas').context.textCalls;
+ assert.ok(calls.some(c=>c.text==='LV '+a.level));assert.ok(calls.some(c=>c.text.startsWith('LV 15')));
+ assert.notEqual(kickPhysics.enemyHealthColor(a.level),kickPhysics.enemyHealthColor(b.level));
+ assert.ok(calls.some(c=>c.text.startsWith('LV 15')&&c.color===kickPhysics.enemyHealthColor(15)));
+});
+
+test('a light body collision slows the boss without cancelling its attack or launching it',()=>{
+ arena(1,{test:false});api.spawnBoss();const b=api.boss;Object.assign(b,{x:.15,z:3.6,y:0,state:'windup',timer:2,hp:10000,maxHp:10000});b.mesh.position.set(b.x,0,b.z);
+ const e=resilientEnemy('zombie',.15,1.0);api.startKick();let hit=false;
+ for(let t=0;t<.8;t+=1/240){api.updatePlayer(1/240);api.updateEnemies(1/240);if(b.hp<10000){hit=true;break;}}
+ assert.ok(hit);assert.ok(b.slowTime>0);assert.equal(b.state,'windup');assert.ok(Math.hypot(b.vx,b.vz)<1);assert.equal(b.stagger,0);
+ api.drawFX();assert.ok(elements.get('fxCanvas').context.textCalls.some(c=>c.text.startsWith('LV '+b.level+' · ΚΟΛΟΣΣΟΣ')));
+});
+test('kick rank persists with the normal character checkpoint',()=>{
+ arena(1,{test:false});api.levels.kick=3;api.persistCharacter();const saved=JSON.parse(storage.get('ironfall.character'));
+ assert.equal(saved.levels.kick,3);
 });

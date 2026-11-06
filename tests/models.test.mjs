@@ -499,3 +499,37 @@ test('crafting drops have distinguishable material colors, silhouettes and compa
   }
   assert.equal(signatures.size, 3); assert.equal(colors.size, 3);
 });
+
+test('mirrored palms point both thumbs up the handle while both wrist openings face their own elbow',()=>{
+ const hero=makeWarrior(),u=hero.userData,shaft=new THREE.Vector3(),q=new THREE.Quaternion();
+ for(const tier of [0,1,2,4])for(const stance of tier<2?[1]:[0,1]){
+  u.setEquipment(tier);restingPose(hero,stance);
+  for(const heading of [0,.7,Math.PI,Math.PI*2,Math.PI*4]){
+   hero.rotation.y=heading;u.updateGrip();hero.updateMatrixWorld(true);
+   for(const [arm,hand,anchor] of [[u.rightArm,u.rightGrip,u.rightGripAnchor],[u.leftArm,u.leftGrip,stance?u.leftGripAnchor:u.shieldGripAnchor]]){
+    anchor.getWorldQuaternion(q);shaft.set(0,1,0).applyQuaternion(q);
+    hand.getWorldQuaternion(q);const thumb=new THREE.Vector3(arm.userData.side,0,0).applyQuaternion(q);
+    assert.ok(thumb.dot(shaft)>.999,'A left thumb must not point down the shaft while the right points up');
+    const elbow=arm.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0));
+    const towardElbow=elbow.sub(worldPosition(hand)).normalize();
+    const opening=new THREE.Vector3(0,-1,0).applyQuaternion(q);assert.ok(opening.dot(towardElbow)>.2,'The cuff must face the arm, not the opposite end of the weapon');
+    assert.ok(hand.matrixWorld.determinant()>0,'No negative-scale mirror or inside-out palm');
+   }
+  }
+ }
+});
+test('elbow side does not depend on a previous reverse pose or full rotation',()=>{
+ const hero=makeWarrior(),u=hero.userData;u.setEquipment(0);restingPose(hero,1);
+ const positions=[u.leftArm,u.rightArm].map(a=>a.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0)));
+ for(const a of [u.leftArm,u.rightArm])a.userData.elbowBend.negate();
+ u.updateGrip();hero.updateMatrixWorld(true);
+ [u.leftArm,u.rightArm].forEach((a,i)=>assert.ok(a.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0)).distanceTo(positions[i])<1e-7));
+});
+test('equipment swaps preserve the real foot contact marker and independent knees',()=>{
+ const hero=makeWarrior(),u=hero.userData,foot=u.rightLeg.userData.foot;
+ for(const tier of [0,1,2,3,4,0]){
+  u.setEquipment(tier);assert.equal(u.rightLeg.userData.foot,foot);assert.equal(foot.parent,u.rightLeg.userData.shin);
+  assert.ok(u.rightLeg.userData.thigh.children.length>0);assert.ok(u.rightLeg.userData.shin.children.length>1);
+  assert.equal(u.leftLeg.userData.shin.rotation.x,0);
+ }
+});

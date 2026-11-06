@@ -5,13 +5,13 @@
 export const SWING_CONTACT_START = .16;
 export const SWING_CONTACT_END = .68;
 export const HAMMER_COMBOS = Object.freeze({
-  oneHanded: Object.freeze(['one-forehand', 'one-backhand', 'one-diagonal']),
-  twoHanded: Object.freeze(['two-broadside', 'two-cross', 'two-overhead']),
+  oneHanded: Object.freeze(['one-forehand', 'one-backhand', 'one-diagonal', 'one-overhead', 'one-rising', 'one-cross']),
+  twoHanded: Object.freeze(['two-broadside', 'two-cross', 'two-overhead', 'two-return', 'two-rising', 'two-cleave']),
 });
 
-// Three readable silhouettes per stance: a level cut, a reverse cut and a
-// descending finisher. A shield keeps the first chain compact; two hands add
-// a waist-height sweep, a high cross-cut, and a true overhead downstroke.
+// Six distinct strokes per stance. The selector below visits them without a
+// fixed repeating chain, favouring the side where the previous stroke ended.
+// Every stroke still uses the same physical contact window and input timing.
 // pitch is an angle, not a slope: the overhead load can pass behind the crown.
 // Triples describe load, front contact and follow-through. The hands stay in
 // reach of the articulated arms, including when the torso turns underneath.
@@ -50,6 +50,48 @@ const SWING_PROFILES = Object.freeze({
     gripX: [.12, .14, .20], gripY: [1.43, 1.10, 1.00], gripZ: [.06, .31, .28],
     bodyYaw: [-.48, 1.05], bodyPitch: [-.12, .32], bodyRoll: [.12, -.24],
     bodyDrop: [.025, -.13], legScale: 1.40,
+  },
+  'one-overhead': {
+    duration: .30, followEnd: .50, overhead: true,
+    yaw: [.9, -.02, -.55], pitch: [2.5, .05, -.34], yawVelocity: -4.35, pitchVelocity: -11,
+    gripX: [.32, .28, .26], gripY: [1.43, 1.10, 1.02], gripZ: [.02, .35, .35],
+    bodyYaw: [.05, -.12], bodyPitch: [-.16, .35], bodyRoll: [-.03, .04],
+    bodyDrop: [.025, -.12], legScale: 1.1,
+  },
+  'one-rising': {
+    duration: .29, followEnd: .57,
+    yaw: [0, 0, 0], pitch: [-.40, .02, 1.30], yawVelocity: 0, pitchVelocity: 5.5,
+    gripX: [.20, .26, .38], gripY: [.96, 1.06, 1.28], gripZ: [.22, .32, .12],
+    bodyYaw: [-.20, .48], bodyPitch: [.18, -.12], bodyRoll: [.08, -.12],
+    bodyDrop: [-.12, .035], legScale: 1.05,
+  },
+  'one-cross': {
+    duration: .31, followEnd: .55,
+    yaw: [-.85, .03, .60], pitch: [1.05, .02, -.24], yawVelocity: 5.5, pitchVelocity: -5.5,
+    gripX: [.19, .28, .39], gripY: [1.32, 1.11, .99], gripZ: [.10, .31, .22],
+    bodyYaw: [-.20, .48], bodyPitch: [-.12, .28], bodyRoll: [.10, -.17],
+    bodyDrop: [.015, -.11], legScale: 1.15,
+  },
+  'two-return': {
+    duration: .29, twoHanded: true,
+    yaw: [-1.92, .05, 1.88], pitch: [-.23, -.14, -.08], yawVelocity: 14, pitchVelocity: .30,
+    gripX: [.10, .09, .13], gripY: [.96, .97, 1.00], gripZ: [.20, .35, .22],
+    bodyYaw: [-.42, .82], bodyPitch: [.10, .15], bodyRoll: [.08, -.16],
+    bodyDrop: [-.085, -.055], legScale: 1.35,
+  },
+  'two-rising': {
+    duration: .33, followEnd: .56, twoHanded: true,
+    yaw: [.05, .05, .05], pitch: [-.30, -.03, 1.42], yawVelocity: 0, pitchVelocity: 6,
+    gripX: [.08, .08, .14], gripY: [.93, 1.03, 1.35], gripZ: [.22, .36, .10],
+    bodyYaw: [-.32, .62], bodyPitch: [.20, -.14], bodyRoll: [.09, -.13],
+    bodyDrop: [-.14, .04], legScale: 1.4,
+  },
+  'two-cleave': {
+    duration: .35, followEnd: .53, twoHanded: true,
+    yaw: [.92, -.03, -.72], pitch: [1.32, .03, -.34], yawVelocity: -6, pitchVelocity: -7,
+    gripX: [.10, .04, .04], gripY: [1.42, 1.08, .98], gripZ: [.05, .38, .31],
+    bodyYaw: [.32, -.69], bodyPitch: [-.17, .36], bodyRoll: [-.10, .18],
+    bodyDrop: [.025, -.14], legScale: 1.4,
   },
   'two-overhead': {
     duration: .40, followEnd: .50, twoHanded: true, overhead: true,
@@ -216,4 +258,58 @@ export function sampleHammerSwing(progress, options = {}) {
   const variant = options?.variant;
   if (!Object.prototype.hasOwnProperty.call(SWING_PROFILES, variant)) return sampleLegacySwing(progress, options);
   return sampleComboSwing(progress, SWING_PROFILES[variant], clamp01(options?.charge));
+}
+
+
+/** Per-stance bag: no identical adjacent strokes and no mechanical 1-2-3 loop.
+ * The weighted choice prefers a load on the previous follow-through side.
+ * `random` is injectable so continuity/coverage can be regression-tested.
+ */
+export function createSwingSequence() {
+  return {remaining: [], recent: [], last: null, count: 0};
+}
+export function selectHammerSwing(state, {twoHanded = false, moving = false, random = Math.random} = {}) {
+  const pool = twoHanded ? HAMMER_COMBOS.twoHanded : HAMMER_COMBOS.oneHanded;
+  state.remaining = state.remaining.filter(name => pool.includes(name));
+  if (!state.remaining.length) state.remaining = [...pool];
+  let choices = state.remaining.filter(name => !state.recent.slice(-2).includes(name));
+  if (!choices.length) choices = state.remaining.filter(name => name !== state.last);
+  if (!choices.length) choices = [...state.remaining];
+  const previous = SWING_PROFILES[state.last];
+  const weights = choices.map(name => {
+    const profile = SWING_PROFILES[name];
+    const sameSide = previous && Math.sign(previous.yaw[2]) === Math.sign(profile.yaw[0]);
+    return 1 + (sameSide ? 3 : 0) + (moving && /broadside|forehand|low|return/.test(name) ? 1.5 : 0);
+  });
+  const roll = Number(random());
+  let cursor = (Number.isFinite(roll) ? Math.min(.99999999, Math.max(0, roll)) : .5) * weights.reduce((a,b) => a+b, 0);
+  let selected = choices.at(-1);
+  // A clean first opening remains learnable; subsequent bags are not reset.
+  if (!state.count) selected = pool[0];
+  else for (let i = 0; i < choices.length; i++) { cursor -= weights[i]; if (cursor < 0) { selected = choices[i]; break; } }
+  state.remaining.splice(state.remaining.indexOf(selected), 1);
+  state.last = selected; state.recent.push(selected); state.recent = state.recent.slice(-3); state.count++;
+  return selected;
+}
+
+/** A supported two-hand carry during a turn, not a rigid sideways windmill.
+ * The body leads a forward-facing weapon; hands stay in front of the ribs.
+ * Subtle height changes and alternating pivot steps avoid a frozen T-pose.
+ */
+export function sampleSpinMotion(rotation, {twoHanded = true, recoil = 0} = {}) {
+  const r = Number.isFinite(rotation) ? rotation : 0;
+  const beat = Math.sin(r * 2), step = Math.sin(r);
+  const yaw = .34 + Math.sin(r) * .04;
+  const pitch = -.07 + beat * .045 + clamp01(recoil) * .10;
+  const direction = shaftDirection(yaw, pitch, true);
+  const center = twoHanded ? .255 : .43;
+  return {...direction,
+    gripX: (twoHanded ? .035 : .26) - direction.directionX * center,
+    gripY: 1.15 + beat * .025 - direction.directionY * center,
+    gripZ: (twoHanded ? .45 : .40) - direction.directionZ * center,
+    bodyYaw: -.14 + step * .055, bodyPitch: .10 + beat * .025,
+    bodyRoll: -.035 + step * .025, bodyDrop: -.045 - Math.abs(beat) * .025,
+    leftStep: Math.max(0, step), rightStep: Math.max(0, -step),
+    leftLegPitch: -.04 + beat * .10, rightLegPitch: -.04 - beat * .10,
+  };
 }

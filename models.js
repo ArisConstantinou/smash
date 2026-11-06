@@ -245,6 +245,14 @@ export function makeWarrior() {
 
   const leftLeg = limb(root, 'leftLeg', -.205, .62, 0, P.blueDark, P.steel, P.ink);
   const rightLeg = limb(root, 'rightLeg', .205, .62, 0, P.blueDark, P.steel, P.ink);
+  // Preserve the leg roots used by walking, but give kicks an actual knee.
+  for(const leg of [leftLeg,rightLeg]){
+    // Existing storm-tier geometry remains the reference for normal walking;
+    // replacement equipment is authored into these two independent pieces.
+    const thigh=group(leg,'thigh'),shin=group(leg,'shin',0,-.30,0);
+    leg.userData.thigh=thigh;leg.userData.shin=shin;
+    leg.userData.foot=group(shin,'footContact',0,-.22,.27);
+  }
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
@@ -262,7 +270,7 @@ export function makeWarrior() {
     box(fore, P.timberDark, 0, 0, 0, .205, 1, .225);
     box(fore, P.steel, 0, .22, .015, .26, .49, .27);
     compact(fore);
-    const elbowPole = new THREE.Vector3(side * .65, -.9, 0).normalize();
+    const elbowPole = new THREE.Vector3(side * .85, -1, .20).normalize();
     arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone() };
     return arm;
   }
@@ -401,6 +409,29 @@ export function makeWarrior() {
   const reachDirection = new THREE.Vector3();
   const bendDirection = new THREE.Vector3();
   const upperArmLength = .44, forearmLength = .46;
+  const handX = new THREE.Vector3(), handY = new THREE.Vector3(), handZ = new THREE.Vector3();
+  const elbowInHero = new THREE.Vector3(), handBasis = new THREE.Matrix4();
+  function orientHand(arm, grip, anchor) {
+    // The mirrored thumb axes both point toward the weapon head; -Y is
+    // the wrist opening toward the elbow. Left/right palms must not share
+    // the same shaft rotation, otherwise one hand grips backwards.
+    // Copying the weapon quaternion made both wrists point down the shaft,
+    // independent of their forearms: palms/cuffs visibly faced backwards.
+    elbowInHero.copy(elbow); arm.localToWorld(elbowInHero); root.worldToLocal(elbowInHero);
+    handY.subVectors(grip.position, elbowInHero).normalize();
+    if(anchor){
+      anchor.getWorldQuaternion(grip.quaternion).premultiply(rootInverseQuaternion);
+      handX.set(0,arm.userData.side,0).applyQuaternion(grip.quaternion).normalize();
+      handY.addScaledVector(handX,-handY.dot(handX));
+      if(handY.lengthSq()<1e-7)handY.set(arm.userData.side,0,0).addScaledVector(handX,-arm.userData.side*handX.x);
+      if(handY.lengthSq()<1e-7)handY.set(0,0,1).addScaledVector(handX,-handX.z);
+      handY.normalize(); handZ.crossVectors(handX,handY).normalize();
+    }else{
+      handZ.set(0,0,1).applyQuaternion(body.quaternion);
+      handX.crossVectors(handY,handZ).normalize(); handZ.crossVectors(handX,handY).normalize();
+    }
+    handBasis.makeBasis(handX,handY,handZ);grip.quaternion.setFromRotationMatrix(handBasis);
+  }
   function poseSegment(segment, start, end) {
     segment.position.copy(start).add(end).multiplyScalar(.5);
     segmentDelta.subVectors(end, start);
@@ -468,11 +499,15 @@ export function makeWarrior() {
         }
       }
       bendDirection.normalize();
-      if (bendDirection.dot(arm.userData.elbowBend) < 0) bendDirection.negate();
+      // Choose the anatomical outward/downward half-plane every solve.
+      // Flipping to match yesterday's bend transported the elbow to the back
+      // of the arm after a full spin and kept it there even at rest.
       arm.userData.elbowBend.copy(bendDirection);
       elbow.copy(reachDirection).multiplyScalar(along).addScaledVector(bendDirection, bend);
       poseSegment(arm.userData.upper, zero, elbow);
       poseSegment(arm.userData.fore, elbow, gripTarget);
+      orientHand(arm,grip,grip===rightGrip?(weaponHeld?rightGripAnchor:null):
+        (weaponHeld&&join>.99?leftGripAnchor:shieldEquipped&&join<.01?shieldGripAnchor:null));
     }
   }
 
@@ -483,6 +518,13 @@ export function makeWarrior() {
     weaponRest.y = 0;
     weaponRest.z = -.24 + (-.72 + .24) * stance;
     weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
+    if (equipmentTier < 2) {
+      // Carry the heavy wood forward with bent elbows, rather than balancing
+      // it upright on one wrist. Both anchor points stay on the real handle.
+      weaponRest.x = .30 + .56 * stance;
+      weaponRest.z = -.23 - .05 * stance;
+      weaponRestPosition.set(.48 - .60 * stance, .93 - .03 * stance, .25 + .05 * stance);
+    }
     root.userData.stance = stance;
     root.userData.shieldStored = shieldEquipped && stance >= .65;
     updateGrip();
@@ -704,7 +746,15 @@ export function makeWarrior() {
   const weaponKinds = ['log', 'banded-club', 'iron-hammer', 'war-hammer', 'storm-hammer'];
   const equipmentNames = ['Κούτσουρο', 'Δεμένο ρόπαλο', 'Σιδερένιο σφυρί', 'Πολεμικό σφυρί', 'Σφυρί της καταιγίδας'];
   const weaponSlots = new Set([handle, shaft, collar, hammerHead]);
-  const appearanceSlots = [body, leftLeg, rightLeg,
+  for(const leg of [leftLeg,rightLeg]){
+    for(const child of leg.children.slice())if(child.isMesh){child.removeFromParent();child.geometry?.dispose();}
+    const {thigh,shin}=leg.userData;
+    box(thigh,P.blueDark,0,-.15,0,.25,.30,.28);compact(thigh);
+    box(shin,P.steel,0,-.12,.035,.29,.24,.31);
+    box(shin,P.ink,0,-.21,.075,.32,.17,.45);compact(shin);
+    // compact consumes meshes only; retain the zero-geometry contact marker.
+  }
+  const appearanceSlots = [body, leftLeg.userData.thigh, leftLeg.userData.shin, rightLeg.userData.thigh, rightLeg.userData.shin,
     leftArm.getObjectByName('pauldron'), leftArm.userData.upper, leftArm.userData.fore,
     rightArm.getObjectByName('pauldron'), rightArm.userData.upper, rightArm.userData.fore,
     cape, shield, leftGrip, rightGrip, handle, shaft, collar, hammerHead];
@@ -803,21 +853,20 @@ export function makeWarrior() {
         if (tier === 3) box(g, 0xa86b44, 0, 1.92, -.065, .09, .17, .30);
       }
     });
-    for (const [side, leg] of [[-1, leftLeg], [1, rightLeg]]) draw(leg, g => {
-      beveledBox(g, cloth, 0, -.16, 0, .25, .36, .28, .02);
-      beveledBox(g, cloth, 0, -.39, .035, .27, .24, .30, .02);
-      box(g, 0x7c8678, side * .127, -.19, .035, .018, .31, .035);
-      box(g, tier ? 0x443b30 : skin, 0, -.515, .075, .30, .15, .42);
-      box(g, tier ? 0x272e2d : skinShadow, 0, -.59, .075, .31, .035, .43);
-      if (!tier) for (let toe = 0; toe < 3; toe++) {
-        box(g, skinShadow, -.08 + toe * .08, -.50, .28, .016, .05, .02);
-      }
-      if (tier === 1) box(g, 0x99754f, 0, -.41, .205, .24, .055, .03);
-      if (tier >= 2) {
-        beveledBox(g, iron, 0, -.34, .18, .27, .22, .09, .025);
-        box(g, 0xc2c6b8, 0, -.24, .222, .12, .035, .025);
-      }
-    });
+    for (const [side, leg] of [[-1, leftLeg], [1, rightLeg]]) {
+      draw(leg.userData.thigh,g=>{
+        beveledBox(g,cloth,0,-.15,0,.25,.30,.28,.02);
+        box(g,0x7c8678,side*.127,-.15,.035,.018,.24,.035);
+      });
+      draw(leg.userData.shin,g=>{
+        beveledBox(g,cloth,0,-.09,.035,.27,.24,.30,.02);
+        box(g,tier?0x443b30:skin,0,-.215,.075,.30,.15,.42);
+        box(g,tier?0x272e2d:skinShadow,0,-.29,.075,.31,.035,.43);
+        if(!tier)for(let toe=0;toe<3;toe++)box(g,skinShadow,-.08+toe*.08,-.20,.28,.016,.05,.02);
+        if(tier===1)box(g,0x99754f,0,-.11,.205,.24,.055,.03);
+        if(tier>=2){beveledBox(g,iron,0,-.04,.18,.27,.22,.09,.025);box(g,0xc2c6b8,0,.06,.222,.12,.035,.025);}
+      });
+    }
     for (const arm of [leftArm, rightArm]) {
       const side = arm.userData.side;
       draw(arm.getObjectByName('pauldron'), g => {
@@ -843,11 +892,11 @@ export function makeWarrior() {
         }
       });
     }
-    for (const grip of [leftGrip, rightGrip]) draw(grip, g => {
+    for (const [side, grip] of [[-1, leftGrip], [1, rightGrip]]) draw(grip, g => {
       beveledBox(g, tier >= 2 ? 0x7c8e94 : skin, 0, 0, 0, .23, .18, .23, .023);
       for (let finger = 0; finger < 4; finger++) box(g, tier >= 2 ? 0xb8c1b9 : skinShadow,
         -.08 + finger * .053, .04, .124, .041, .07, .035);
-      box(g, tier >= 2 ? iron : skin, .125, -.03, .04, .07, .13, .11, 0, 0, -.20);
+      box(g, tier >= 2 ? iron : skin, side * .125, -.03, .04, .07, .13, .11, 0, 0, -side * .20);
       if (tier) box(g, tier >= 2 ? 0xa39068 : 0x775039, 0, -.083, -.01, .245, .045, .25);
     });
     draw(cape, g => {
@@ -916,7 +965,7 @@ export function makeWarrior() {
   // Cache each tier only when first used. Swapping removes the previous
   // meshes entirely from the graph, retaining animation transforms and grip
   // anchors. Hidden future weapons therefore never inflate hit/throw bounds.
-  equipmentCache.set(4, finishEquipment(new Map(appearanceSlots.map(slot => [slot, slot.children.slice()])), 4));
+  equipmentCache.set(4, finishEquipment(new Map(appearanceSlots.map(slot => [slot, slot.children.filter(child=>child!==leftLeg.userData.foot&&child!==rightLeg.userData.foot)])), 4));
   let appliedEquipment = -1;
   function setEquipment(tier = 4) {
     const value = Number(tier), next = Number.isFinite(value) ? Math.max(0, Math.min(4, Math.floor(value))) : 4;
@@ -924,7 +973,7 @@ export function makeWarrior() {
     if (!equipmentCache.has(next)) equipmentCache.set(next, buildEquipment(next));
     const equipment = equipmentCache.get(next);
     for (const slot of appearanceSlots) {
-      for (const child of slot.children.slice()) child.removeFromParent();
+      for (const child of slot.children.slice()) if(child!==leftLeg.userData.foot&&child!==rightLeg.userData.foot)child.removeFromParent();
       for (const child of equipment.parts.get(slot)) slot.add(child);
     }
     equipmentTier = appliedEquipment = next;
