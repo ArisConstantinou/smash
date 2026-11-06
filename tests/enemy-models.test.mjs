@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
-import { makeCityEnemy, CITY_ENEMY_TYPES } from '../enemy-models.js';
+import { makeCityEnemy, CITY_ENEMY_TYPES, installEnemyHead } from '../enemy-models.js';
+import { makeEnemy, makeBoss } from '../models.js';
 import { enemyStatsForWave } from '../waves.js';
 
 const meshes=root=>{const list=[];root.traverse(n=>{if(n.isMesh)list.push(n);});return list;};
@@ -13,11 +14,11 @@ test('new horde silhouettes match their hit heights and expose real articulated 
     const model=makeCityEnemy(type),u=model.userData,nodes=descendants(model),bounds=new THREE.Box3().setFromObject(model);
     assert.ok(Math.abs(bounds.max.y-enemyStatsForWave(type,1).height)<1e-5,`${type} health/hit height disagrees with its model`);
     assert.ok(bounds.min.y>=-.001);
-    for(const key of ['body','leftLeg','rightLeg','leftArm','rightArm']){
+    for(const key of ['body','head','leftLeg','rightLeg','leftArm','rightArm']){
       assert.ok(nodes.has(u[key]),`${type} is missing its ${key} joint`);
       assert.ok(meshes(u[key]).length>0,`${type} has an empty ${key} joint`);
     }
-    assert.ok(meshes(model).length<=10,'Keep a horde affordable to render');
+    assert.ok(meshes(model).length<=12,'Articulating a head must keep a horde affordable to render');
     let vertices=0;
     for(const mesh of meshes(model)){
       vertices+=mesh.geometry.attributes.position.count;
@@ -27,6 +28,39 @@ test('new horde silhouettes match their hit heights and expose real articulated 
     if(u.miniBoss)assert.ok(u.height>4 && u.width>3);
   }
   assert.equal(shapes.size,CITY_ENEMY_TYPES.length,'The new species must have different geometry and silhouettes');
+});
+
+test('legacy enemies gain an articulated head without losing triangles or changing their resting silhouette',()=>{
+  for(const type of ['zombie','robot','brute','boss']){
+    const model=type==='boss'?makeBoss():makeEnemy(type);
+    const before=new THREE.Box3().setFromObject(model);
+    const count=meshes(model).reduce((sum,mesh)=>sum+mesh.geometry.attributes.position.count,0);
+    const head=installEnemyHead(model,type);
+    const after=new THREE.Box3().setFromObject(model);
+    assert.ok(head&&meshes(head).length,`${type} needs a real head, not an empty pivot`);
+    assert.equal(head.parent,model.userData.body);
+    assert.equal(meshes(model).reduce((sum,mesh)=>sum+mesh.geometry.attributes.position.count,0),count);
+    assert.ok(before.min.distanceTo(after.min)<1e-6&&before.max.distanceTo(after.max)<1e-6);
+    assert.equal(installEnemyHead(model,type),head,'Installing twice must not split the head again');
+    const torso=meshes(model.userData.body).filter(mesh=>mesh.parent!==head);
+    const positions=torso.map(mesh=>mesh.getWorldPosition(new THREE.Vector3()));
+    head.rotation.x=-.8;model.updateMatrixWorld(true);
+    torso.forEach((mesh,i)=>assert.ok(mesh.getWorldPosition(new THREE.Vector3()).distanceTo(positions[i])<1e-8));
+  }
+});
+
+test('each city enemy can look upward without moving another actor or its torso geometry',()=>{
+  for(const type of CITY_ENEMY_TYPES){
+    const first=makeCityEnemy(type),second=makeCityEnemy(type),a=first.userData.head,b=second.userData.head;
+    assert.ok(a&&b);assert.notEqual(a,b);
+    const before=new THREE.Box3().setFromObject(a),torso=meshes(first.userData.body).filter(mesh=>mesh.parent!==a);
+    const arrays=torso.map(mesh=>new Float32Array(mesh.geometry.attributes.position.array));
+    a.rotation.x=-.65;first.updateMatrixWorld(true);
+    const after=new THREE.Box3().setFromObject(a);
+    assert.ok(before.min.distanceTo(after.min)+before.max.distanceTo(after.max)>.025);
+    assert.ok(Math.abs(b.rotation.x)<1e-10);
+    torso.forEach((mesh,i)=>assert.deepEqual(mesh.geometry.attributes.position.array,arrays[i]));
+  }
 });
 
 test('enemy geometry and animation references survive independent instance disposal',()=>{

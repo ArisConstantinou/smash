@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
-import { makeWarrior } from '../models.js';
+import { makeWarrior, makeTreasure } from '../models.js';
 import { sampleHammerSwing } from '../hammer-motion.js';
 
 const epsilon = 1e-7;
@@ -287,4 +287,114 @@ test('cached throw bounds match projectiles and ignore hero or held-weapon rotat
     assert.ok(new THREE.Box3().setFromObject(u.hammerHead).min.y >= .049999,
       'Computed vertical spin radius must keep the entire head above ground');
   }
+});
+
+test('equipment swaps retain the animated skeleton while a new survivor has no armor attachments', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  const body = u.body, head = u.hammerHead, rightAnchor = u.rightGripAnchor;
+  const defaultArmor = new Set();
+  hero.traverse(node => { if (node.isMesh) defaultArmor.add(node); });
+  assert.equal(u.equipmentTier, 4);
+  u.setEquipment(0);
+  assert.equal(u.weaponKind, 'log'); assert.equal(u.shieldEquipped, false);
+  assert.equal(u.shieldRig.visible, false); assert.equal(u.cape.visible, false);
+  assert.equal(u.shield.children.length, 0); assert.equal(u.cape.children.length, 0);
+  assert.equal(u.body, body); assert.equal(u.hammerHead, head); assert.equal(u.rightGripAnchor, rightAnchor);
+  let vertices = 0;
+  hero.traverse(node => {
+    if (!node.isMesh) return;
+    assert.equal(defaultArmor.has(node), false, 'Earlier armor must be detached rather than hidden in the live rig');
+  });
+  u.hammerHead.traverse(node => { if (node.isMesh) vertices += node.geometry.getAttribute('position').count; });
+  assert.ok(vertices > 1000, 'The initial log needs authored bark, cut rings and branch detail');
+  for (const m of u.getEquipmentMaterials()) close(m.emissive.getHex(), 0, 'The survivor has no magical emissive equipment');
+  u.setEquipment(4);
+  assert.equal(u.shieldRig.visible, true); assert.equal(u.cape.visible, true);
+  assert.equal(u.body, body); assert.equal(u.hammerHead, head);
+  hero.traverse(node => { if (node.isMesh) assert.ok(defaultArmor.has(node), 'Cached storm equipment should be reused'); });
+});
+
+test('all equipment tiers keep both arms connected through grips, throwing and stance changes', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  for (const tier of [0, 1, 2, 3, 4, 0]) {
+    u.setEquipment(tier);
+    for (const stance of [0, .3, .65, 1]) {
+      restingPose(hero, stance);
+      contact(u.rightGrip, u.rightGripAnchor);
+      if (stance === 1) contact(u.leftGrip, u.leftGripAnchor);
+      if (stance === 0 && tier >= 2) contact(u.leftGrip, u.shieldGripAnchor);
+      if (stance === 0 && tier < 2) {
+        assert.ok(worldPosition(u.leftGrip).distanceTo(worldPosition(u.shieldGripAnchor)) > .1,
+          'An unarmored survivor must not hold an invisible shield');
+        assert.equal(u.shieldRig.userData.attachment, 'none');
+      }
+      armsConnected(hero);
+      u.setWeaponVisible(false); armsConnected(hero);
+      u.setWeaponVisible(true); armsConnected(hero);
+    }
+  }
+});
+
+test('each projectile contains only its equipped weapon and has exact centered bounds', () => {
+  const hero = makeWarrior(), u = hero.userData, radii = [];
+  u.setReach(1.25); u.hammerHead.scale.setScalar(1.15);
+  for (const tier of [0, 1, 2, 3, 4, 0]) {
+    u.setEquipment(tier); u.setWeaponVisible(false);
+    const radius = u.getThrowRadius(), projectile = u.createThrownHammer();
+    radii.push(radius);
+    assert.equal(projectile.userData.equipmentTier, tier);
+    assert.equal(projectile.userData.weaponKind, u.weaponKind);
+    const box = new THREE.Box3().setFromObject(projectile);
+    close(box.getCenter(new THREE.Vector3()).length(), 0);
+    close(box.getBoundingSphere(new THREE.Sphere()).radius, radius);
+    projectile.traverse(node => {
+      if (!node.isMesh) return;
+      assert.equal(node.userData.equipmentTier, tier);
+      assert.ok(['hammerHandle', 'hammerShaft', 'hammerCollar', 'hammerHead'].includes(node.userData.equipmentSlot));
+    });
+    assert.equal(projectile.getObjectByName('leftGripAnchor'), undefined);
+  }
+  close(radii[0], radii.at(-1), 'Switching back to the log must restore its own collider');
+  assert.ok(Math.abs(radii[0] - radii[4]) > .05, 'A wood club must not retain the large storm hammer bounds');
+});
+
+test('invisible held-weapon helpers are excluded from projectile geometry and bounds', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  u.setEquipment(0);
+  const helper = new THREE.Group(); helper.name = 'hiddenEffectHelper'; helper.visible = false;
+  helper.add(new THREE.Mesh(new THREE.BoxGeometry(40, 40, 40), new THREE.MeshBasicMaterial()));
+  u.hammerPivot.add(helper);
+  const radius = u.getThrowRadius(), projectile = u.createThrownHammer();
+  assert.ok(radius < 3, 'Hidden helper geometry must not enlarge the visible weapon collider');
+  assert.equal(projectile.getObjectByName('hiddenEffectHelper'), undefined);
+  close(projectile.userData.radius, new THREE.Box3().setFromObject(projectile).getBoundingSphere(new THREE.Sphere()).radius);
+  helper.children[0].geometry.dispose(); helper.children[0].material.dispose();
+});
+
+test('equipment material arrays are stable, owned per warrior and separate from the weapon aura', () => {
+  const a = makeWarrior().userData, b = makeWarrior().userData, cached = new Map();
+  for (const tier of [0, 1, 2, 3, 4, 0, 4]) {
+    a.setEquipment(tier); b.setEquipment(tier);
+    const all = a.getEquipmentMaterials(), weapon = a.getWeaponMaterials();
+    assert.equal(a.getEquipmentMaterials(), all); assert.equal(a.getWeaponMaterials(), weapon);
+    if (cached.has(tier)) assert.equal(all, cached.get(tier)); else cached.set(tier, all);
+    assert.ok(all.length > weapon.length);
+    const skinMaterials = new Set(); a.body.traverse(node => { if (node.isMesh) for (const m of [].concat(node.material)) skinMaterials.add(m); });
+    for (const m of weapon) {
+      assert.equal(skinMaterials.has(m), false, 'Hammer lightning must not recolor the torso');
+      assert.ok(all.includes(m)); assert.equal(b.getEquipmentMaterials().includes(m), false);
+      assert.ok(m.userData.originalColor?.isColor); assert.ok(m.userData.originalEmissive?.isColor);
+    }
+  }
+});
+
+test('crafting drops have distinguishable material colors, silhouettes and compact world bounds', () => {
+  const signatures = new Set(), colors = new Set();
+  for (const kind of ['wood', 'scrap', 'crystal']) {
+    const drop = makeTreasure(kind), size = new THREE.Box3().setFromObject(drop).getSize(new THREE.Vector3());
+    assert.equal(drop.userData.kind, kind);
+    assert.ok(size.x > .3 && size.x < 1 && size.y > .25 && size.y < 1 && size.z > .15 && size.z < 1);
+    signatures.add(size.toArray().map(n => n.toFixed(3)).join(':')); colors.add(drop.userData.color);
+  }
+  assert.equal(signatures.size, 3); assert.equal(colors.size, 3);
 });

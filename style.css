@@ -819,3 +819,26 @@ body:not([data-state="playing"]) #combatDock #attackButton.air-smash-ready .acti
   #combatDock #attackButton.air-smash-ready .action-picture { animation:none!important; }
   #combatDock #attackButton.air-smash-ready::before { opacity:.75; }
 }
+
+/* Character growth fits the existing HUD and armory on phone and desktop. */
+.resume-character{display:block;width:400px;max-width:100%;margin-top:12px;padding:12px 16px;min-height:44px;border:1px solid #6f9e89;background:#183a32;color:#c1e5cf;font:700 11px var(--body);text-align:left;letter-spacing:.6px}
+.character-testing{width:400px;max-width:100%;margin-top:13px;padding:11px 12px;border:1px solid #53685f;background:#142725e8;touch-action:pan-y}
+.character-testing summary{cursor:pointer;color:#e3d2a8;font:700 10px/1.5 var(--body);letter-spacing:.5px}
+.character-testing summary span{display:block;margin-left:13px;color:#93b3a2;font-size:10px;font-weight:400;letter-spacing:0}
+.test-level-row{display:flex;align-items:center;gap:10px;margin:12px 0 7px}.test-level-row label{font:700 9px var(--body);color:#a5bdac}
+.test-level-row select{width:70px;height:44px;padding:8px;color:#eff0d3;background:#203e37;border:1px solid #71977f;border-radius:4px}
+.test-level-row button{flex:1;min-height:44px;background:#b7dac0;color:#17362a;font:800 11px var(--body);border-radius:4px}
+.character-testing p{font:700 11px/1.4 var(--body);color:#efcf95;margin:8px 0}.character-testing small{display:block;font:10px/1.5 var(--body);color:#a8b9aa}
+.hero-status .hud-brand{display:none}.character-strip{display:flex;align-items:center;gap:9px;min-width:0;margin-bottom:6px}.character-strip strong{flex:none;color:#b5ead9;font:800 15px/1.2 var(--body)}.character-strip span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#efc58a;font:700 10px/1.3 var(--body)}
+.character-xp{height:4px;width:100%;background:#273c39;border-radius:3px;overflow:hidden}.character-xp>span{display:block;width:0;height:100%;background:linear-gradient(90deg,#56aa96,#bcf0c6);transition:width .2s}
+.forge-card{padding:12px;margin-bottom:12px;border:1px solid #546f62;background:linear-gradient(130deg,#213d35,#182a29);border-radius:7px}
+.equipped-heading{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:7px}.equipped-heading strong{color:#f2ce97;font:800 12px/1.4 var(--body)}.equipped-heading span{flex:none;color:#aacabd;font:10px var(--mono)}
+#weaponAbilities{margin:8px 0 12px;color:#bbd1c5;font:11px/1.5 var(--body)}.material-inventory{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0 12px}.material-inventory>span{display:flex;flex-direction:column;gap:5px;padding:8px;background:#102722;border:1px solid #456358;border-radius:5px;font:700 9px/1.2 var(--body)}.material-inventory b{font:800 19px var(--mono)}.material-wood{color:#e4ba84}.material-scrap{color:#c6dce0}.material-crystal{color:#97e6e4}
+.next-weapon{border-top:1px solid #4b6457;padding-top:10px;display:grid;gap:5px}.next-weapon>small{color:#8fae9d;font:700 8px var(--body);letter-spacing:1px}.next-weapon>strong{font:800 12px/1.4 var(--body);color:#e6e9ce}.next-weapon>p{margin:2px 0 6px;color:#b3c9b9;font:10px/1.5 var(--body)}
+#forgeButton{min-height:44px;border-radius:4px;background:#b6e5c3;color:#1a382b;font:800 10px/1.4 var(--body);padding:9px 12px}#forgeButton:disabled{cursor:default;background:#2b443b;color:#96af9e;border:1px solid #52695b}
+.upgrades-toggle.forge-ready{border-color:#b5ebc8;box-shadow:0 0 12px #8bf8bf44}.upgrades-toggle.forge-ready>svg{color:#c1f4cb}
+body[data-touch-controls="true"] .hero-status .hud-brand{display:none}body[data-touch-controls="true"] .character-strip{height:13px;gap:5px;margin:0 0 3px}body[data-touch-controls="true"] .character-strip strong{font-size:11px}body[data-touch-controls="true"] .character-strip span{font-size:8px}body[data-touch-controls="true"] .hero-status .character-xp{height:3px}body[data-touch-controls="true"] .health-heading{margin:3px 0}
+body[data-touch-controls="true"] .forge-card{padding:10px}body[data-touch-controls="true"] .equipped-heading strong{font-size:11px}body[data-touch-controls="true"] .equipped-heading span{font-size:9px}
+.hero-content{max-height:calc(100dvh - 170px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#536d5a transparent;padding-right:12px;touch-action:pan-y}.hero-content .landing-controls{margin-top:16px}.hero-content .hero-description{margin-bottom:16px}
+@media(max-width:800px){.hero-content{max-height:calc(100dvh - 130px)}.resume-character,.character-testing{width:100%}.character-testing{padding:10px}.hero-content .combat-hints,.hero-content .direction-note,.hero-content .air-hint{display:none}}
+@media(orientation:landscape) and (max-height:500px){.hero-content{max-height:calc(100dvh - 65px);padding-bottom:14px}.hero-content .hero-rule,.hero-content .hero-description,.hero-content .landing-controls,.hero-content .touch-intro,.hero-content .touch-intro-note{display:none}.hero-content h1{margin-bottom:10px}.character-testing{margin-top:9px}.resume-character{margin-top:8px}.character-testing summary span{display:inline;margin-left:5px}}

@@ -264,19 +264,104 @@ function siegeMech(){
 }
 
 const makers={crawler,mutant,mech,titan,siegeMech};
+
+// The original low-draw-count meshes bake the face into the torso. Separate
+// whole connected primitives once at construction time, keeping every triangle
+// and the resting silhouette, so the head can track a player above the horde.
+const HEADS={
+  zombie:{pivot:[0,1.28,.07],eye:1.58,test:(x,y,z)=>y>1.29},
+  brute:{pivot:[0,1.28,.07],eye:1.58,test:(x,y,z)=>y>1.29},
+  robot:{pivot:[0,1.36,0],eye:1.58,test:(x,y,z)=>y>1.38},
+  crawler:{pivot:[0,.47,.37],eye:.68,test:(x,y,z)=>z>.43},
+  mutant:{pivot:[0,1.83,.15],eye:2.11,test:(x,y,z)=>y>1.84&&z>-.27&&Math.abs(x)<.65},
+  mech:{pivot:[0,2.02,.02],eye:2.24,test:(x,y,z)=>y>2.05&&z>-.36},
+  titan:{pivot:[0,3.18,.37],eye:3.59,test:(x,y,z)=>y>3.16&&z>.08},
+  siegeMech:{pivot:[0,2.66,.87],eye:2.91,test:(x,y,z)=>y>2.69&&z>.78&&Math.abs(x)<.66},
+  boss:{pivot:[0,4.35,.05],eye:4.92,test:(x,y,z)=>y>4.34&&z>-.45&&Math.abs(x)<.8},
+};
+
+function partitionHeadGeometry(source,test){
+  const position=source.attributes.position,count=position.count/3,parents=new Int32Array(count),vertices=new Map();
+  for(let i=0;i<count;i++)parents[i]=i;
+  const find=i=>{while(parents[i]!==i){parents[i]=parents[parents[i]];i=parents[i];}return i;};
+  for(let triangle=0;triangle<count;triangle++)for(let corner=0;corner<3;corner++){
+    const index=triangle*3+corner;
+    const key=Math.round(position.getX(index)*1e5)+':'+Math.round(position.getY(index)*1e5)+':'+Math.round(position.getZ(index)*1e5);
+    const previous=vertices.get(key);
+    if(previous!==undefined)parents[find(triangle)]=find(previous);
+    else vertices.set(key,triangle);
+  }
+  const components=new Map();
+  for(let triangle=0;triangle<count;triangle++){
+    const id=find(triangle);let part=components.get(id);
+    if(!part){part={x:0,y:0,z:0,count:0,head:false};components.set(id,part);}
+    for(let corner=0;corner<3;corner++){
+      const index=triangle*3+corner;part.x+=position.getX(index);part.y+=position.getY(index);part.z+=position.getZ(index);part.count++;
+    }
+  }
+  for(const part of components.values())part.head=test(part.x/part.count,part.y/part.count,part.z/part.count);
+  const selected=[],remaining=[];
+  for(let triangle=0;triangle<count;triangle++)(components.get(find(triangle)).head?selected:remaining).push(triangle);
+  if(!selected.length)return null;
+  function build(triangles){
+    if(!triangles.length)return null;
+    const geometry=new THREE.BufferGeometry();
+    for(const [name,attribute] of Object.entries(source.attributes)){
+      const array=new attribute.array.constructor(triangles.length*3*attribute.itemSize);
+      for(let i=0;i<triangles.length;i++){
+        const begin=triangles[i]*3*attribute.itemSize;
+        array.set(attribute.array.subarray(begin,begin+3*attribute.itemSize),i*3*attribute.itemSize);
+      }
+      geometry.setAttribute(name,new THREE.BufferAttribute(array,attribute.itemSize,attribute.normalized));
+    }
+    geometry.computeBoundingBox();geometry.computeBoundingSphere();return geometry;
+  }
+  return {head:build(selected),body:build(remaining)};
+}
+
+/** Call before prepareMaterials. bind=false is reserved for cached prototypes. */
+export function installEnemyHead(root,type='zombie',bind=true){
+  const body=root.userData.body||root.getObjectByName('body'),profile=HEADS[type]||HEADS.zombie;
+  let head=root.getObjectByName('head');
+  if(!body)return null;
+  if(!head){
+    head=new THREE.Group();head.name='head';head.position.set(...profile.pivot);body.add(head);
+    // Direct body batches only: a siege weapon attached to the torso must stay
+    // on the torso rather than being mistaken for part of the character's face.
+    for(const mesh of [...body.children]){
+      if(!mesh.isMesh)continue;
+      mesh.updateMatrix();
+      const source=mesh.geometry.index?mesh.geometry.toNonIndexed():mesh.geometry.clone();
+      source.applyMatrix4(mesh.matrix);
+      const partition=partitionHeadGeometry(source,profile.test);source.dispose();
+      if(!partition)continue;
+      const oldGeometry=mesh.geometry;
+      const face=new THREE.Mesh(partition.head,mesh.material);
+      face.name='headDetail';face.castShadow=mesh.castShadow;face.receiveShadow=mesh.receiveShadow;
+      partition.head.translate(-profile.pivot[0],-profile.pivot[1],-profile.pivot[2]);head.add(face);
+      if(partition.body){mesh.geometry=partition.body;mesh.position.set(0,0,0);mesh.quaternion.identity();mesh.scale.set(1,1,1);}
+      else mesh.removeFromParent();
+      oldGeometry.dispose();
+    }
+  }
+  root.userData.eyeHeight=profile.eye*root.scale.y;
+  if(bind){root.userData.head=head;root.userData.body=body;}
+  return head;
+}
+
 function prototype(type){
   if(PROTOTYPES.has(type))return PROTOTYPES.get(type);
-  const root=makers[type]();root.updateMatrixWorld(true);
+  const root=makers[type]();installEnemyHead(root,type,false);root.updateMatrixWorld(true);
   const initial=new THREE.Box3().setFromObject(root),target=root.userData.heightTarget;
   root.scale.setScalar(target/initial.max.y);root.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(root),size=bounds.getSize(new THREE.Vector3());
-  Object.assign(root.userData,{type,width:size.x,depth:size.z,height:bounds.max.y,geometryOwned:true,materialOwned:false});
+  Object.assign(root.userData,{type,width:size.x,depth:size.z,height:bounds.max.y,eyeHeight:HEADS[type].eye*root.scale.y,geometryOwned:true,materialOwned:false});
   PROTOTYPES.set(type,root);return root;
 }
 export function makeCityEnemy(type='mutant'){
   const resolved=Object.hasOwn(makers,type)?type:'mutant',root=prototype(resolved).clone(true),u=root.userData;
   root.traverse(n=>{if(n.isMesh)n.geometry=n.geometry.clone();});
-  for(const name of ['body','leftLeg','rightLeg','leftArm','rightArm','muzzle'])u[name]=root.getObjectByName(name);
+  for(const name of ['body','head','leftLeg','rightLeg','leftArm','rightArm','muzzle'])u[name]=root.getObjectByName(name);
   if(resolved==='crawler'){
     const legs=[];for(const side of ['left','right'])for(let i=0;i<3;i++)legs.push(root.getObjectByName(side+'Scuttle'+i));
     u.leftLeg=legs[2];u.rightLeg=legs[5];u.legs=legs;

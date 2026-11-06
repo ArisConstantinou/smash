@@ -119,6 +119,101 @@ function limb(root, name, x, y, z, upper, lower, boot, scale = 1) {
   return compact(g);
 }
 
+// Beveled edges keep small equipment silhouettes readable in the overhead
+// camera. These are real facets, so highlights still move with the weapon.
+function beveledBox(g, color, x, y, z, width, height, depth, bevel = .035) {
+  const key = `bevel:${width}:${height}:${depth}:${bevel}`;
+  if (!GEO.has(key)) {
+    const w = width / 2 - bevel, h = height / 2 - bevel;
+    const shape = new THREE.Shape();
+    shape.moveTo(-w, -h); shape.lineTo(w, -h); shape.lineTo(w, h);
+    shape.lineTo(-w, h); shape.closePath();
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: Math.max(.01, depth - bevel * 2), bevelEnabled: true,
+      bevelSize: bevel, bevelThickness: bevel, bevelSegments: 1, steps: 1,
+      curveSegments: 1,
+    });
+    geometry.translate(0, 0, -Math.max(.01, depth - bevel * 2) / 2);
+    GEO.set(key, geometry);
+  }
+  return part(g, GEO.get(key), color, x, y, z);
+}
+
+function growthRing(g, color, radius, y, x = 0, z = 0, thickness = .009) {
+  const key = `wood-ring:${radius}:${thickness}`;
+  if (!GEO.has(key)) GEO.set(key, new THREE.TorusGeometry(radius, thickness, 3, 11));
+  return part(g, GEO.get(key), color, x, y, z, 1, 1, 1, Math.PI / 2);
+}
+
+// An asymmetric, tapered piece of tree trunk. The cut end, growth rings,
+// broken branch and raised bark seams distinguish it from a plain cylinder.
+function logHead(g, banded = false) {
+  const sides = 10, positions = [], colors = [];
+  const color = new THREE.Color();
+  const levels = [
+    { y: -.42, r: .18, x: -.015, z: 0 },
+    { y: -.24, r: .245, x: -.025, z: .015 },
+    { y: .13, r: .29, x: .015, z: -.005 },
+    { y: .42, r: .275, x: .035, z: .015 },
+  ];
+  const bark = [0x654732, 0x80573a, 0x946443, 0x704b34, 0xa07149];
+  const ringPoint = (level, i) => {
+    const angle = (i % sides) * Math.PI * 2 / sides;
+    const radius = level.r * (1 + Math.sin(i * 2.37) * .075);
+    return [level.x + Math.sin(angle) * radius, level.y, level.z + Math.cos(angle) * radius];
+  };
+  const triangle = (a, b, c, tint) => {
+    positions.push(...a, ...b, ...c); color.setHex(tint);
+    for (let i = 0; i < 3; i++) colors.push(color.r, color.g, color.b);
+  };
+  for (let row = 0; row < levels.length - 1; row++) {
+    for (let side = 0; side < sides; side++) {
+      const a = ringPoint(levels[row], side), b = ringPoint(levels[row], side + 1);
+      const c = ringPoint(levels[row + 1], side), d = ringPoint(levels[row + 1], side + 1);
+      triangle(a, b, c, bark[side % bark.length]);
+      triangle(b, d, c, bark[(side + row) % bark.length]);
+    }
+  }
+  for (let i = 0; i < sides; i++) {
+    triangle([-.015, -.42, 0], ringPoint(levels[0], i + 1), ringPoint(levels[0], i), 0x875b3b);
+    triangle([.035, .42, .015], ringPoint(levels[3], i), ringPoint(levels[3], i + 1), 0xc69a64);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  const barkMesh = new THREE.Mesh(geometry, vertexMaterial);
+  barkMesh.name = 'sculptedBark'; g.add(barkMesh);
+  // The authored source is compacted immediately below; avoid retaining its
+  // temporary geometry after the merged equipment mesh has been created.
+  g.userData.sourceGeometry = geometry;
+  for (const radius of [.075, .145, .215]) growthRing(g, 0x8b613d, radius, .424, .035, .015);
+  for (const [angle, length] of [[.3, .12], [2.4, .10], [4.1, .15]]) {
+    box(g, 0x80583b, .035 + Math.sin(angle) * .2, .427, .015 + Math.cos(angle) * .2,
+      .012, .006, length, 0, angle, 0);
+  }
+  for (let i = 0; i < 8; i++) {
+    const angle = i * Math.PI / 4 + .12, radius = .267;
+    box(g, i % 2 ? 0x4d3528 : 0xaf7e51, Math.sin(angle) * radius, -.02,
+      Math.cos(angle) * radius, .025, .52 + (i % 3) * .05, .018, 0, angle, -.045);
+  }
+  const knot = group(g, 'brokenBranch', .245, .025, .075);
+  knot.rotation.z = -1.06;
+  cylinder(knot, 0x66452f, 0, .07, 0, .078, .12, .23, 7);
+  cylinder(knot, 0xc69a64, 0, .19, 0, .072, .074, .016, 7);
+  growthRing(knot, 0x805638, .038, .2, 0, 0, .008);
+  if (banded) {
+    for (const [y, radius] of [[-.23, .255], [.22, .296]]) {
+      cylinder(g, 0x58666a, 0, y, .008, radius, radius, .09, 10);
+      for (let i = 0; i < 5; i++) {
+        const angle = i * Math.PI * 2 / 5;
+        crystal(g, 0xbbbfaf, Math.sin(angle) * (radius + .012), y,
+          .008 + Math.cos(angle) * (radius + .012), .025, .026, .025);
+      }
+    }
+  }
+}
+
 export function makeWarrior() {
   const root = new THREE.Group();
   root.name = 'Warrior — Stormforged';
@@ -262,7 +357,8 @@ export function makeWarrior() {
     box(grip, P.pale, .12, 0, .075, .065, .14, .15);
     compact(grip);
   }
-  let stance = 0, weaponHeld = true, reachScale = 1;
+  let stance = 0, weaponHeld = true, reachScale = 1, equipmentTier = 4;
+  let shieldEquipped = true;
   const shieldFront = new THREE.Vector3(-.72, 1.025, .5);
   const shieldBack = new THREE.Vector3(0, 1.11, -.55);
   const shieldPath = new THREE.CubicBezierCurve3(shieldFront,
@@ -286,7 +382,7 @@ export function makeWarrior() {
     shieldRig.rotateX(-.35 * Math.sin(Math.PI * progress));
     shieldRig.position.applyMatrix4(body.matrix);
     shieldRig.quaternion.premultiply(body.quaternion);
-    shieldRig.userData.attachment = stance < .65 ? 'left-hand' : 'back';
+    shieldRig.userData.attachment = shieldEquipped ? (stance < .65 ? 'left-hand' : 'back') : 'none';
   }
 
   function anchorInHero(anchor, position, quaternion) {
@@ -327,10 +423,14 @@ export function makeWarrior() {
       rightGrip.position.copy(emptyRight);
       rightGrip.quaternion.copy(emptyRightQuaternion);
     }
-    anchorInHero(shieldGripAnchor, shieldContact, shieldContactQuaternion);
+    if (shieldEquipped) anchorInHero(shieldGripAnchor, shieldContact, shieldContactQuaternion);
+    else {
+      shieldContact.copy(emptyLeft).applyMatrix4(body.matrix);
+      shieldContactQuaternion.copy(body.quaternion).multiply(emptyLeftQuaternion);
+    }
     if (weaponHeld) anchorInHero(leftGripAnchor, hammerContact, hammerContactQuaternion);
     else { hammerContact.copy(emptyLeft); hammerContactQuaternion.copy(emptyLeftQuaternion); }
-    const join = smooth((stance - .65) / .35);
+    const join = smooth(shieldEquipped ? (stance - .65) / .35 : stance);
     if (join <= 0) {
       leftGrip.position.copy(shieldContact);
       leftGrip.quaternion.copy(shieldContactQuaternion);
@@ -383,7 +483,7 @@ export function makeWarrior() {
     weaponRest.z = -.24 + (-.72 + .24) * stance;
     weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
     root.userData.stance = stance;
-    root.userData.shieldStored = stance >= .65;
+    root.userData.shieldStored = shieldEquipped && stance >= .65;
     updateGrip();
     return stance;
   }
@@ -417,13 +517,14 @@ export function makeWarrior() {
   const localMeshBox = new THREE.Box3();
   const localSphere = new THREE.Sphere();
   function localHammerBounds() {
-    const key = [reachScale, hammerHead.scale.x, hammerHead.scale.y, hammerHead.scale.z,
+    const key = [equipmentTier, reachScale, hammerHead.scale.x, hammerHead.scale.y, hammerHead.scale.z,
       hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z].join(':');
     if (key === localBoundsCache.key) return localBoundsCache;
     const bounds = localBoundsCache.bounds;
     bounds.makeEmpty();
     localRootScale.makeScale(hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z);
     function visit(node, parentMatrix) {
+      if (!node.visible) return;
       node.updateMatrix();
       let matrix = localMatrices.get(node);
       if (!matrix) { matrix = new THREE.Matrix4(); localMatrices.set(node, matrix); }
@@ -460,12 +561,17 @@ export function makeWarrior() {
     // Clone only the actual hammer, with independent resources so disposing
     // the projectile never invalidates the weapon still owned by the hero.
     const projectile = new THREE.Group();
-    projectile.name = 'Thrown Stormforged hammer';
+    projectile.name = `Thrown ${equipmentNames[equipmentTier]}`;
     const weapon = hammerPivot.clone(true);
     weapon.name = 'projectileHammer'; weapon.visible = true;
     weapon.position.set(0, 0, 0); weapon.rotation.set(0, 0, 0);
     weapon.getObjectByName('leftGripAnchor')?.removeFromParent();
     weapon.getObjectByName('rightGripAnchor')?.removeFromParent();
+    // Effect helpers can be hidden on the held weapon. A projectile must not
+    // carry their invisible geometry into its centered model or bounds.
+    const invisible = [];
+    weapon.traverse(node => { if (node !== weapon && !node.visible) invisible.push(node); });
+    for (const node of invisible) node.removeFromParent();
     const geometries = new Map(), materials = new Map();
     weapon.traverse(node => {
       if (!node.isMesh) return;
@@ -488,16 +594,257 @@ export function makeWarrior() {
         z: bounds.center.z / (hammerPivot.scale.z || 1),
       },
       radius: bounds.radius, reachScale, headSize: hammerHead.scale.x,
+      equipmentTier, weaponKind: weaponKinds[equipmentTier],
     };
     return projectile;
   }
+
+  const weaponKinds = ['log', 'banded-club', 'iron-hammer', 'war-hammer', 'storm-hammer'];
+  const equipmentNames = ['Κούτσουρο', 'Δεμένο ρόπαλο', 'Σιδερένιο σφυρί', 'Πολεμικό σφυρί', 'Σφυρί της καταιγίδας'];
+  const weaponSlots = new Set([handle, shaft, collar, hammerHead]);
+  const appearanceSlots = [body, leftLeg, rightLeg,
+    leftArm.getObjectByName('pauldron'), leftArm.userData.upper, leftArm.userData.fore,
+    rightArm.getObjectByName('pauldron'), rightArm.userData.upper, rightArm.userData.fore,
+    cape, shield, leftGrip, rightGrip, handle, shaft, collar, hammerHead];
+  const equipmentCache = new Map();
+
+  function finishEquipment(parts, tier) {
+    // Body and weapon never share a material instance: weapon lightning may
+    // brighten the hammer without turning the survivor's skin electric blue.
+    const bodyClones = new Map(), weaponClones = new Map(), all = [], weaponMats = [];
+    for (const [slot, children] of parts) for (const child of children) {
+      child.traverse(mesh => {
+        if (!mesh.isMesh) return;
+        mesh.userData.equipmentTier = tier;
+        mesh.userData.equipmentSlot = slot.name;
+        const isWeapon = weaponSlots.has(slot), clones = isWeapon ? weaponClones : bodyClones;
+        const own = source => {
+          if (!clones.has(source)) {
+            const m = source.clone();
+            m.userData.originalEmissive = m.emissive?.clone();
+            m.userData.originalColor = m.color?.clone();
+            m.userData.originalEmissiveIntensity = m.emissiveIntensity;
+            clones.set(source, m); all.push(m);
+            if (isWeapon) weaponMats.push(m);
+          }
+          return clones.get(source);
+        };
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
+      });
+    }
+    return { parts, materials: all, weaponMaterials: weaponMats };
+  }
+
+  function buildEquipment(tier) {
+    const parts = new Map();
+    const skin = 0xc58c68, skinShadow = 0xa66f51, hair = 0x433026;
+    const cloth = tier === 0 ? 0x40565a : tier === 1 ? 0x46534c : P.blueDark;
+    const iron = tier === 2 ? 0x929e9d : 0x677d89;
+    const draw = (slot, paint) => {
+      const detail = new THREE.Group();
+      paint(detail);
+      const sourceGeometry = detail.userData.sourceGeometry;
+      if (detail.children.length) compact(detail);
+      sourceGeometry?.dispose();
+      for (const mesh of detail.children) mesh.name = `${weaponKinds[tier]}-${slot.name}`;
+      parts.set(slot, detail.children.slice());
+    };
+    draw(body, g => {
+      // Bare skin and a visible face are present from the first stage.
+      const torso = cylinder(g, skin, 0, 1.06, 0, .34, .27, .57, 8);
+      torso.scale.z = .65;
+      beveledBox(g, skin, -.155, 1.17, .195, .29, .19, .085, .022);
+      beveledBox(g, skin, .155, 1.17, .195, .29, .19, .085, .022);
+      box(g, skinShadow, 0, .94, .19, .03, .19, .018);
+      cylinder(g, skin, 0, 1.37, .025, .12, .145, .19, 7);
+      box(g, cloth, 0, .72, .005, .60, .18, .42);
+      box(g, tier ? P.timberDark : 0x8c7659, 0, .79, .008, .61, .055, .44);
+      box(g, tier ? 0xa9956c : 0xbda078, 0, .785, .238, .10, .07, .025);
+      if (tier >= 1) {
+        beveledBox(g, tier === 1 ? 0x715342 : cloth, 0, 1.075, .015, .66, .51, .44, .04);
+        for (const side of [-1, 1]) {
+          box(g, tier === 1 ? 0x9c7851 : iron, side * .22, 1.15, .255, .095, .42, .04, 0, 0, side * .12);
+          for (let i = 0; i < 3; i++) box(g, 0xc7ae83, side * .26, .95 + i * .13, .279, .03, .018, .012);
+        }
+        if (tier >= 2) {
+          beveledBox(g, iron, 0, 1.12, .225, .47, .38, .10, .025);
+          box(g, 0xb1bbb6, 0, 1.30, .265, .40, .045, .045);
+          box(g, 0x46565c, 0, 1.04, .295, .035, .25, .018);
+          for (const x of [-.18, .18]) crystal(g, 0xd1c7af, x, 1.23, .30, .025, .025, .018);
+        }
+        if (tier === 3) {
+          box(g, P.steel, 0, 1.38, 0, .46, .12, .36);
+          box(g, 0xb18d52, 0, 1.12, .31, .12, .16, .035, 0, 0, Math.PI / 4);
+          box(g, 0x465a65, 0, .89, .265, .58, .12, .065);
+        }
+      }
+      beveledBox(g, skin, 0, 1.57, .045, .39, .38, .36, .035);
+      beveledBox(g, skinShadow, 0, 1.415, .11, .27, .09, .21, .02);
+      for (const side of [-1, 1]) {
+        box(g, skinShadow, side * .218, 1.55, .04, .06, .12, .10);
+        box(g, 0xece1c4, side * .092, 1.60, .23, .086, .044, .018);
+        box(g, 0x253138, side * .092, 1.60, .244, .034, .037, .012);
+        box(g, hair, side * .097, 1.652, .235, .11, .026, .022, 0, 0, -side * .07);
+      }
+      box(g, skin, 0, 1.545, .258, .07, .11, .085);
+      box(g, hair, 0, 1.453, .236, .16, .025, .018);
+      box(g, 0x77513c, 0, 1.427, .219, .21, .04, .03);
+      beveledBox(g, hair, 0, 1.775, .005, .43, .15, .39, .035);
+      box(g, 0x624431, -.10, 1.835, .015, .19, .07, .28, 0, 0, -.17);
+      box(g, hair, .14, 1.73, -.04, .08, .16, .29, 0, 0, -.07);
+      if (tier === 1) box(g, 0x9f754d, 0, 1.696, .236, .405, .055, .025);
+      if (tier >= 2) {
+        beveledBox(g, iron, 0, 1.78, -.025, .49, .20, .42, .035);
+        box(g, 0xc4cbc0, 0, 1.70, .21, .47, .05, .06);
+        for (const side of [-1, 1]) box(g, tier === 2 ? 0x687a7f : P.blueDark,
+          side * .235, 1.61, -.02, .07, .25, .32);
+        if (tier === 3) box(g, 0xa86b44, 0, 1.92, -.065, .09, .17, .30);
+      }
+    });
+    for (const [side, leg] of [[-1, leftLeg], [1, rightLeg]]) draw(leg, g => {
+      beveledBox(g, cloth, 0, -.16, 0, .25, .36, .28, .02);
+      beveledBox(g, cloth, 0, -.39, .035, .27, .24, .30, .02);
+      box(g, 0x7c8678, side * .127, -.19, .035, .018, .31, .035);
+      box(g, tier ? 0x443b30 : skin, 0, -.515, .075, .30, .15, .42);
+      box(g, tier ? 0x272e2d : skinShadow, 0, -.59, .075, .31, .035, .43);
+      if (!tier) for (let toe = 0; toe < 3; toe++) {
+        box(g, skinShadow, -.08 + toe * .08, -.50, .28, .016, .05, .02);
+      }
+      if (tier === 1) box(g, 0x99754f, 0, -.41, .205, .24, .055, .03);
+      if (tier >= 2) {
+        beveledBox(g, iron, 0, -.34, .18, .27, .22, .09, .025);
+        box(g, 0xc2c6b8, 0, -.24, .222, .12, .035, .025);
+      }
+    });
+    for (const arm of [leftArm, rightArm]) {
+      const side = arm.userData.side;
+      draw(arm.getObjectByName('pauldron'), g => {
+        crystal(g, skin, side * .005, -.025, 0, .16, .14, .17);
+        if (tier) {
+          beveledBox(g, tier === 1 ? 0x795a3d : iron, side * .025, 0, 0,
+            tier === 3 ? .35 : .29, tier === 3 ? .23 : .17, tier === 3 ? .40 : .33, .03);
+          if (tier >= 2) box(g, 0xc2c7bc, side * .025, .09, .01, .23, .04, .27);
+        }
+      });
+      draw(arm.userData.upper, g => {
+        cylinder(g, skin, 0, 0, 0, .11, .125, 1, 7);
+        if (tier) {
+          box(g, tier === 1 ? 0x786045 : cloth, 0, -.18, -.025, .225, .65, .235);
+          box(g, skinShadow, 0, .29, -.085, .14, .18, .05);
+        }
+      });
+      draw(arm.userData.fore, g => {
+        cylinder(g, skin, 0, 0, 0, .105, .12, 1, 7);
+        if (tier) {
+          beveledBox(g, tier === 1 ? 0x745236 : iron, 0, -.04, -.015, .22, .60, .24, .018);
+          for (const y of [-.25, .20]) box(g, tier === 1 ? 0xb3925b : 0xc1c4b4, 0, y, .115, .23, .055, .035);
+        }
+      });
+    }
+    for (const grip of [leftGrip, rightGrip]) draw(grip, g => {
+      beveledBox(g, tier >= 2 ? 0x7c8e94 : skin, 0, 0, 0, .23, .18, .23, .023);
+      for (let finger = 0; finger < 4; finger++) box(g, tier >= 2 ? 0xb8c1b9 : skinShadow,
+        -.08 + finger * .053, .04, .124, .041, .07, .035);
+      box(g, tier >= 2 ? iron : skin, .125, -.03, .04, .07, .13, .11, 0, 0, -.20);
+      if (tier) box(g, tier >= 2 ? 0xa39068 : 0x775039, 0, -.083, -.01, .245, .045, .25);
+    });
+    draw(cape, g => {
+      if (tier < 3) return;
+      box(g, 0x733e35, 0, -.25, -.06, .56, .55, .07, -.17);
+      box(g, 0x92503b, -.13, -.59, -.14, .34, .22, .08, -.25, 0, -.06);
+      box(g, 0x502e2e, .21, -.55, -.13, .17, .20, .08, -.25, 0, .08);
+    });
+    draw(shield, g => {
+      if (tier < 2) return;
+      const radius = tier === 2 ? .43 : .50;
+      cylinder(g, 0x697b7f, 0, -.035, 0, radius, radius, .12, 10, Math.PI / 2);
+      cylinder(g, tier === 2 ? 0x6c5944 : 0x3b5966, 0, -.035, .075, radius - .07, radius - .07, .055, 10, Math.PI / 2);
+      for (const x of [-.16, .16]) box(g, iron, x, -.035, .115, .05, radius * 1.45, .035);
+      for (let rivet = 0; rivet < 8; rivet++) {
+        const angle = rivet * Math.PI / 4;
+        cylinder(g, 0xc3c3b1, Math.sin(angle) * (radius - .03), -.035 + Math.cos(angle) * (radius - .03),
+          .077, .022, .022, .028, 6, Math.PI / 2);
+      }
+      cylinder(g, iron, 0, -.035, .16, .13, .17, .11, 8, Math.PI / 2);
+      box(g, P.timberDark, -.19, .03, -.12, .09, .52, .075);
+      box(g, P.timberDark, .19, .03, -.12, .09, .52, .075);
+      for (const y of [-.1, .23]) box(g, iron, 0, y, -.135, .31, .065, .1);
+      cylinder(g, P.timberDark, 0, .065, -.197, .056, .056, .32, 8);
+    });
+    draw(handle, g => {
+      cylinder(g, tier ? 0x62452f : 0x735037, 0, .2, 0, .078, .10, .68, 8);
+      if (tier) for (let i = 0; i < 6; i++) box(g, i % 2 ? 0x98754b : 0x4e382b, 0, -.035 + i * .1,
+        0, .17, .037, .17, 0, i * .3);
+      else for (const side of [-1, 1]) box(g, 0xb18b59, side * .068, .18, .025, .027, .55, .09);
+      if (tier >= 2) cylinder(g, iron, 0, -.13, 0, .11, .12, .12, 8);
+    });
+    draw(shaft, g => {
+      cylinder(g, tier ? 0x59422e : 0x795638, 0, 0, 0, tier < 2 ? .085 : .064,
+        tier < 2 ? .095 : .075, 1, 8);
+      box(g, tier ? 0x9e8055 : 0xba8e57, 0, 0, tier < 2 ? .087 : .07, .034, .93, .018);
+    });
+    draw(collar, g => {
+      cylinder(g, tier ? iron : 0x59402e, 0, 0, 0, tier < 2 ? .13 : .15,
+        tier < 2 ? .12 : .14, .13, 8);
+      if (tier >= 2) box(g, 0xbbc3b9, 0, 0, .15, .065, .065, .03);
+    });
+    draw(hammerHead, g => {
+      if (tier < 2) { logHead(g, tier === 1); return; }
+      const width = tier === 2 ? 1.03 : 1.25, height = tier === 2 ? .47 : .58, depth = tier === 2 ? .49 : .62;
+      beveledBox(g, tier === 2 ? 0x6a7779 : 0x3f5664, 0, 0, 0, width, height, depth, .055);
+      for (const side of [-1, 1]) {
+        beveledBox(g, iron, side * (width / 2 - .035), 0, 0, .16, height + .06, depth + .035, .03);
+        beveledBox(g, 0xc1c6bc, side * (width / 2 + .04), 0, 0, .045, height - .10, depth - .07, .012);
+        for (const y of [-height * .28, height * .28]) cylinder(g, 0xaeb6aa,
+          side * width * .29, y, depth / 2 + .016, .027, .027, .03, 6, Math.PI / 2);
+      }
+      box(g, tier === 2 ? 0x49585c : 0xa18c62, 0, 0, depth / 2 + .026, .14, height + .015, .035);
+      if (tier === 3) {
+        box(g, 0xb8c4bc, 0, 0, depth / 2 + .048, .055, .25, .025);
+        box(g, iron, 0, height / 2 + .035, 0, .22, .065, depth * .72);
+      }
+    });
+    return finishEquipment(parts, tier);
+  }
+
+  // Cache each tier only when first used. Swapping removes the previous
+  // meshes entirely from the graph, retaining animation transforms and grip
+  // anchors. Hidden future weapons therefore never inflate hit/throw bounds.
+  equipmentCache.set(4, finishEquipment(new Map(appearanceSlots.map(slot => [slot, slot.children.slice()])), 4));
+  let appliedEquipment = -1;
+  function setEquipment(tier = 4) {
+    const value = Number(tier), next = Number.isFinite(value) ? Math.max(0, Math.min(4, Math.floor(value))) : 4;
+    if (appliedEquipment === next) return next;
+    if (!equipmentCache.has(next)) equipmentCache.set(next, buildEquipment(next));
+    const equipment = equipmentCache.get(next);
+    for (const slot of appearanceSlots) {
+      for (const child of slot.children.slice()) child.removeFromParent();
+      for (const child of equipment.parts.get(slot)) slot.add(child);
+    }
+    equipmentTier = appliedEquipment = next;
+    shieldEquipped = next >= 2; shieldRig.visible = shieldEquipped; cape.visible = next >= 3;
+    for (const m of equipment.materials) {
+      if (m.userData.originalColor) m.color.copy(m.userData.originalColor);
+      if (m.userData.originalEmissive) m.emissive.copy(m.userData.originalEmissive);
+      if (m.userData.originalEmissiveIntensity !== undefined) m.emissiveIntensity = m.userData.originalEmissiveIntensity;
+    }
+    root.name = `Warrior — ${equipmentNames[next]}`;
+    Object.assign(root.userData, { equipmentTier: next, weaponKind: weaponKinds[next], equipmentName: equipmentNames[next],
+      shieldEquipped, shieldStored: shieldEquipped && stance >= .65, color: next < 2 ? 0xc58c68 : P.blue,
+      fragments: next < 2 ? [0x795638, 0xb18b59, 0xc58c68, 0x40565a] : [P.blue, P.steel, P.gold, P.hot] });
+    localBoundsCache.key = ''; localMatrices.clear();
+    updateGrip();
+    return next;
+  }
+  const getEquipmentMaterials = () => equipmentCache.get(equipmentTier).materials;
+  const getWeaponMaterials = () => equipmentCache.get(equipmentTier).weaponMaterials;
 
   root.userData = {
     body, leftLeg, rightLeg, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
     leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
     shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach,
     setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld,
-    getSpinRadius, weaponRest, weaponRestPosition,
+    getSpinRadius, weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,
     stance: 0, shieldStored: false, weaponHeld: true, reachScale: 1,
     hammerRest: { x: 0, y: 0, z: 0 },
     width: 1.1, depth: .7, height: 1.99, color: P.blue,
@@ -505,6 +852,7 @@ export function makeWarrior() {
   };
   setReach(1);
   setStance(0);
+  setEquipment(4);
   return root;
 }
 
@@ -985,6 +1333,33 @@ export function makeTreasure(kind = 'relic') {
   } else if (kind === 'coin' || kind === 'gold') {
     cylinder(g, gold, 0, .28, 0, .23, .23, .12, 8, Math.PI / 2, 0, 0, .4);
     cylinder(g, pale, 0, .28, .07, .15, .15, .035, 8, Math.PI / 2, 0, 0, .5);
+  } else if (kind === 'wood') {
+    for (const [x, y] of [[-.115, .18], [.115, .18], [0, .36]]) {
+      const billet = group(g, 'cutTimber', x, y, 0); billet.rotation.x = Math.PI / 2;
+      cylinder(billet, 0x81583c, 0, 0, 0, .115, .125, .56, 7);
+      for (const end of [-1, 1]) cylinder(billet, 0xc19a63, 0, end * .285, 0, .105, .105, .017, 7);
+      growthRing(billet, 0x805b39, .063, .297, 0, 0, .008);
+      box(billet, 0x50392c, -.105, 0, .04, .02, .51, .025);
+    }
+    for (const z of [-.16, .16]) {
+      box(g, 0xc2ab76, 0, .10, z, .45, .035, .055);
+      box(g, 0x988260, 0, .44, z, .25, .045, .055);
+      for (const x of [-.225, .225]) box(g, 0xb69a6c, x, .245, z, .035, .28, .055);
+    }
+  } else if (kind === 'scrap' || kind === 'iron') {
+    beveledBox(g, 0x586a73, -.09, .13, .01, .40, .13, .35, .025);
+    const plate = beveledBox(g, 0x93a4a5, .11, .27, -.025, .36, .12, .28, .025);
+    plate.rotation.set(.12, .45, -.2);
+    box(g, 0xb5c3bc, -.1, .21, .13, .34, .035, .045, 0, -.12, .16);
+    cylinder(g, 0x697e86, -.16, .34, .03, .13, .13, .055, 8, Math.PI / 2, 0, -.3);
+    cylinder(g, 0x253c47, -.16, .34, .064, .055, .055, .017, 6, Math.PI / 2);
+    for (const x of [-.2, .12]) cylinder(g, 0xd1cabb, x, .28, .13, .025, .025, .16, 6, 0, 0, .25);
+  } else if (kind === 'crystal') {
+    crystal(g, 0x345a6b, 0, .11, 0, .27, .14, .24, .2);
+    crystal(g, 0x68d5e8, 0, .43, 0, .17, .40, .16, .2, .36);
+    crystal(g, 0xb3eeeb, -.17, .30, .065, .10, .23, .095, -.3, .30);
+    crystal(g, 0x5b9fc1, .16, .27, -.04, .115, .25, .10, .5, .26);
+    crystal(g, 0xe1f6db, -.035, .59, .09, .055, .13, .04, 0, .45);
   } else if (kind === 'chest') {
     box(g, dark, 0, .25, 0, .85, .5, .62);
     box(g, 0x9f7846, 0, .53, 0, .86, .21, .63);
@@ -999,6 +1374,8 @@ export function makeTreasure(kind = 'relic') {
   }
   compact(g);
   g.name = `Treasure ${kind}`;
-  g.userData = { kind, width: .65, depth: .65, height: .95, color: ['health', 'heal', 'heart'].includes(kind) ? 0xf09976 : gold };
+  const color = kind === 'wood' ? 0xc19a63 : kind === 'scrap' || kind === 'iron' ? 0x93a4a5 : kind === 'crystal' ? 0x68d5e8
+    : ['health', 'heal', 'heart'].includes(kind) ? 0xf09976 : gold;
+  g.userData = { kind, width: .65, depth: .65, height: .95, color };
   return g;
 }

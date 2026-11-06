@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261106-storm2">
+  <link rel="stylesheet" href="./style.css?v=20261106-growth1">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -94,13 +94,20 @@
       <h1>IRON<span>FALL</span><sup>01</sup></h1>
       <div class="hero-rule"><span></span><b>ΚΑΝΕ ΘΟΡΥΒΟ. ΑΦΗΣΕ ΕΡΕΙΠΙΑ.</b></div>
       <h2>Ο κόσμος είναι<br>για σπάσιμο.</h2>
-      <p class="hero-description">Σφυρί στο ένα χέρι. Ασπίδα στο άλλο.<br>Σπάσε την πόλη. Αντιμετώπισε την ορδή.</p>
+      <p class="hero-description">Ένα κούτσουρο. Μια ολόκληρη ορδή.<br>Μάζεψε υλικά. Κατασκεύασε τη δύναμή σου.</p>
 
       <button id="startButton" class="primary-button start-button" type="button" disabled>
         <svg><use href="#i-hammer"/></svg>
-        <span>ΞΕΚΙΝΑ ΤΗΝ ΚΑΤΑΣΤΡΟΦΗ</span>
+        <span>ΝΕΑ ΕΞΕΛΙΞΗ · LEVEL 1</span>
         <svg class="button-arrow"><use href="#i-arrow"/></svg>
       </button>
+      <button id="resumeCharacterButton" class="resume-character" type="button" hidden disabled>ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ</button>
+      <details class="character-testing">
+        <summary>ΔΟΚΙΜΗ ΧΑΡΑΚΤΗΡΑ <span>Διάλεξε αρχικό επίπεδο</span></summary>
+        <div class="test-level-row"><label for="startingLevel">ΕΠΙΠΕΔΟ</label><select id="startingLevel" aria-describedby="startingLoadout"><option value="10">10</option></select><button id="testStartButton" type="button" disabled>ΔΟΚΙΜΗ</button></div>
+        <p id="startingLoadout">Πολεμικό σφυρί · αυτόματη επιστροφή</p>
+        <small>Ίδια πόλη, έτοιμος εξοπλισμός. Η δοκιμή κρατά χωριστά την αποθηκευμένη εξέλιξή σου.</small>
+      </details>
       <div id="loadingStatus" class="loading-status" role="status">Το σφυρί ετοιμάζεται…</div>
 
       <div class="landing-controls desktop-only">
@@ -136,6 +143,8 @@
     <header class="hud-top">
       <section class="hero-status" aria-label="Ζωή πολεμιστή">
         <div class="hud-brand"><svg><use href="#i-hammer"/></svg><b>IRONFALL</b><span id="districtName">ΣΤΑΧΤΟΠΟΛΗ</span></div>
+        <div class="character-strip"><strong id="characterHudLevel">LV 1</strong><span id="characterHudWeapon">ΚΟΥΤΣΟΥΡΟ</span></div>
+        <div class="character-xp" aria-label="Εμπειρία χαρακτήρα"><span id="characterXpFill"></span></div>
         <div class="health-heading"><span><svg><use href="#i-shield"/></svg> ΠΟΛΕΜΙΣΤΗΣ</span><strong id="healthValue">100 / 100</strong></div>
         <div class="health-track"><div id="healthFill" style="width:100%"></div><div class="health-ticks"></div></div>
       </section>
@@ -164,6 +173,13 @@
       </button>
       <section id="upgradePanel" class="upgrade-drawer" aria-label="Οπλοστάσιο και διαθέσιμες αναβαθμίσεις" hidden>
         <header class="upgrade-drawer-heading"><div><span class="upgrade-eyebrow">ΤΟ ΣΦΥΡΙ ΣΟΥ. ΟΙ ΕΠΙΛΟΓΕΣ ΣΟΥ.</span><h2>ΟΠΛΟΣΤΑΣΙΟ</h2></div><span class="loadout-level">ΕΠΙΠΕΔΟ <b id="levelValue">1</b></span><button id="upgradeCloseButton" class="upgrade-close" type="button" aria-label="Κλείσιμο αναβαθμίσεων — U" title="Κλείσιμο · U" data-desktop-label="Κλείσιμο αναβαθμίσεων — U" data-touch-label="Κλείσιμο αναβαθμίσεων"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cross"/></svg></button></header>
+        <section class="forge-card" aria-label="Εξοπλισμός και κατασκευή">
+          <div class="equipped-heading"><strong id="equippedWeapon">ΚΟΥΤΣΟΥΡΟ</strong><span id="characterXpText">0 / 8 XP</span></div>
+          <div class="character-xp"><span id="forgeXpFill"></span></div>
+          <p id="weaponAbilities">Μικρό άλμα · μάζεψε το όπλο μετά τη ρίψη</p>
+          <div class="material-inventory" aria-label="Συλλεγμένα υλικά"><span class="material-wood">ΞΥΛΟ <b id="material-wood">0</b></span><span class="material-scrap">ΜΕΤΑΛΛΟ <b id="material-scrap">0</b></span><span class="material-crystal">ΚΡΥΣΤΑΛΛΟΙ <b id="material-crystal">0</b></span></div>
+          <div class="next-weapon"><small>ΕΠΟΜΕΝΗ ΚΑΤΑΣΚΕΥΗ</small><strong id="nextWeaponName">ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ</strong><p id="forgeRequirements">LV 3 · Ξύλο 0/8</p><button id="forgeButton" type="button" disabled>ΜΑΖΕΨΕ ΤΑ ΥΛΙΚΑ</button></div>
+        </section>
         <button id="mobileStanceButton" class="loadout-stance touch-only" type="button" aria-pressed="false" aria-label="Αλλαγή λαβής: ασπίδα στην πλάτη και σφυρί δύο χεριών. Πάτησε ξανά για επιστροφή." data-touch-label="Αλλαγή λαβής: ασπίδα στην πλάτη και σφυρί δύο χεριών. Πάτησε ξανά για επιστροφή.">
           <svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-stance"/></svg><span><b>ΑΛΛΑΓΗ ΛΑΒΗΣ</b><strong id="mobileStanceValue">ΣΦΥΡΙ + ΑΣΠΙΔΑ</strong></span><svg class="stance-switch-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
         </button>
@@ -261,7 +277,7 @@
       <h2>ΠΑΥΣΗ<span>.</span></h2>
       <p>Πάρε μια ανάσα.<br>Η επόμενη σφυριά είναι δική σου.</p>
       <button id="resumeButton" class="primary-button" type="button"><span>ΣΥΝΕΧΕΙΑ</span><svg><use href="#i-arrow"/></svg></button>
-      <button id="restartButton" class="secondary-button" type="button">ΝΕΟΣ ΓΥΡΟΣ</button>
+      <button id="restartButton" class="secondary-button" type="button">ΑΡΧΙΚΟ ΜΕΝΟΥ / ΔΟΚΙΜΗ ΕΠΙΠΕΔΟΥ</button>
       <details class="combat-help"><summary>ΧΕΙΡΙΣΜΟΣ ΜΑΧΗΣ</summary>
         <dl class="desktop-only"><dt>W A S D</dt><dd>Ελεύθερη κίνηση προς κάθε κατεύθυνση. Ο πολεμιστής στρέφεται πάντα προς την κίνησή του.</dd>
         <dt>ΠΟΝΤΙΚΙ</dt><dd>Όταν στέκεσαι, στρέφει τον πολεμιστή, τη σφυριά και την άμυνα. Η ρίψη με R ακολουθεί πάντα το ποντίκι.</dd>
@@ -306,7 +322,7 @@
       <h2 id="endTitle">ΕΠΕΣΕΣ.</h2>
       <p id="endText">Η ορδή δεν συγχωρεί. Το σφυρί σου περιμένει.</p>
       <div id="endStats" class="end-stats"></div>
-      <button id="continueButton" class="primary-button" type="button" hidden><span>ΕΠΟΜΕΝΗ ΠΕΡΙΟΧΗ</span><svg><use href="#i-arrow"/></svg></button>
+      <button id="continueButton" class="primary-button" type="button" hidden><span>ΣΥΝΕΧΕΙΑ ΣΤΗΝ ΙΔΙΑ ΠΟΛΗ</span><svg><use href="#i-arrow"/></svg></button>
       <button id="retryButton" class="primary-button" type="button"><span>ΠΑΙΞΕ ΞΑΝΑ</span><svg><use href="#i-arrow"/></svg></button>
     </div>
   </section>
@@ -314,6 +330,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261106-storm2"></script>
+  <script type="module" src="./game.js?v=20261106-growth1"></script>
 </body>
 </html>

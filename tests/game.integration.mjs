@@ -15,6 +15,8 @@ import * as progression from '../progression.js';
 import * as waves from '../waves.js';
 import * as enemyModels from '../enemy-models.js';
 import * as hammerMotion from '../hammer-motion.js';
+import * as characterProgression from '../character-progression.js';
+import * as enemyReactions from '../enemy-reactions.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -173,6 +175,8 @@ const imports = new Map([
   ['./waves.js', synthetic(waves, 'real-waves')],
   ['./enemy-models.js', synthetic(enemyModels, 'real-city-enemies')],
   ['./hammer-motion.js', synthetic(hammerMotion, 'real-hammer-motion')],
+  ['./character-progression.js', synthetic(characterProgression, 'real-character-progression')],
+  ['./enemy-reactions.js', synthetic(enemyReactions, 'real-enemy-reactions')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
@@ -181,6 +185,8 @@ export const __integration = {
   get phase(){return phase;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
+  get character(){return character;}, get characterStats(){return characterStats;}, get testRun(){return testRun;},
+  get level(){return level;}, get xp(){return xp;}, get xpTarget(){return xpTarget;},
   get charge(){return charge;}, get swing(){return swing;}, get spin(){return spin;}, get facing(){return facing;},
   get elapsed(){return elapsed;}, get round(){return round;}, get relics(){return relics;},
   get kills(){return kills;}, get bolts(){return bolts;}, get score(){return score;},
@@ -197,10 +203,11 @@ export const __integration = {
   get hammerLightning(){return hammerLightning;}, get hammerAura(){return hammerAura;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
-  updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnDrop, hitEnemy,
+  updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
   drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
+  gainXP, forgeWeapon, renderCharacterProgress, persistCharacter, startLeap, armAirSmash,
   setFacing(x,z){facing=normalize(x,z);pointer.active=false;},
   primeSwing(q){chargeHeld=false;chargeStarted=true;charge=q;attackCooldown=0;swing=null;},
   failFirstSpawnDuring(callback){const original=spawnEnemy;let attempts=0;spawnEnemy=(...args)=>++attempts===1?null:original(...args);try{callback();return attempts;}finally{spawnEnemy=original;}},
@@ -281,9 +288,11 @@ function advance(seconds, step = 1 / 60) {
     api.frame(time);
   }
 }
-function reset() {
+function reset(startLevel = 15, options = {test: true}) {
   heldMousePoint = null;
-  api.clearInput(); api.startGame(); advance(.1);
+  // Existing combat regressions exercise the complete hammer kit. Ordinary
+  // character progression is covered explicitly with reset(1, {test:false}).
+  api.clearInput(); api.startGame(startLevel, options); advance(.1);
   elements.get('fxCanvas').context.textCalls.length = 0;
 }
 const close = (actual, expected, tolerance = 1e-6) => assert.ok(Math.abs(actual - expected) <= tolerance,
@@ -294,8 +303,8 @@ function playerSteps(seconds, step = 1 / 120, afterStep = () => {}) {
     const dt = Math.min(step, remaining); api.updatePlayer(dt); afterStep(dt);
   }
 }
-function arena() {
-  reset();
+function arena(startLevel = 15, options = {test: true}) {
+  reset(startLevel, options);
   // Keep real models, health, materials and disposal ownership, while moving
   // unrelated district geometry outside this isolated action's play area.
   api.world.objects.forEach((o, i) => { o.x = 500 + i * 10; o.z = 500; o.mesh.position.set(o.x, o.baseY, o.z); });
@@ -914,8 +923,16 @@ test('touch controls and accessible labels follow phone, landscape, tablet and d
       for (const id of ['attackButton', 'chargeButton', 'guardButton', 'leapButton', 'throwButton', 'stanceButton', 'dashButton']) {
         const button = elements.get(id), label = expected ? button.dataset.touchLabel : button.dataset.desktopLabel;
         assert.ok(label, `${id} needs an accessible description for the current control surface`);
-        assert.equal(button.getAttribute('aria-label'), label);
-        assert.equal(button.getAttribute('title'), label);
+        if (id === 'attackButton') {
+          const dynamicLabel = button.getAttribute('aria-label');
+          assert.ok(dynamicLabel.includes(api.characterStats.weaponName.toLowerCase()),
+            'The action description must identify the actually equipped weapon');
+          assert.match(dynamicLabel, /Χτύπημα.*Κράτα.*περιστροφή/);
+          assert.equal(button.getAttribute('title'), dynamicLabel);
+        } else {
+          assert.equal(button.getAttribute('aria-label'), label);
+          assert.equal(button.getAttribute('title'), label);
+        }
       }
     }
     api.setPhase('paused'); assert.equal(elements.get('touchControls').hidden, true);
@@ -1482,7 +1499,7 @@ test('a successful catch lights only the hammer, expires cleanly, and never expa
   for (const material of weapon) if (material.emissive) assert.ok(material.emissive.equals(baseline.get(material)), 'The glow must restore its material baseline');
   aimAt(0, 16); key('KeyR', true); key('KeyR', false); playerSteps(.3);
   assert.ok(api.throwFlight);
-  const interrupted = api.throwFlight; api.startGame(); api.updateHUD();
+  const interrupted = api.throwFlight; api.startGame(15, {test: true}); api.updateHUD();
   assert.equal(interrupted.mesh.parent, null); assert.equal(api.hammerLightning, 0);
   assert.equal(aura.root.visible, false); assert.equal(elements.get('throwButton').classList.contains('lightning-ready'), false);
 });
@@ -2387,7 +2404,7 @@ test('zombies telegraph then leap, while a hammer hit interrupts their windup', 
   assert.ok(interrupted.stagger > 0);
 });
 
-test('60% destruction summons one boss, a killing hit wins, and continuation retains upgrades', () => {
+test('60% destruction summons one boss and continuation retains upgrades and the same damaged district', () => {
   reset();
   api.levels.power = 2; api.applyStats();
   const total = api.world.objects.reduce((sum, o) => sum + o.weight, 0);
@@ -2411,24 +2428,66 @@ test('60% destruction summons one boss, a killing hit wins, and continuation ret
   api.hitBoss(1, { x: 0, z: 1 }, 5);
   assert.equal(boss.dead, true); assert.equal(api.phase, 'victory');
   assert.equal(elements.get('continueButton').hidden, false);
-  const score = api.score;
+  const score = api.score, district = api.world, sector = api.sector;
+  const destruction = core.destructionPercent(api.world.objects);
   elements.get('continueButton').click();
   assert.equal(api.phase, 'playing'); assert.equal(api.round, 2);
   assert.equal(api.levels.power, 2); assert.equal(api.player.hp, api.player.maxHp);
   assert.equal(api.boss, null); assert.equal(api.enemies.length, 0);
   assert.equal(api.score, score);
-  assert.equal(core.destructionPercent(api.world.objects), 0);
+  assert.equal(api.world, district); assert.equal(api.sector, sector);
+  assert.equal(core.destructionPercent(api.world.objects), destruction,
+    'Advancing the next horde must preserve the city the player already damaged');
+  api.checkGoal(); assert.equal(api.boss, null, 'The same destruction threshold must not respawn the defeated boss');
+  api.updateWaves(waves.wavePlan(2).firstDelay + .01);
+  assert.equal(api.wave.spawned, waves.wavePlan(2).batches[0]);
+  assert.equal(api.enemies.length, waves.wavePlan(2).batches[0],
+    'The next horde must actually spawn after Continue despite the consumed boss milestone');
+  assert.ok(api.enemies.every(enemy => enemy.waveNumber === 2));
+  api.updateHUD();
+  assert.doesNotMatch(elements.get('waveStatus').textContent, /ΤΕΛΙΚΟΣ BOSS/);
 });
 
-test('lethal damage opens defeat and retry resets score, upgrades and sector', () => {
+test('boss fear and hit recoil stay bounded over many pose steps and its arm roll settles back to zero', () => {
+  arena();
+  api.spawnBoss();
+  const boss = api.boss;
+  boss.x = 0; boss.z = 3; boss.y = 0; boss.state = 'recover'; boss.timer = 100;
+  api.startLeap(); api.player.y = 8; api.armAirSmash();
+  assert.equal(api.leap.slam, true);
+  api.hitBoss(1, {x: 1, z: 0}, 0);
+  assert.ok(boss.impact, 'The fixture must combine a real hammer recoil with the airborne threat');
+  const {leftArm, rightArm, head} = boss.mesh.userData;
+  assert.ok(leftArm && rightArm && head);
+  let peakFear = 0, peakArmRoll = 0, peakLookUp = 0;
+  for (let i = 0; i < 480; i++) {
+    api.updateBoss(1 / 120);
+    peakFear = Math.max(peakFear, boss.fear);
+    peakLookUp = Math.max(peakLookUp, -head.rotation.x);
+    peakArmRoll = Math.max(peakArmRoll, Math.abs(leftArm.rotation.z), Math.abs(rightArm.rotation.z));
+    assert.ok(Math.abs(leftArm.rotation.z) < .5 && Math.abs(rightArm.rotation.z) < .5,
+      `Protective arm roll must not accumulate across frames; left=${leftArm.rotation.z}, right=${rightArm.rotation.z}`);
+  }
+  assert.ok(peakFear > .05, 'The boss must actually display its weaker fear reaction');
+  assert.ok(peakLookUp > .2, 'The articulated boss head must track the elevated player');
+  assert.ok(peakArmRoll > .01, 'The arms must visibly react before settling');
+  assert.equal(boss.fearTime, 0); assert.equal(boss.fear, 0);
+  close(leftArm.rotation.z, 0, 1e-8); close(rightArm.rotation.z, 0, 1e-8);
+  assert.equal(boss.impact, null, 'The physical hit recoil must also complete');
+});
+
+test('lethal damage opens defeat and a test retry resets combat while restoring the selected complete preset', () => {
   reset();
+  elements.get('startingLevel').value = '15';
   api.player.hp = 1; api.player.invincible = 0;
   api.hurtPlayer(40, 1, 0);
   assert.equal(api.phase, 'dead'); assert.equal(api.player.hp, 0);
   assert.equal(elements.get('continueButton').hidden, true);
   elements.get('retryButton').click();
   assert.equal(api.phase, 'playing'); assert.equal(api.round, 1);
-  assert.equal(api.player.hp, 120); assert.equal(api.score, 0);
+  assert.equal(api.character.level, 15); assert.equal(api.character.weaponId, 'storm'); assert.equal(api.testRun, true);
+  assert.equal(api.player.hp, characterProgression.getCharacterStats(characterProgression.createCharacterProgression(15)).maxHp);
+  assert.equal(api.score, 0); assert.equal(api.sector, 1);
   assert.equal(Object.values(api.levels).reduce((a, b) => a + b, 0), 0);
   advance(.1); assert.deepEqual(browserErrors, []);
 });
@@ -2510,8 +2569,274 @@ test('a new run cleans an unfinished enemy fall and cannot revive its old combat
   for (const geometry of geometries) geometry.addEventListener('dispose', () => disposals++);
   api.hitEnemy(enemy, 9999, { x: 1, z: 0 }, 5, 2);
   api.updateEnemies(.05); assert.equal(enemy.mesh.parent, api.scene);
-  api.startGame();
+  api.startGame(15, {test: true});
   assert.equal(enemy.mesh.parent, null); assert.equal(api.enemyFalls.length, 0); assert.equal(api.enemies.length, 0);
   assert.equal(disposals, geometries.size); assert.equal(api.kills, 0);
   advance(.5); assert.equal(disposals, geometries.size); assert.equal(api.enemies.includes(enemy), false);
+});
+
+test('a normal new character wears starter gear, keeps movement, and makes only a small unarmed jump', () => {
+  arena(1, {test: false});
+  assert.equal(api.testRun, false);
+  assert.equal(api.character.level, 1);
+  assert.equal(api.character.weaponId, 'log');
+  assert.equal(api.characterStats.hasShield, false);
+  assert.equal(api.characterStats.armorTier, 0);
+  assert.equal(api.characterStats.canReturn, false);
+  assert.equal(api.characterStats.canAirSmash, false);
+  assert.equal(api.hero.userData.equipmentTier, 0, 'The equipped model must follow the actual starter tier');
+  assert.equal(api.hero.userData.weaponHeld, true);
+  assert.ok(api.startLeap(), 'The starter must retain a working jump control');
+  close(api.leap.vy, api.characterStats.jumpVelocity);
+  api.armAirSmash();
+  assert.equal(api.leap.slam, false, 'The advanced smash cannot be armed by calling its action early');
+  let apex = 0;
+  for (let i = 0; api.leap && i < 360; i++) {
+    api.updatePlayer(1 / 120); apex = Math.max(apex, api.player.y);
+    assert.equal(api.leap?.slam ?? false, false);
+  }
+  assert.equal(api.leap, null);
+  assert.ok(apex > .8 && apex < 2.5, `The starter should visibly hop, not leap over rooftops; apex=${apex}`);
+  close(api.player.y, 0);
+  api.renderCharacterProgress();
+  assert.equal(elements.get('characterHudWeapon').textContent, api.characterStats.weaponName);
+  assert.match(elements.get('characterXpText').textContent, /0\s*\/\s*8\s*XP/);
+});
+
+test('the level selector creates full war and storm presets in the same district without fake level labels', () => {
+  const descriptions = [];
+  for (const [level, weaponId, returns, chains] of [[1, 'log', false, false], [10, 'war', true, false], [15, 'storm', true, true]]) {
+    api.clearInput(); heldMousePoint = null;
+    elements.get('startingLevel').value = String(level);
+    elements.get('startingLevel').onchange();
+    elements.get('testStartButton').click(); advance(.1);
+    descriptions.push(api.world.objects.map(o => [o.type, o.x, o.z, o.w, o.d, o.h]));
+    assert.equal(api.character.level, level);
+    assert.equal(api.character.weaponId, weaponId);
+    assert.ok(elements.get('startingLoadout').textContent.includes(api.characterStats.weaponName));
+    assert.equal(api.characterStats.canReturn, returns);
+    assert.equal(api.characterStats.canRicochet, chains);
+    assert.equal(api.characterStats.canLightning, chains);
+    assert.equal(api.hero.userData.equipmentTier, api.characterStats.weaponTier);
+    close(api.stats.power, api.characterStats.power);
+    assert.equal(api.player.hp, api.characterStats.maxHp);
+    assert.equal(api.round, 1, 'Character level must not masquerade as a different wave');
+    assert.equal(api.sector, 1, 'Character presets must not switch maps');
+    assert.equal(api.testRun, true);
+    if (level > 1) assert.ok(api.character.materials.wood > 0);
+    api.renderCharacterProgress();
+    assert.match(elements.get('characterHudLevel').textContent, /ΔΟΚΙΜΗ/);
+  }
+  assert.deepEqual(descriptions[0], descriptions[1]);
+  assert.deepEqual(descriptions[1], descriptions[2]);
+  assert.equal(elements.get('characterXpFill').style.width, '100%');
+  assert.match(elements.get('characterXpText').textContent, /ΜΕΓΙΣΤΟ/);
+});
+
+test('actual kills award experience and physical materials which must be collected before a recipe can be forged', () => {
+  arena(1, {test: false});
+  const originalWorld = api.world;
+  for (let i = 0; i < 20; i++) {
+    const enemy = stationaryEnemy('zombie', 8, 0);
+    api.hitEnemy(enemy, enemy.hp, {x: 1, z: 0}, 5.4, 2.3);
+    assert.equal(enemy.dead, true);
+  }
+  assert.equal(api.kills, 20);
+  assert.equal(api.character.level, 3);
+  assert.equal(api.character.weaponId, 'log', 'Killing and leveling alone must not forge the next weapon');
+  assert.equal(api.character.materials.wood, 0, 'Loot remains in the world until the player collects it');
+  const materialDrops = api.drops.filter(drop => characterProgression.MATERIAL_TYPES.includes(drop.kind));
+  assert.ok(materialDrops.filter(drop => drop.kind === 'wood').length >= 8,
+    'The opening enemies must supply enough visible wood to make the first recipe attainable');
+  assert.ok(materialDrops.every(drop => drop.mesh.parent === api.scene));
+  assert.equal(characterProgression.getForgeStatus(api.character).reason, 'materials');
+  api.forgeWeapon(); assert.equal(api.character.weaponId, 'log');
+  // Fresh drops have a short spawn animation before their pickup activates.
+  api.updateDrops(.5);
+  for (const drop of materialDrops) {
+    if (!api.drops.includes(drop)) continue;
+    api.player.x = drop.x; api.player.z = drop.z;
+    api.updateDrops(1 / 60);
+  }
+  assert.equal(api.drops.filter(drop => characterProgression.MATERIAL_TYPES.includes(drop.kind)).length, 0);
+  const materialsBefore = {...api.character.materials};
+  const recipe = characterProgression.getForgeStatus(api.character).next;
+  assert.equal(characterProgression.getForgeStatus(api.character).canForge, true);
+  api.toggleUpgradePanel(true);
+  assert.equal(elements.get('forgeButton').disabled, false);
+  elements.get('forgeButton').click();
+  assert.equal(api.character.weaponId, 'club');
+  assert.equal(api.hero.userData.equipmentTier, 1);
+  for (const type of characterProgression.MATERIAL_TYPES) {
+    assert.equal(api.character.materials[type], materialsBefore[type] - recipe.cost[type]);
+  }
+  assert.equal(api.world, originalWorld, 'Forging must not regenerate the district');
+  assert.equal(api.round, 1);
+  const forged = JSON.stringify(api.character);
+  elements.get('forgeButton').click();
+  assert.equal(JSON.stringify(api.character), forged, 'A repeated press must respect the next recipe gates');
+});
+
+test('advanced testing cannot overwrite the normal character checkpoint and resuming restores earned gear and bonuses', () => {
+  arena(1, {test: false});
+  api.gainXP(20);
+  for (let i = 0; i < 8; i++) api.spawnDrop(api.player.x, api.player.z, 'wood');
+  api.updateDrops(.5); api.forgeWeapon();
+  assert.equal(api.character.weaponId, 'club');
+  api.levels.power = 2; api.levels.vitality = 1; api.applyStats(); api.persistCharacter();
+  const normalSave = storage.get('ironfall.character'), normal = JSON.parse(normalSave);
+  assert.equal(normal.character.level, 3); assert.equal(normal.character.weaponId, 'club');
+  for (const level of [10, 15]) {
+    api.startGame(level, {test: true});
+    api.gainXP(100); api.spawnDrop(api.player.x, api.player.z, 'crystal'); api.updateDrops(.5);
+    api.levels.speed = 4; api.applyStats(); api.persistCharacter();
+    assert.equal(storage.get('ironfall.character'), normalSave,
+      `Level ${level} testing must not change the ordinary progress save`);
+  }
+  api.startGame(1, {resume: true});
+  assert.equal(api.testRun, false);
+  assert.deepEqual(JSON.parse(JSON.stringify(api.character)), normal.character);
+  assert.deepEqual(JSON.parse(JSON.stringify(api.levels)), normal.levels);
+  assert.equal(api.hero.userData.equipmentTier, 1);
+  assert.equal(api.characterStats.canReturn, false);
+  assert.equal(api.player.hp, api.player.maxHp);
+});
+
+test('resuming a high-level character never substitutes the testing preset for equipment not yet forged', () => {
+  arena(1, {test: false});
+  api.gainXP(292); api.persistCharacter();
+  assert.equal(api.character.level, 10); assert.equal(api.character.weaponId, 'log');
+  api.startGame(15, {test: true}); assert.equal(api.character.weaponId, 'storm');
+  api.startGame(1, {resume: true});
+  assert.equal(api.character.level, 10); assert.equal(api.character.weaponId, 'log');
+  assert.equal(api.hero.userData.equipmentTier, 0);
+  assert.equal(api.characterStats.canReturn, false); assert.equal(api.characterStats.canAirSmash, false);
+});
+
+test('a thrown starter log stays where it lands until the player approaches to retrieve the physical weapon', () => {
+  arena(1, {test: false});
+  aimAt(0, 12); api.poseHero(1);
+  const startX = api.player.x, startZ = api.player.z;
+  key('KeyR', true); key('KeyR', false);
+  assert.ok(api.throwWindup);
+  let projectile = null;
+  for (let i = 0; i < 480; i++) {
+    api.updatePlayer(1 / 120);
+    if (api.throwFlight) {
+      projectile ||= api.throwFlight;
+      assert.equal(api.throwFlight, projectile, 'The log remains one projectile from release through retrieval');
+      assert.equal(!!projectile.returning, false, 'A wooden log must never enter automatic return flight');
+    }
+  }
+  assert.ok(projectile && api.throwFlight === projectile, 'A missed throw must leave a recoverable weapon in the world');
+  assert.equal(api.hero.userData.weaponHeld, false);
+  assert.equal(projectile.mesh.parent, api.scene);
+  assert.ok(Math.hypot(projectile.x - startX, projectile.z - startZ) > 3);
+  assert.ok(projectile.y < .8, 'The recoverable weapon must settle visibly near the ground');
+  close(api.player.x, startX); close(api.player.z, startZ);
+  const resting = {x: projectile.x, z: projectile.z};
+  playerSteps(2);
+  assert.equal(api.throwFlight, projectile); assert.equal(api.hero.userData.weaponHeld, false);
+  close(projectile.x, resting.x); close(projectile.z, resting.z);
+  api.player.x = projectile.x; api.player.z = projectile.z;
+  api.updatePlayer(1 / 120);
+  assert.equal(api.throwFlight, null); assert.equal(api.hero.userData.weaponHeld, true);
+  assert.equal(projectile.mesh.parent, null);
+  assert.equal(api.hammerLightning, 0, 'Picking up wood must not trigger magical catch lightning');
+  assert.equal(api.scene.children.filter(child => child.userData.kind === 'hammer-projectile').length, 0);
+});
+
+test('a nonreturning weapon landing on a roof can be retrieved from that same supported roof', () => {
+  arena(1, {test: false});
+  const roof = placeObject('townhouse', 0, 6, {w: 20, d: 30, h: 4, hp: 10000, maxHp: 10000});
+  api.player.x = 0; api.player.z = 0; api.player.y = roof.h;
+  api.setFacing(0, 1); api.poseHero(1); aimAt(0, 12);
+  key('KeyR', true); key('KeyR', false);
+  for (let i = 0; !api.throwFlight?.grounded && i < 480; i++) api.updatePlayer(1 / 120);
+  const projectile = api.throwFlight;
+  assert.ok(projectile?.grounded, 'The real ballistic throw must settle on the fixture roof');
+  close(projectile.groundY, roof.h);
+  assert.equal(api.hero.userData.weaponHeld, false);
+  api.player.x = projectile.x; api.player.z = projectile.z; api.player.y = roof.h;
+  api.updatePlayer(1 / 120);
+  assert.ok(api.throwFlight === null, 'The supporting building must not block retrieval on its own roof');
+  assert.equal(api.hero.userData.weaponHeld, true);
+  close(api.player.y, roof.h);
+});
+
+test('forging cannot replace a weapon during its throw or while it waits for physical retrieval', () => {
+  arena(1, {test: false});
+  api.gainXP(20);
+  for (let i = 0; i < 8; i++) api.spawnDrop(api.player.x, api.player.z, 'wood');
+  api.updateDrops(.5);
+  assert.equal(characterProgression.getForgeStatus(api.character).canForge, true);
+  aimAt(0, 12); key('KeyR', true); key('KeyR', false);
+  assert.ok(api.throwWindup);
+  const before = JSON.stringify(api.character);
+  api.renderCharacterProgress(); assert.equal(elements.get('forgeButton').disabled, true);
+  api.forgeWeapon(); assert.equal(JSON.stringify(api.character), before);
+  for (let i = 0; !api.throwFlight?.grounded && i < 480; i++) api.updatePlayer(1 / 120);
+  const projectile = api.throwFlight;
+  assert.ok(projectile?.grounded);
+  api.renderCharacterProgress(); assert.equal(elements.get('forgeButton').disabled, true);
+  api.forgeWeapon(); assert.equal(JSON.stringify(api.character), before);
+  assert.equal(api.hero.userData.equipmentTier, 0);
+  api.player.x = projectile.x; api.player.z = projectile.z;
+  api.updatePlayer(1 / 120);
+  assert.equal(api.throwFlight, null);
+  api.renderCharacterProgress(); assert.equal(elements.get('forgeButton').disabled, false);
+  elements.get('forgeButton').click();
+  assert.equal(api.character.weaponId, 'club'); assert.equal(api.hero.userData.equipmentTier, 1);
+  assert.equal(projectile.mesh.parent, null, 'The replaced thrown geometry must already be released');
+  assert.equal(api.hero.userData.weaponHeld, true);
+});
+
+test('a hit cancels every ordinary attack windup and leaves the struck enemy unable to retaliate during stagger', () => {
+  for (const type of ['zombie', 'robot', 'brute', 'mech']) {
+    arena();
+    const enemy = api.spawnEnemy(type, {x: 0, z: 1.8});
+    enemy.hp = enemy.maxHp = 1000; enemy.speed = 0; enemy.timer = -1;
+    api.updateEnemies(.01);
+    assert.equal(enemy.state, 'windup', `${type}: the fixture must start a real attack`);
+    assert.ok(enemy.telegraph);
+    const telegraph = enemy.telegraph, hp = api.player.hp;
+    api.hitEnemy(enemy, 1, {x: 0, z: 1}, 0, 0);
+    assert.equal(enemy.telegraph, null); assert.equal(telegraph.parent, null);
+    assert.equal(enemy.state, 'walk'); assert.ok(enemy.stagger >= .35);
+    const staggerDuration = enemy.stagger;
+    for (let elapsed = 0; elapsed < staggerDuration - .02; elapsed += 1 / 120) {
+      api.updateEnemies(1 / 120);
+      assert.equal(api.player.hp, hp, `${type}: the interrupted attack must not retaliate during its hit reaction`);
+      assert.equal(api.bolts.length, 0, `${type}: a canceled shot must not emit a projectile`);
+      assert.notEqual(enemy.state, 'windup'); assert.notEqual(enemy.state, 'lunge');
+    }
+    // This local interruption is not global player invulnerability.
+    api.hurtPlayer(5, 0, 0, false);
+    assert.equal(api.player.hp, hp - 5, 'An unrelated incoming attack still damages the player');
+  }
+});
+
+test('nearby enemies look upward and brace for a visible jump while walls and distance bound the fear reaction', () => {
+  arena();
+  const near = stationaryEnemy('zombie', 0, 3);
+  const screened = stationaryEnemy('robot', 4, 0);
+  const distant = stationaryEnemy('zombie', 0, 20);
+  placeObject('wall', 2, 0, {w: .1, d: 5, h: 12, hp: 1000, maxHp: 1000});
+  api.startLeap();
+  api.player.y = 3;
+  api.armAirSmash();
+  for (let i = 0; i < 12; i++) api.updateEnemies(1 / 120);
+  assert.ok(near.lookPitch < -.2, 'A visible airborne player must turn the enemy gaze upward');
+  assert.ok(near.mesh.userData.head, 'The real model needs an articulated head, not only an AI value');
+  assert.ok(near.mesh.userData.head.rotation.x < -.15);
+  assert.ok(near.fear > .1 && near.fearTime > 0, 'The nearby enemy must visibly react before impact');
+  assert.ok(near.mesh.userData.leftArm.rotation.x < -.3 || near.mesh.userData.rightArm.rotation.x < -.3,
+    'The actual arms must rise toward a protective pose');
+  assert.equal(screened.fearTime, 0, 'A wall must block threat perception');
+  assert.equal(distant.fearTime, 0, 'A jump must not freeze the distant horde');
+  const initialCooldown = near.fearCooldown;
+  for (let i = 0; i < 300; i++) api.updateEnemies(1 / 120);
+  assert.equal(near.fearTime, 0, 'One sustained airborne threat must not repeatedly stun the same witness');
+  assert.ok(near.fearCooldown < initialCooldown);
+  assert.ok(near.fear < .02, 'The visible fear pose must settle after its short reaction');
 });

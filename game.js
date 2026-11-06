@@ -1,12 +1,14 @@
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261106-motion1';
-import {makeCityEnemy} from './enemy-models.js?v=20261106-storm2';
+import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261106-growth1';
+import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261106-growth1';
 import {createWorld} from './world.js?v=20261105-city1';
 import {GameAudio} from './audio.js';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-combos1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261105-city1';
 import {HAMMER_COMBOS,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-storm2';
+import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261106-growth1';
+import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-growth1';
 
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
@@ -23,6 +25,8 @@ let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
 let boss=null,bossSpawned=false,spawnCounter=0,lootCounter=0,announcementTimer=0;
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeFeedback='';
+let character=createCharacterProgression(),characterStats=getCharacterStats(character),testRun=false,checkpointTimer=0,forgeReadyAnnounced=false;
+const MATERIAL_LABELS={wood:'Ξύλο',scrap:'Μέταλλο',crystal:'Κρύσταλλοι'};
 let shake=0,hitStop=0,redFlash=0,combo=0,comboTimer=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
 const swingComboSteps=[0,0];
@@ -81,6 +85,39 @@ class Fragments {
   clear(){this.items.length=0;this.mesh.count=0;}
 }
 let fragments;
+class ImpactClouds {
+  constructor(){
+    this.pool=[];
+    const texture=star=>{
+      const canvas=document.createElement('canvas');canvas.width=canvas.height=64;const c=canvas.getContext('2d');
+      if(star){c.fillStyle='#fff';c.beginPath();for(let n=0;n<16;n++){const a=n*Math.PI/8,r=n%2?8:n%4?23:31;const x=32+Math.cos(a)*r,y=32+Math.sin(a)*r;if(n)c.lineTo(x,y);else c.moveTo(x,y);}c.closePath();c.fill();}
+      else{const g=c.createRadialGradient(32,32,1,32,32,32);g.addColorStop(0,'rgba(255,255,255,.8)');g.addColorStop(.45,'rgba(255,255,255,.5)');g.addColorStop(1,'rgba(255,255,255,0)');c.fillStyle=g;c.fillRect(0,0,64,64);}
+      return new THREE.CanvasTexture(canvas);
+    };
+    this.dust=texture(false);this.star=texture(true);
+    for(let n=0;n<72;n++){const mesh=new THREE.Sprite(new THREE.SpriteMaterial({map:this.dust,transparent:true,opacity:0,depthWrite:false,toneMapped:false}));mesh.visible=false;scene.add(mesh);this.pool.push({mesh,life:0,max:0,x:0,y:0,z:0,vx:0,vz:0,vy:0,size:1,star:false});}
+  }
+  emit(x,y,z,dir,radius=1){
+    const count=settings.quality==='low'?5:8;
+    for(let n=0;n<count;n++){
+      const p=this.pool.find(p=>p.life<=0);if(!p)break;
+      const star=n<2,angle=Math.random()*Math.PI*2,speed=star?.15:1.1+Math.random()*1.7;
+      Object.assign(p,{star,life:star?.13:.42+Math.random()*.2,x:x+(star?0:Math.cos(angle)*.3),y:y+(star?1.05:.15+Math.random()*.18),z:z+(star?0:Math.sin(angle)*.3),
+        vx:star?0:dir.x*.8+Math.cos(angle)*speed,vz:star?0:dir.z*.8+Math.sin(angle)*speed,vy:star?0:.45+Math.random()*.5,size:(star?n===0?1.05:.57:.55)*radius});
+      p.max=p.life;p.mesh.material.map=star?this.star:this.dust;p.mesh.material.color.setHex(star?n===0?0xffca67:0xffffff:0xc7b99c);
+      p.mesh.material.rotation=Math.random()*Math.PI;p.mesh.material.opacity=star?1:.5;p.mesh.position.set(p.x,p.y,p.z);p.mesh.scale.setScalar(p.size);p.mesh.visible=true;
+    }
+  }
+  update(dt){for(const p of this.pool){if(p.life<=0)continue;p.life-=dt;if(p.life<=0){p.mesh.visible=false;continue;}const t=1-p.life/p.max;p.x+=p.vx*dt;p.z+=p.vz*dt;p.y+=p.vy*dt;p.mesh.position.set(p.x,p.y,p.z);p.mesh.scale.setScalar(p.size*(p.star?1+t*.5:1+t*1.65));p.mesh.material.opacity=(p.star?1:.5)*(1-t);}}
+  clear(){for(const p of this.pool){p.life=0;p.mesh.visible=false;}}
+}
+let impactClouds;
+function frightenNearby(x,z,severity=1,radius=4.3,exclude=null){
+  for(const e of enemies){if(e===exclude||e.dead||Math.hypot(e.x-x,e.z-z)>radius)continue;
+    if(!(world.hasLineOfSight?.(x,z,e.x,e.z,.16)??true))continue;
+    startEnemyFear(e,x,z,severity);
+  }
+}
 
 function setPhase(next){
   phase=next;document.body.dataset.state=next;
@@ -176,7 +213,7 @@ function createHammerAura(){
 }
 function updateHammerAura(){
   if(!hammerAura)return;
-  const channeling=!!touchThrowAim?.channeling,airReady=!!leap&&!leap.slam;
+  const channeling=!!touchThrowAim?.channeling&&characterStats.canLightning,airReady=!!leap&&!leap.slam&&characterStats.canAirSmash;
   const held=hero.userData.weaponHeld,active=phase==='playing'&&held&&(hammerLightning>0||channeling||airReady||leap?.slam);
   hammerAura.root.visible=!!active;
   if(!active)return;
@@ -207,7 +244,7 @@ function updateHammerAura(){
   }
   hammerAura.bolts.geometry.attributes.position.needsUpdate=true;
 }
-function resetWorld(keepUpgrades=false){
+function resetWorld(keepUpgrades=false,startLevel=1){
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
   swingComboSteps.fill(0);
   upgradePanelOpen=false;nearbyTargets=[];focusedTarget=null;
@@ -224,16 +261,44 @@ function resetWorld(keepUpgrades=false){
   world=createWorld(scene,{seed:1527+sector*173,round:sector});
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
-  if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;level=1;xp=0;xpTarget=12;score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0};}
+  if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
   roundTime=0;currentDistrict='';bossSpawned=false;beginWave(round);spawnCounter=0;lootCounter=0;combo=0;comboTimer=0;chargeHeld=false;chargeStarted=false;charge=0;swing=null;attackBuffer=null;spin=null;spinRecovery=null;holdElapsed=0;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
-  $('bossHud').hidden=true;fragments?.clear();numbers=[];cameraTarget.set(0,.6,0);
+  $('bossHud').hidden=true;fragments?.clear();impactClouds?.clear();numbers=[];cameraTarget.set(0,.6,0);
   hero.position.set(0,0,0);facing={x:-.585491,z:-.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);
-  applyStats();renderUpgradePanel();updateHUD(true);
+  applyStats();player.hp=player.maxHp;renderUpgradePanel();updateHUD(true);
 }
-function startGame(){audio.unlock().then(()=>audio.play('start'));resetWorld();setPhase('playing');announce('ΚΑΛΩΣ ΗΡΘΕΣ ΣΤΗΝ ΟΡΔΗ','Κατάστρεψε το 60% της πόλης για να ξυπνήσεις τον Κολοσσό.',4.3);}
+function startGame(startLevel=1,options={}){
+  const requested=typeof startLevel==='number'?startLevel:1;
+  testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));resetWorld(false,requested);
+  if(options.resume){
+    const stored=read('ironfall.character',null),restored=restoreCharacterProgression(stored?.character);
+    if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();player.hp=player.maxHp;renderUpgradePanel();}
+  }
+  setPhase('playing');persistCharacter();
+  announce(testRun?'ΔΟΚΙΜΗ · ΕΠΙΠΕΔΟ '+level:options.resume?'Η ΕΞΕΛΙΞΗ ΣΟΥ ΣΥΝΕΧΙΖΕΤΑΙ':'ΑΠΟ ΞΥΛΟ ΣΕ ΚΑΤΑΙΓΙΔΑ',
+    testRun?characterStats.weaponName+' · Πλήρης εξοπλισμός αυτού του σταδίου.':characterStats.weaponTier===0?'Μάζεψε ξύλο και μέταλλο. Κατασκεύασε καλύτερο όπλο στις Αναβαθμίσεις.':characterStats.weaponName+' · Μάζεψε υλικά για την επόμενη κατασκευή.',4.3);
+}
+function persistCharacter(){
+  if(testRun||phase==='menu')return;
+  save('ironfall.character',{character,levels});updateSavedCharacter();
+}
+function updateSavedCharacter(){
+  const stored=restoreCharacterProgression(read('ironfall.character',null)?.character),button=$('resumeCharacterButton');
+  if(button){button.hidden=!stored;button.disabled=$('startButton').disabled;if(stored)button.textContent='ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ · LV '+stored.level;}
+}
+function syncCharacterModel(){
+  const u=hero.userData;
+  if(u.setEquipment&&u.equipmentTier!==characterStats.weaponTier){
+    u.setEquipment(characterStats.weaponTier);player.materials=u.getEquipmentMaterials?.()||prepareMaterials(hero);
+    hammerMaterials=u.getWeaponMaterials?.()||[];
+  }
+}
 function applyStats(){
-  stats=calculateStats(levels);player.maxHp=stats.maxHp;
+  characterStats=getCharacterStats(character);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);
+  stats={...calculateStats(levels),power:characterStats.power*(1+(levels.power||0)*.25),size:characterStats.size*(1+(levels.size||0)*.18),
+    range:characterStats.range*(1+(levels.range||0)*.22+(levels.size||0)*.08),speed:characterStats.speed*(1+(levels.speed||0)*.12),maxHp:characterStats.maxHp+(levels.vitality||0)*25};
+  player.maxHp=stats.maxHp;player.hp=Math.min(player.hp,player.maxHp);syncCharacterModel();
   if(hero.userData.hammerHead)hero.userData.hammerHead.scale.setScalar(stats.size);
   if($('powerValue'))$('powerValue').textContent=Math.round(stats.power);
   if($('sizeValue'))$('sizeValue').textContent=stats.size.toFixed(2)+'×';
@@ -242,7 +307,33 @@ function applyStats(){
   $('levelValue').textContent=level;
   if($('relicSlots'))$('relicSlots').innerHTML=UPGRADE_DEFS.filter(d=>levels[d.id]).map(d=>'<span class="relic-installed" title="'+d.name+'" style="--relic-color:'+d.color+'"><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-'+d.id+'"/></svg><b>'+levels[d.id]+'</b></span>').join('');
 }
-function gainXP(value){xp+=value;while(xp>=xpTarget){xp-=xpTarget;level++;xpTarget=Math.ceil(xpTarget*1.34);player.hp=Math.min(player.maxHp,player.hp+18);upgradeFeedback='ΕΠΙΠΕΔΟ '+level+' · +18 ΖΩΗ';spawnDrop(player.x+randomBetween(-1,1),player.z+randomBetween(-1,1),'relic');}applyStats();}
+function gainXP(value){
+  const result=awardCharacterXp(character,value);applyStats();
+  for(let i=0;i<result.levelsGained;i++){player.hp=Math.min(player.maxHp,player.hp+18);spawnDrop(player.x+randomBetween(-1,1),player.z+randomBetween(-1,1),'relic');}
+  if(result.levelsGained){upgradeFeedback='ΕΠΙΠΕΔΟ '+level+' · +18 ΖΩΗ';toast('ΕΠΙΠΕΔΟ '+level,'Η δύναμή σου μεγαλώνει. Έλεγξε την επόμενη κατασκευή.');persistCharacter();}
+  renderCharacterProgress();
+}
+function renderCharacterProgress(){
+  const progress=level>=MAX_CHARACTER_LEVEL?1:xp/Math.max(1,xpTarget),status=getForgeStatus(character),busy=weaponBusy()||!!swing||!!spin;
+  if($('characterHudLevel'))$('characterHudLevel').textContent='LV '+level+(testRun?' · ΔΟΚΙΜΗ':'');
+  if($('characterHudWeapon'))$('characterHudWeapon').textContent=characterStats.weaponName;
+  for(const id of ['characterXpFill','forgeXpFill'])if($(id))$(id).style.width=Math.min(100,progress*100)+'%';
+  if($('characterXpText'))$('characterXpText').textContent=level>=MAX_CHARACTER_LEVEL?'ΜΕΓΙΣΤΟ ΕΠΙΠΕΔΟ':xp+' / '+xpTarget+' XP';
+  if($('equippedWeapon'))$('equippedWeapon').textContent=characterStats.weaponName;
+  if($('weaponAbilities'))$('weaponAbilities').textContent=characterStats.canLightning?'Ψηλό άλμα · συντριβή · 5 στόχοι · επιστροφή · κεραυνοί':characterStats.canReturn?'Ψηλό άλμα · συντριβή · αυτόματη επιστροφή':characterStats.canAirSmash?'Δυνατό άλμα · εναέρια συντριβή · μάζεψε το όπλο μετά τη ρίψη':'Μικρό άλμα · χτύπημα στον αέρα · μάζεψε το όπλο μετά τη ρίψη';
+  for(const type of MATERIAL_TYPES)if($('material-'+type))$('material-'+type).textContent=String(character.materials[type]);
+  if($('nextWeaponName'))$('nextWeaponName').textContent=status.next?status.next.name:'ΤΟ ΣΦΥΡΙ ΤΗΣ ΚΑΤΑΙΓΙΔΑΣ ΕΙΝΑΙ ΔΙΚΟ ΣΟΥ';
+  if($('forgeRequirements'))$('forgeRequirements').textContent=status.next?'LV '+status.next.minLevel+' · '+MATERIAL_TYPES.filter(t=>status.next.cost[t]).map(t=>MATERIAL_LABELS[t]+' '+character.materials[t]+'/'+status.next.cost[t]).join(' · '):'Συνέχισε να ενισχύεις τα στατιστικά σου με ευρήματα.';
+  if($('forgeButton')){$('forgeButton').disabled=!status.canForge||busy;$('forgeButton').textContent=!status.next?'ΠΛΗΡΗΣ ΕΞΟΠΛΙΣΜΟΣ':!status.levelReady?'ΑΠΑΙΤΕΙΤΑΙ LEVEL '+status.next.minLevel:!status.materialsReady?'ΜΑΖΕΨΕ ΤΑ ΥΛΙΚΑ':busy?'ΠΕΡΙΜΕΝΕ ΝΑ ΟΛΟΚΛΗΡΩΘΕΙ Η ΚΙΝΗΣΗ':'ΚΑΤΑΣΚΕΥΑΣΕ';}
+  $('upgradesToggle')?.classList.toggle('forge-ready',!!status.canForge);
+  if(status.canForge&&!forgeReadyAnnounced&&phase==='playing'){forgeReadyAnnounced=true;toast('ΕΤΟΙΜΗ ΚΑΤΑΣΚΕΥΗ',status.next.name+' · Άνοιξε τις Αναβαθμίσεις.','#9de3cb');}
+}
+function forgeWeapon(){
+  if(phase!=='playing'||weaponBusy()||swing||spin)return;
+  const result=forgeNextWeapon(character);if(!result.ok)return;
+  forgeReadyAnnounced=false;applyStats();persistCharacter();renderUpgradePanel();
+  pulse(player.x,player.z,3,0xa3e8cc,.5);audio.play('pickup');toast('ΝΕΟΣ ΕΞΟΠΛΙΣΜΟΣ',characterStats.weaponName+' · '+(characterStats.canReturn?'Το όπλο επιστρέφει στο χέρι σου.':characterStats.canAirSmash?'Ξεκλείδωσες την εναέρια συντριβή.':'Το όπλο και ο χαρακτήρας σου δυνάμωσαν.'));
+}
 
 function spawnDrop(x,z,kind='gold'){
   if(drops.length>70){const gone=drops.shift();scene.remove(gone.mesh);disposeModelGeometry(gone.mesh);}
@@ -269,6 +360,7 @@ function toggleUpgradePanel(force){
 }
 function renderUpgradePanel(){
   syncUpgradePanel();
+  renderCharacterProgress();
   $('upgradeQueueText').textContent=upgradeQueue.length?upgradeQueue.length+' ΘΗΣΑΥΡ'+(upgradeQueue.length===1?'ΟΣ':'ΟΙ')+' · ΔΙΑΛΕΞΕ ΟΠΟΤΕ ΘΕΛΕΙΣ':upgradeFeedback||'ΒΡΕΣ ΘΗΣΑΥΡΟΥΣ ΚΑΙ ΕΠΙΣΤΡΕΨΕ ΕΔΩ';
   const choices=upgradeQueue[0]||[];
   const wrap=$('upgradeChoices');wrap.replaceChildren();
@@ -279,7 +371,7 @@ function renderUpgradePanel(){
       if(phase!=='playing'||!upgradePanelOpen||upgradeQueue[0]!==choices)return;
       levels[choice.id]=(levels[choice.id]||0)+1;relics++;upgradeQueue.shift();applyStats();
       if(choice.id==='vitality')player.hp=Math.min(player.maxHp,player.hp+40);
-      upgradeFeedback=choice.name+' · ΒΑΘΜΙΔΑ '+levels[choice.id];audio.play('pickup');renderUpgradePanel();
+      upgradeFeedback=choice.name+' · ΒΑΘΜΙΔΑ '+levels[choice.id];audio.play('pickup');persistCharacter();renderUpgradePanel();
       pulse(player.x,player.z,2.5,color.gold,.4);$('gameCanvas').focus({preventScroll:true});
     };
     wrap.appendChild(button);
@@ -380,11 +472,10 @@ function hitEnemy(e,damage,dir,strength,lift){
   e.vx=direction.x*impulse;e.vz=direction.z*impulse;
   e.vy=force>0?clamp((Number.isFinite(lift)?lift:0)*1.12+.15,2.2,4.1)/Math.sqrt(mass):Math.min(e.vy||0,0);
   e.hurtTimer=2.4;
-  if(e.state==='windup'||e.state==='lunge'||e.state==='shoot'){
-    e.state='walk';e.timer=Math.max(.6,duration+.1);e.navTimer=0;
-    if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
-  }
-  flashMaterials(e,1);
+  const interrupted=interruptEnemyAttack(e,duration+.18);if(interrupted)removeEffect(interrupted);
+  applyEnemyFlash(e.materials,1);
+  impactClouds?.emit(e.x,e.y,e.z,direction,Math.min(1.5,e.radius*1.6));
+  frightenNearby(e.x,e.z,.55+characterStats.weaponTier*.2,3.6+characterStats.weaponTier*.35,e);
   showHitPoints(e,damage);
   fragments.add(e.x,e.y+1,e.z,8,e.palette==='organic'?[0x8fbea2,0xb6d5b4,0x83ceaa]:[0xffc271,0xf9e5b1,0x7eacb9],4,.07);
   if(e.hp<=0)killEnemy(e);
@@ -404,6 +495,8 @@ function killEnemy(e){
     while(enemyFalls.length>fallLimit)disposeInstance(enemyFalls.shift());
   }else disposeInstance(e);
   gainXP(e.xp||1);
+  spawnDrop(e.x,e.z,e.palette==='metal'?'scrap':kills%3===0?'scrap':'wood');
+  if(e.miniBoss||level>=6&&kills%8===0)spawnDrop(e.x+.35,e.z+.25,'crystal');
   if(e.miniBoss){spawnDrop(e.x,e.z,'relic');spawnDrop(e.x+.5,e.z,'heart');}
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
   if(combo===10||combo===25)toast(combo+' ΣΤΗ ΣΕΙΡΑ','Συνέχισε την κατεδάφιση!');
@@ -426,7 +519,8 @@ function hitBoss(damage,dir,strength=5){
   if(!boss||boss.dead)return;
   boss.hp-=damage;boss.flash=.15;boss.stagger=.12;boss.vx=dir.x*strength*.13;boss.vz=dir.z*strength*.13;
   boss.impact={time:0,duration:.32,dirX:dir.x,dirZ:dir.z};
-  flashMaterials(boss,1);showHitPoints(boss,damage);fragments.add(boss.x,2,boss.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
+  if(boss.state!=='enter'){boss.state='recover';boss.timer=Math.max(.32,boss.timer*.35);if(boss.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}}
+  applyEnemyFlash(boss.materials,1);impactClouds?.emit(boss.x,boss.y+1.1,boss.z,dir,1.8);showHitPoints(boss,damage);fragments.add(boss.x,2,boss.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
   if(boss.hp<=0)defeatBoss();
 }
 function checkGoal(){if(phase==='playing'&&!bossSpawned&&destructionPercent(world.objects)>=GOAL)spawnBoss();}
@@ -490,7 +584,7 @@ function updateAim(){
   }else{aim.x=facing.x;aim.z=facing.z;}
   const releaseOffset=.55+(stats.range-.55-.52*stats.size+.365*stats.size-.21)/2;
   const start={x:player.x+aim.x*releaseOffset,y:player.y+1.2,z:player.z+aim.z*releaseOffset};
-  const end={x:start.x+aim.x*17,y:start.y,z:start.z+aim.z*17};
+  const end={x:start.x+aim.x*characterStats.throwRange,y:start.y,z:start.z+aim.z*characterStats.throwRange};
   const throwRadius=hero.userData.getThrowRadius?.()||1.4;
   const contact=firstHammerHit(start,end,[...segmentObjects(start,end,throwRadius),...enemies,...(boss&&!boss.dead?[boss]:[])],throwRadius);
   aimPreview={start,end:contact?{x:contact.x,y:start.y,z:contact.z}:end,contact};
@@ -509,18 +603,20 @@ function updateAim(){
 }
 function startLeap(){
   if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
-  if(phase!=='playing'||leap||leapCooldown>0||throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
+  if(phase!=='playing'||leap||leapCooldown>0||throwFlight&&!throwFlight.grounded||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
   cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;dashTime=0;swing=null;attackCooldown=0;landingRecovery=0;
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
   updateAim();const direction=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...(pointer.active?aim:facing)};facing={...direction};
   // A smash is a deliberate second input during this jump, never inherited
   // from a mouse button or spin finger already held before take-off.
-  leap={time:0,dir:direction,vy:22.5,slam:false,diving:false,startY:player.y};leapCooldown=2.2;
+  leap={time:0,dir:direction,vy:characterStats.jumpVelocity,slam:false,strike:false,diving:false,startY:player.y};leapCooldown=characterStats.jumpCooldown;
   fragments.add(player.x,.1,player.z,15,[0xc7b78e,0x7d9690],5,.12);pulse(player.x,player.z,2.2,0xb9dac4,.25);audio.play('dash');return true;
 }
 function armAirSmash(){
-  if(!leap||leap.slam)return;leap.slam=true;chargeHeld=false;chargeStarted=false;charge=0;audio.play('charge',.8);
+  if(!leap||leap.slam||throwFlight)return;
+  if(!characterStats.canAirSmash){leap.strike=true;audio.play('swing',.35);return;}
+  leap.slam=true;chargeHeld=false;chargeStarted=false;charge=0;audio.play('charge',.8);
 }
 const SUPPORT_EPSILON=1e-6;
 function supportHeight(x,z,ceiling=Infinity){
@@ -532,9 +628,12 @@ function supportHeight(x,z,ceiling=Infinity){
 }
 function landLeap(){
   if(!leap)return;
-  const slam=leap.slam;leap=null;player.vy=0;landingRecovery=slam?.14:.07;
-  const radius=slam?5.2+stats.quake*.7:2.35;
-  const damage=Math.round(stats.power*(slam?3.8:.9)*stancePower());
+  const slam=leap.slam,strike=leap.strike;leap=null;player.vy=0;landingRecovery=slam?.14:.07;
+  const radius=slam?5.2+stats.quake*.7:characterStats.canAirSmash?2.35:1.2;
+  const damage=throwFlight?0:Math.round(stats.power*(slam?3.8:characterStats.canAirSmash?.9:strike?.9:0)*stancePower());
+  if(!damage){pulse(player.x,player.z,.9,0xb9d9cb,.2).position.y=player.y+.08;return;}
+  impactClouds?.emit(player.x,player.y,player.z,{x:0,z:0},slam?2.2:1);
+  frightenNearby(player.x,player.z,slam?1.5:.65,radius+2);
   for(const e of [...enemies]){const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<=radius+e.radius)hitEnemy(e,Math.round(damage*lerp(1,.58,clamp(d/radius,0,1))),normalize(e.x-player.x,e.z-player.z),slam?13:5,slam?6:2.2);}
   for(const o of nearbyObjects(player.x,player.z,radius)){const point=nearestPoint(player.x,player.z,o),d=Math.hypot(point.x-player.x,point.z-player.z);if(d<=radius)hurtObject(o,Math.round(damage*lerp(1,.65,d/radius)),slam?1:.2);}
   if(boss&&!boss.dead&&Math.hypot(boss.x-player.x,boss.z-player.z)<=radius+boss.radius)hitBoss(damage,normalize(boss.x-player.x,boss.z-player.z),slam?15:5);
@@ -563,9 +662,10 @@ function releaseHammer(){
   mesh.position.copy(origin);mesh.quaternion.copy(quaternion);scene.add(mesh);
   const materials=new Set();mesh.traverse(n=>{if(n.material)for(const m of Array.isArray(n.material)?n.material:[n.material])materials.add(m);});
   throwFlight={mesh,materials:[...materials],x,y,z,dir:{...dir},quaternion,
-    spinAxis:new THREE.Vector3(dir.z,0,-dir.x),radius:mesh.userData.radius,speed:23,distance:0,
+    retrievable:!characterStats.canReturn,grounded:false,vy:1.8,groundY:0,maxRange:characterStats.throwRange,
+    spinAxis:new THREE.Vector3(dir.z,0,-dir.x),radius:mesh.userData.radius,speed:characterStats.canReturn?23:18,distance:0,
     legDistance:0,returning:false,life:0,returnTime:0,hits:new Set(),hitCount:0,bounces:0,chainTarget:null,
-    damage:Math.round(stats.power*2.2*stancePower()),trailTime:0};
+    damage:Math.round(stats.power*characterStats.throwDamageMultiplier*stancePower()),trailTime:0};
   hammerLightning=0;if(hammerAura)hammerAura.root.visible=false;
   hero.userData.setWeaponVisible(false);throwWindup=null;throwCooldown=1.25;audio.play('swing',1);
 }
@@ -576,7 +676,7 @@ function validChainTarget(h,target){
   return target&&!target.dead&&!h.hits.has(target)&&(target===boss||enemies.includes(target));
 }
 function nextThrowTarget(h){
-  if(h.hitCount>=THROW_MAX_HITS)return null;
+  if(!characterStats.canRicochet||h.hitCount>=Math.min(THROW_MAX_HITS,characterStats.maxChainHits))return null;
   let nearest=null,bestDistance=THROW_CHAIN_RADIUS;
   for(const target of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
     if(!validChainTarget(h,target))continue;
@@ -589,20 +689,37 @@ function nextThrowTarget(h){
   }
   return nearest;
 }
-function returnHammer(h){h.returning=true;h.chainTarget=null;h.returnTime=0;}
+function settleThrownWeapon(h){
+  h.returning=false;h.chainTarget=null;h.grounded=true;h.groundY=0;h.vy=0;
+  // Keep the pickup on a reachable surface, just outside any struck wall.
+  h.x=clamp(h.x,-BOUNDS+1,BOUNDS-1);h.z=clamp(h.z,-BOUNDS+1,BOUNDS-1);
+  for(const o of nearbyObjects(h.x,h.z,.2))if(o.h<=h.y&&circleOverlaps(h.x,h.z,.2,o))h.groundY=Math.max(h.groundY,o.h);
+  h.y=h.groundY+.24;h.mesh.position.set(h.x,h.y,h.z);h.mesh.rotation.set(Math.PI/2,0,Math.atan2(h.dir.x,h.dir.z));
+  pulse(h.x,h.z,1.1,0xf0d39b,.5).position.y=h.groundY+.06;
+}
+function returnHammer(h){if(h.retrievable){settleThrownWeapon(h);return;}h.returning=true;h.chainTarget=null;h.returnTime=0;}
 function catchHammer(h){
   if(throwFlight!==h)return;
   disposeInstance(h);throwFlight=null;hero.userData.setWeaponVisible(true);
-  hammerLightning=HAMMER_LIGHTNING_SECONDS;
+  hammerLightning=characterStats.canLightning?HAMMER_LIGHTNING_SECONDS:0;
   if(hammerAura)hammerAura.lastPattern=-1;
-  audio.play('pickup',.7);pulse(player.x,player.z,1.15,0x9cecff,.27).position.y=player.y+.06;
+  audio.play('pickup',.7);pulse(player.x,player.z,1.15,characterStats.canLightning?0x9cecff:0xd3bd91,.27).position.y=player.y+.06;
   const head=hero.userData.hammerHead.getWorldPosition(new THREE.Vector3());
-  fragments.add(head.x,head.y,head.z,12,[0xecffff,0x82e8ff,0x5ab9ff],3.2,.055);
+  if(characterStats.canLightning)fragments.add(head.x,head.y,head.z,12,[0xecffff,0x82e8ff,0x5ab9ff],3.2,.055);
 }
 function updateThrownHammer(dt){
   if(!throwFlight)return;const h=throwFlight;h.life+=dt;
+  if(h.grounded){
+    h.mesh.position.y=h.y+Math.sin(visualTime*4)*.035;
+    if(Math.hypot(player.x-h.x,player.z-h.z)<1.3&&Math.abs(player.y-h.groundY)<1){
+      const from={x:player.x,y:player.y+.65,z:player.z},to={x:h.x,y:h.groundY+.65,z:h.z};
+      const walls=segmentObjects(from,to,.08).filter(o=>o.h>Math.min(player.y,h.groundY)+.65);
+      if(!firstHammerHit(from,to,walls,.08))catchHammer(h);
+    }
+    return;
+  }
   const from=new THREE.Vector3(h.x,h.y,h.z);
-  if(!h.returning&&(h.life>3.2||h.distance>52))returnHammer(h);
+  if(!h.returning&&(h.life>3.2||h.distance>52)){returnHammer(h);if(h.grounded)return;}
   if(h.returning){
     h.returnTime+=dt;
     // The projectile is centered on its balance point, so home to the held
@@ -628,7 +745,8 @@ function updateThrownHammer(dt){
         const point=throwTargetPoint(h.chainTarget),delta=new THREE.Vector3(point.x-h.x,point.y-h.y,point.z-h.z).normalize();
         h.dir={x:delta.x,z:delta.z};dy=delta.y;h.spinAxis.set(delta.z,0,-delta.x).normalize();
       }
-      const to={x:h.x+h.dir.x*h.speed*dt,y:h.y+dy*h.speed*dt,z:h.z+h.dir.z*h.speed*dt};
+      if(h.retrievable)h.vy-=7.5*dt;
+      const to={x:h.x+h.dir.x*h.speed*dt,y:h.y+dy*h.speed*dt+(h.retrievable?h.vy*dt:0),z:h.z+h.dir.z*h.speed*dt};
       const targets=[...segmentObjects(from,to,h.radius),...enemies,...(boss&&!boss.dead?[boss]:[])].filter(target=>!h.hits.has(target));
       const hit=firstHammerHit(from,to,targets,h.radius);
       h.x=hit?hit.x:to.x;h.y=hit?hit.y:to.y;h.z=hit?hit.z:to.z;
@@ -646,10 +764,10 @@ function updateThrownHammer(dt){
         fragments.add(h.x,h.y,h.z,14,[0xffd992,0xecffff,0x83dfff],5,.09);
         pulse(h.x,h.z,1.5,h.hitCount>1?0x8ae8ff:color.gold,.23).position.y=Math.max(.08,h.y-.5);
         shake=Math.max(shake,.13);audio.play('hit',.7);checkGoal();
-      }else if((!h.chainTarget&&h.distance>=17)||h.legDistance>12&&h.chainTarget||Math.abs(h.x)>BOUNDS||Math.abs(h.z)>BOUNDS)returnHammer(h);
+      }else if((!h.chainTarget&&h.distance>=h.maxRange)||h.legDistance>12&&h.chainTarget||Math.abs(h.x)>BOUNDS||Math.abs(h.z)>BOUNDS||h.retrievable&&h.y<=.24)returnHammer(h);
       // Integrating rotation preserves the visible pose when a bounce changes
       // its spin axis, unlike rebuilding from total lifetime on each new axis.
-      h.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,dt*22));
+      if(!h.grounded)h.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,dt*22));
     }
   }
   h.mesh.position.set(h.x,h.y,h.z);
@@ -664,7 +782,7 @@ function beginWave(number=1){
   wave={number:round,total:plan.total,spawned:0,defeated:0,batch:0,timer:plan.firstDelay,state:'active',breakTimer:0};
 }
 function updateWaves(dt){
-  if(!wave||bossSpawned)return;
+  if(!wave||boss&&!boss.dead)return;
   const plan=wavePlan(wave.number);
   if(wave.state==='break'){
     wave.breakTimer-=dt;
@@ -721,9 +839,9 @@ function spawnEnemy(forcedType=null,position=null,{waveNumber=null}={}){
     if(!found)pos=spawnPosition(17,base.radius);
     if(!pos)return null;
   }
-  const mesh=['zombie','robot','brute'].includes(type)?makeEnemy(type):makeCityEnemy(type);scene.add(mesh);
+  const mesh=['zombie','robot','brute'].includes(type)?makeEnemy(type):makeCityEnemy(type);installEnemyHead(mesh,type);scene.add(mesh);
   const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,maxHp:base.hp,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(1.1,2.6),state:'walk',dead:false,telegraph:null,attackDir:{x:0,z:1},waveNumber,navTimer:0,navDirection:{x:0,z:1}};
-  mesh.position.set(e.x,0,e.z);enemies.push(e);spawnCounter++;
+  initEnemyReaction(e,spawnCounter);mesh.position.set(e.x,0,e.z);enemies.push(e);spawnCounter++;
   if(roundTime>5)fragments.add(e.x,.1,e.z,e.miniBoss?18:4,e.palette==='metal'?[0x537b77,0xffac69]:[0x537b77,0x81958a],e.miniBoss?5:2,.09);
   if(e.miniBoss){pulse(e.x,e.z,4.4,0xff866b,1);audio.play('boss');}
   return e;
@@ -735,7 +853,7 @@ function hurtPlayer(damage,dx=0,dz=0,blockable=true){
     fragments.add(player.x+facing.x,player.y+1.3,player.z+facing.z,7,[0xa5e5de,0xffd490],4,.07);audio.play('hit',.1);return;
   }
   const shieldFacing=spin?{x:Math.sin(hero.rotation.y),z:Math.cos(hero.rotation.y)}:facing;
-  if(blockable&&directionLength>.01&&stance<.05&&!throwWindup&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
+  if(blockable&&characterStats.hasShield&&directionLength>.01&&stance<.05&&!throwWindup&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
 
   player.hp=Math.max(0,player.hp-damage);player.invincible=.85;player.hurtAgo=0;player.vx=dx*4;player.vz=dz*4;
   redFlash=.55;shake=Math.max(shake,.19);combo=0;audio.play('hurt');floatText(player.x,2.5,player.z,'−'+Math.ceil(damage),'#ff8d80',21);
@@ -790,6 +908,7 @@ function updateEnemies(dt){
     if(u.leftArm){u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;u.leftArm.rotation.z=0;}
     if(u.rightArm){u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;u.rightArm.rotation.z=0;}
     u.animate?.(e,dt,visualTime);
+    if(!falling)poseEnemyReaction(e,visualTime);
     if(!i)return;
     const kick=smooth(i.time/.05),recover=1-smooth((i.time-.08)/(i.duration-.08));
     const recoil=kick*recover,fall=falling?smooth(e.deathTime/(e.deathDuration*.85)):0;
@@ -817,11 +936,19 @@ function updateEnemies(dt){
     if(e.dead)continue;
     e.facingYaw??=e.mesh.rotation.y;
     e.flash=Math.max(0,e.flash-dt);e.stagger=Math.max(0,e.stagger-dt);e.hurtTimer=Math.max(0,e.hurtTimer-dt);
-    flashMaterials(e,e.flash/.16);
+    applyEnemyFlash(e.materials,e.flash/.16);
     const dx=player.x-e.x,dz=player.z-e.z,dist=Math.hypot(dx,dz),dir=normalize(dx,dz);
     advanceBody(e);
     e.timer-=dt;
-    if(e.stagger<=0&&(e.y-e.supportY<.2||e.state==='lunge')){
+    e.sightTimer=(e.sightTimer||0)-dt;
+    if(e.sightTimer<=0){e.sightTimer=.13;e.seesPlayer=dist<13&&(world.hasLineOfSight?.(e.x,e.z,player.x,player.z,.16)??true);}
+    const afraid=updateEnemyThreat(e,player,dt,{airborne:!!leap,smashing:!!leap?.slam,canSee:e.seesPlayer,threatPower:.6+characterStats.weaponTier*.22});
+    if(afraid&&e.stagger<=0){
+      const telegraph=interruptEnemyAttack(e,.45);if(telegraph)removeEffect(telegraph);
+      const speed=e.speed*1.3,delta=moveCircle(e,e.fearMoveX*speed*dt,e.fearMoveZ*speed*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
+      e.walk+=Math.hypot(delta.x,delta.z)*6;e.facingYaw=Math.atan2(dir.x,dir.z);
+    }
+    if(!afraid&&e.stagger<=0&&(e.y-e.supportY<.2||e.state==='lunge')){
       if(e.state==='walk'){
         e.navTimer-=dt;
         if(e.navTimer<=0){e.navTimer=.18;e.navDirection=world.getChaseDirection?.(e.x,e.z,player.x,player.z,e.radius)||dir;}
@@ -860,7 +987,7 @@ function updateEnemies(dt){
     const e=enemyFalls[n];e.deathTime+=dt;
     if(e.deathTime>=e.deathDuration){disposeInstance(e);enemyFalls.splice(n,1);continue;}
     advanceBody(e);poseBody(e,true);
-    e.flash=Math.max(0,e.flash-dt);flashMaterials(e,e.flash/.16);
+    e.flash=Math.max(0,e.flash-dt);applyEnemyFlash(e.materials,e.flash/.16);
     const opacity=1-smooth((e.deathTime-(e.deathDuration-.18))/.18);
     if(opacity<1)for(const m of e.materials||[]){m.transparent=true;m.opacity=opacity;m.depthWrite=false;}
   }
@@ -889,8 +1016,8 @@ function spawnBoss(){
   bossSpawned=true;
   let pos=spawnPosition(13,1.65)||{x:0,z:22};
   // A wide, announced arrival gives the player space to react.
-  const mesh=makeBoss();scene.add(mesh);const hp=1650*(1+(sector-1)*.5)+(round-1)*120;
-  boss={mesh,x:pos.x,z:pos.z,y:-5,vx:0,vz:0,radius:1.65,height:5.7,hp,maxHp:hp,materials:prepareMaterials(mesh),flash:0,stagger:0,state:'enter',timer:2.6,attack:0,telegraph:null,enraged:false,dead:false,walk:0};
+  const mesh=makeBoss();installEnemyHead(mesh,'boss');scene.add(mesh);const hp=1650*(1+(sector-1)*.5)+(round-1)*120;
+  boss={mesh,type:'boss',x:pos.x,z:pos.z,y:-5,vx:0,vz:0,radius:1.65,height:5.7,hp,maxHp:hp,materials:prepareMaterials(mesh),flash:0,stagger:0,state:'enter',timer:2.6,attack:0,telegraph:null,enraged:false,dead:false,walk:0};initEnemyReaction(boss,spawnCounter+100);
   for(const o of world.objects)if(!o.dead&&Math.hypot(o.x-pos.x,o.z-pos.z)<5)hurtObject(o,999,1);
   boss.telegraph=makeTelegraph(pos.x,pos.z,5,0xff9852);$('bossHud').hidden=false;
   announce('Ο ΣΙΔΕΡΕΝΙΟΣ ΚΟΛΟΣΣΟΣ','Η πόλη ξύπνησε. Τώρα ρίξε τον γίγαντα.',4.2);audio.play('boss');
@@ -906,7 +1033,8 @@ function bossSlam(){
   for(const e of [...enemies])if(Math.hypot(e.x-b.x,e.z-b.z)<radius)hitEnemy(e,80,normalize(e.x-b.x,e.z-b.z),10,4);
 }
 function updateBoss(dt){
-  if(!boss||boss.dead)return;const b=boss;b.timer-=dt;b.stagger=Math.max(0,b.stagger-dt);b.flash=Math.max(0,b.flash-dt);flashMaterials(b,b.flash/.15);
+  if(!boss||boss.dead)return;const b=boss;b.timer-=dt;b.stagger=Math.max(0,b.stagger-dt);b.flash=Math.max(0,b.flash-dt);applyEnemyFlash(b.materials,b.flash/.15);
+  updateEnemyThreat(b,player,dt,{airborne:!!leap,smashing:!!leap?.slam,canSee:world.hasLineOfSight?.(b.x,b.z,player.x,player.z,.16)??true,threatPower:1});
   moveCircle(b,b.vx*dt,b.vz*dt,nearbyObjects(b.x,b.z,b.radius+1),b.radius);b.vx*=Math.exp(-7*dt);b.vz*=Math.exp(-7*dt);
   const dir=normalize(player.x-b.x,player.z-b.z),dist=Math.hypot(player.x-b.x,player.z-b.z);
   if(!b.enraged&&b.hp<b.maxHp*.45){b.enraged=true;announce('ΥΠΕΡΦΟΡΤΩΣΗ','Ο Κολοσσός εξαγριώθηκε. Πρόσεχε τις κόκκινες ζώνες!',3);audio.play('boss');}
@@ -942,27 +1070,28 @@ function updateBoss(dt){
   b.mesh.position.set(b.x,b.y,b.z);const u=b.mesh.userData;
   if(u.leftLeg)u.leftLeg.rotation.x=b.state==='walk'?Math.sin(b.walk)*.25:0;
   if(u.rightLeg)u.rightLeg.rotation.x=b.state==='walk'?-Math.sin(b.walk)*.25:0;
-  if(u.leftArm)u.leftArm.rotation.x=b.state==='slamWindup'?-2.4:b.state==='recover'?.65:Math.sin(b.walk)*.15;
-  if(u.rightArm)u.rightArm.rotation.x=b.state==='slamWindup'?-2.4:b.state==='recover'?.65:-Math.sin(b.walk)*.15;
+  if(u.leftArm){u.leftArm.rotation.x=b.state==='slamWindup'?-2.4:b.state==='recover'?.65:Math.sin(b.walk)*.15;u.leftArm.rotation.z=0;}
+  if(u.rightArm){u.rightArm.rotation.x=b.state==='slamWindup'?-2.4:b.state==='recover'?.65:-Math.sin(b.walk)*.15;u.rightArm.rotation.z=0;}
   if(u.body)u.body.rotation.x=b.state==='charge'?.25:b.stagger>0?-.1:0;
+  b.mesh.rotation.x=0;b.mesh.rotation.z=0;poseEnemyReaction(b,visualTime);
   if(b.impact){
     const hit=b.impact;hit.time+=dt;
     const envelope=Math.sin(Math.min(1,hit.time/.055)*Math.PI/2)*(1-smooth(hit.time/hit.duration));
     const yaw=b.mesh.rotation.y,lateral=hit.dirX*Math.cos(yaw)-hit.dirZ*Math.sin(yaw),forward=hit.dirX*Math.sin(yaw)+hit.dirZ*Math.cos(yaw);
-    b.mesh.rotation.x=forward*envelope*.075;b.mesh.rotation.z=-lateral*envelope*.075;
+    b.mesh.rotation.x+=forward*envelope*.075;b.mesh.rotation.z-=lateral*envelope*.075;
     if(u.body)u.body.rotation.x+=forward*envelope*.12;
     if(hit.time>=hit.duration)b.impact=null;
-  }else{b.mesh.rotation.x=0;b.mesh.rotation.z=0;}
+  }
 }
 function defeatBoss(){
   if(!boss||boss.dead)return;boss.dead=true;if(boss.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}
   const x=boss.x,z=boss.z;fragments.add(x,3,z,100,[0xffc675,0xb8c7c6,0x566e7a,0xff874a],13,.45,true);pulse(x,z,10,0xffd7a0,1.2);
-  disposeInstance(boss);score+=2500;shake=.7;audio.play('victory');endGame(true);
+  disposeInstance(boss);score+=2500;gainXP(60);for(let n=0;n<4;n++)spawnDrop(x+(n-1.5)*.4,z,'crystal');shake=.7;audio.play('victory');endGame(true);
 }
 function endGame(won){
-  setPhase(won?'victory':'dead');best=Math.max(best,score);save('ironfall.best',best);
+  setPhase(won?'victory':'dead');if(!testRun){best=Math.max(best,score);save('ironfall.best',best);}persistCharacter();
   $('endTitle').textContent=won?'Ο ΚΟΛΟΣΣΟΣ ΕΠΕΣΕ.':'ΤΟ ΣΦΥΡΙ ΣΙΩΠΗΣΕ.';
-  $('endText').textContent=won?'Η ορδή δεν τελειώνει. Πάρε τις αναβαθμίσεις σου στον επόμενο, δυσκολότερο τομέα.':'Η πόλη παραμένει όρθια. Πάρε μια ανάσα και ξαναχτύπα.';
+  $('endText').textContent=won?'Η ορδή δεν τελειώνει. Συνέχισε στην ίδια πόλη με τον εξοπλισμό και την εξέλιξή σου.':'Η εξέλιξη και ο εξοπλισμός σου σε περιμένουν. Πάρε μια ανάσα και ξαναχτύπα.';
   $('endStats').innerHTML='<div><strong>'+kills+'</strong><span>ΕΧΘΡΟΙ</span></div><div><strong>'+Math.floor(destructionPercent(world.objects))+'%</strong><span>ΚΑΤΑΣΤΡΟΦΗ</span></div><div><strong>'+relics+'</strong><span>ΚΕΙΜΗΛΙΑ</span></div><div><strong>'+score.toLocaleString('el-GR')+'</strong><span>ΣΚΟΡ · ΡΕΚΟΡ '+best.toLocaleString('el-GR')+'</span></div>';
   $('continueButton').hidden=!won;$('retryButton').textContent=won?'ΝΕΑ ΔΙΑΔΡΟΜΗ':'ΞΑΝΑΠΑΙΞΕ';
   if(!won)audio.play('death');
@@ -1003,7 +1132,8 @@ function updatePlayer(dt){
     // Roofs below the previous feet position are landing surfaces; taller
     // objects are side walls. One shared threshold leaves no gap between them.
     const obstacles=nearbyObjects(player.x,player.z,player.radius+1).filter(o=>o.h>oldY+SUPPORT_EPSILON);
-    moveCircle(player,l.dir.x*(l.diving?9:8.2)*dt,l.dir.z*(l.diving?9:8.2)*dt,obstacles,player.radius);
+    const leapSpeed=characterStats.canAirSmash?(l.diving?9:8.2):5.8;
+    moveCircle(player,l.dir.x*leapSpeed*dt,l.dir.z*leapSpeed*dt,obstacles,player.radius);
     const floor=supportHeight(player.x,player.z,oldY);
     if(l.vy<0&&player.y<=floor){player.y=floor;landLeap();}
   }else{
@@ -1185,6 +1315,7 @@ function updateDrops(dt){
       scene.remove(d.mesh);disposeModelGeometry(d.mesh);drops.splice(i,1);
       if(d.kind==='relic'){openUpgrade();}
       else if(d.kind==='heart'){const heal=Math.min(28,player.maxHp-player.hp);player.hp+=heal;floatText(player.x,2.2,player.z,'+'+Math.round(heal),'#a3e3af',20);audio.play('pickup',.2);}
+      else if(MATERIAL_TYPES.includes(d.kind)){collectCharacterMaterial(character,d.kind,d.amount||1);floatText(player.x,2.15,player.z,'+'+(d.amount||1)+' '+MATERIAL_LABELS[d.kind],d.kind==='wood'?'#edc794':d.kind==='scrap'?'#c9dce6':'#9ceaea',13);audio.play('pickup',.18);renderCharacterProgress();persistCharacter();}
       else{score+=30;gainXP(2);audio.play('pickup',.15);fragments.add(player.x,.8,player.z,5,[0xffc87c,0xffebc4],3,.05);}
     }else if(d.life<=0){scene.remove(d.mesh);disposeModelGeometry(d.mesh);drops.splice(i,1);}
   }
@@ -1207,6 +1338,7 @@ function updateObjects(dt){
   }
 }
 function updateEffects(dt){
+  impactClouds?.update(dt);
   fragments.update(dt);hpEchoes=hpEchoes.filter(e=>{e.life-=dt;return e.life>0;});
   for(let i=rings.length-1;i>=0;i--){const r=rings[i];r.life-=dt;const t=1-r.life/r.max;r.mesh.scale.setScalar(.3+t*r.radius);r.mesh.material.opacity=Math.max(0,(1-t)*.7);if(r.life<=0){removeEffect(r.mesh);rings.splice(i,1);}}
   for(let i=arcs.length-1;i>=0;i--){const a=arcs[i];a.life-=dt;a.mesh.material.opacity=Math.max(0,a.life/a.max*.75);if(a.life<=0){removeEffect(a.mesh);arcs.splice(i,1);}}
@@ -1221,39 +1353,41 @@ function updateGame(dt){
   updateBoss(dt);if(phase!=='playing')return;
   updateDrops(dt);updateObjects(dt);checkGoal();
   updateWaves(dt);
+  checkpointTimer+=dt;if(checkpointTimer>=8){checkpointTimer=0;persistCharacter();}
   const district=world.regionAt?.(player.x,player.z);
   if(district&&currentDistrict!==district.id){currentDistrict=district.id;$('districtName').textContent=district.name;if(roundTime>6)toast(district.name,district.weather==='snow'?'Ο άνεμος φέρνει χιόνι.':district.weather==='ash'?'Πρόσεχε τη λάβα και τις φωτιές.':'Η βροχή δεν σταματά την ορδή.','#82c7bb');}
 }
 function updateHUD(force=false){
   if(!world)return;
+  renderCharacterProgress();
   $('healthFill').style.width=(player.hp/player.maxHp*100)+'%';$('healthValue').textContent=Math.ceil(player.hp)+' / '+player.maxHp;
   $('healthFill').style.background=player.hp<player.maxHp*.3?'#ef7766':'';
   const percent=destructionPercent(world.objects);$('goalValue').textContent=Math.floor(percent)+'%';$('goalFill').style.width=Math.min(100,percent/GOAL*100)+'%';
-  $('objectiveText').textContent=bossSpawned?'Ο στόχος πέτυχε. Νίκησε τον Κολοσσό!':'Φτάσε στο 60% για να καλέσεις τον Κολοσσό.';
+  $('objectiveText').textContent=bossSpawned?boss&&!boss.dead?'Ο στόχος πέτυχε. Νίκησε τον Κολοσσό!':'Ο Κολοσσός έπεσε. Συνέχισε την εξέλιξή σου.':'Φτάσε στο 60% για να καλέσεις τον Κολοσσό.';
   $('sectorValue').textContent=String(sector).padStart(2,'0');$('killsValue').textContent=kills;$('relicValue').textContent=relics;$('roundValue').textContent=String(round).padStart(2,'0');
-  $('waveEnemiesValue').textContent=bossSpawned?String(enemies.length):String(Math.max(0,(wave?.total||0)-(wave?.defeated||0)))+' / '+(wave?.total||10);
-  $('waveStatus').textContent=bossSpawned?'ΤΕΛΙΚΟΣ BOSS':wave?.state==='break'?'ΚΥΜΑ ΚΑΘΑΡΟ · ΕΠΟΜΕΝΟ ΣΕ '+Math.ceil(wave.breakTimer)+'s':enemies.filter(e=>e.waveNumber===wave?.number).length+' ΕΝΕΡΓΟΙ · '+Math.max(0,(wave?.total||0)-(wave?.spawned||0))+' ΕΡΧΟΝΤΑΙ';
+  $('waveEnemiesValue').textContent=boss&&!boss.dead?String(enemies.length):String(Math.max(0,(wave?.total||0)-(wave?.defeated||0)))+' / '+(wave?.total||10);
+  $('waveStatus').textContent=boss&&!boss.dead?'ΤΕΛΙΚΟΣ BOSS':wave?.state==='break'?'ΚΥΜΑ ΚΑΘΑΡΟ · ΕΠΟΜΕΝΟ ΣΕ '+Math.ceil(wave.breakTimer)+'s':enemies.filter(e=>e.waveNumber===wave?.number).length+' ΕΝΕΡΓΟΙ · '+Math.max(0,(wave?.total||0)-(wave?.spawned||0))+' ΕΡΧΟΝΤΑΙ';
   $('timeValue').textContent=String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
   $('chargeFill').style.width=spin?'100%':chargeHeld?Math.min(100,holdElapsed/SPIN_HOLD_SECONDS*100)+'%':'0%';
   $('chargeWrap').classList.toggle('spinning',!!spin);
   $('chargeText').textContent=spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ: ΠΕΡΙΣΤΡΟΦΗ':touchLayout?'ΚΡΑΤΑ ΠΕΡΙΣΤΡΟΦΗ':'ΚΡΑΤΑ ΑΡ. ΚΛΙΚ: 360°';
   document.querySelector('[data-key="ShiftLeft"]')?.classList.toggle('cooldown',dashCooldown>0);
   if(boss){$('bossFill').style.width=Math.max(0,boss.hp/boss.maxHp*100)+'%';$('bossValue').textContent=(boss.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(boss.hp))+' / '+Math.ceil(boss.maxHp)+' HP';}
-  const stanceLabel=Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':'ΣΦΥΡΙ + ΑΣΠΙΔΑ';
+  const stanceLabel=Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':characterStats.hasShield?'ΣΦΥΡΙ + ΑΣΠΙΔΑ':'ΛΑΒΗ ΜΕ ΕΝΑ ΧΕΡΙ';
   for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent=stanceLabel;
   for(const id of ['stanceButton','mobileStanceButton'])$(id)?.setAttribute('aria-pressed',String(stanceTarget===1));
   if($('guardValue'))$('guardValue').textContent=guarding?'ΠΡΟΣΤΑΣΙΑ ΜΠΡΟΣΤΑ':throwFlight?'ΧΩΡΙΣ ΣΦΥΡΙ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
-  if($('leapValue'))$('leapValue').textContent=leap?(leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΠΑΤΑ ΣΦΥΡΙΑ':'ΑΡ. ΚΛΙΚ: ΣΥΝΤΡΙΒΗ'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
-  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.channeling?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
+  if($('leapValue'))$('leapValue').textContent=leap?(leap.slam?'ΣΥΝΤΡΙΒΗ!':characterStats.canAirSmash?touchLayout?'ΠΑΤΑ ΣΦΥΡΙΑ':'ΑΡ. ΚΛΙΚ: ΣΥΝΤΡΙΒΗ':'ΜΙΚΡΟ ΑΛΜΑ'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
+  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.channeling?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.grounded?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount&&characterStats.canRicochet?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   const attackButton=$('attackButton');
   attackButton?.classList.toggle('active',!!swing||!!leap?.slam);
-  attackButton?.classList.toggle('air-smash-ready',!!leap&&!leap.slam);
+  attackButton?.classList.toggle('air-smash-ready',!!leap&&!leap.slam&&characterStats.canAirSmash);
   attackButton?.classList.toggle('air-smash-armed',!!leap?.slam);
   $('attackIcon')?.setAttribute('href',leap?'#a-slam':'#a-swing');
-  if($('attackName'))$('attackName').textContent=leap?(leap.slam?'ΟΠΛΙΣΜΕΝΗ':'ΣΥΝΤΡΙΒΗ'):'ΣΦΥΡΙΑ';
-  if($('attackValue'))$('attackValue').textContent=leap?(leap.slam?'ΕΤΟΙΜΗ!':'ΠΑΤΑ ΤΩΡΑ'):'ΓΡΗΓΟΡΟ ΧΤΥΠΗΜΑ';
-  const attackLabel=leap?(leap.slam?'Η μεγάλη συντριβή είναι οπλισμένη για την προσγείωση.':'Πάτησε τώρα, στον αέρα, για μεγάλη συντριβή στην προσγείωση.'):touchLayout?attackButton?.dataset.touchLabel:attackButton?.dataset.desktopLabel;
+  if($('attackName'))$('attackName').textContent=leap?(leap.slam?'ΟΠΛΙΣΜΕΝΗ':characterStats.canAirSmash?'ΣΥΝΤΡΙΒΗ':'ΧΤΥΠΗΜΑ ΑΕΡΑ'):characterStats.weaponTier<2?'ΧΤΥΠΗΜΑ':'ΣΦΥΡΙΑ';
+  if($('attackValue'))$('attackValue').textContent=throwFlight?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':leap?(leap.slam||leap.strike?'ΕΤΟΙΜΗ!':'ΠΑΤΑ ΤΩΡΑ'):'ΓΡΗΓΟΡΟ ΧΤΥΠΗΜΑ';
+  const attackLabel=leap?(leap.slam?'Η μεγάλη συντριβή είναι οπλισμένη για την προσγείωση.':characterStats.canAirSmash?'Πάτησε τώρα, στον αέρα, για μεγάλη συντριβή στην προσγείωση.':'Πάτησε για μικρό χτύπημα στην προσγείωση. Η μεγάλη συντριβή ξεκλειδώνει με το σιδερένιο σφυρί.'):'Χτύπημα με '+characterStats.weaponName.toLowerCase()+'. Κράτα για περιστροφή.';
   if(attackLabel){attackButton.setAttribute('aria-label',attackLabel);attackButton.setAttribute('title',attackLabel);}
   $('chargeButton')?.classList.toggle('active',chargeHeld||!!spin);
   $('guardButton')?.classList.toggle('active',guardHeld||guarding);
@@ -1323,6 +1457,7 @@ function drawFX(){
   if(redFlash>0){const grad=c.createRadialGradient(screenW/2,screenH/2,screenH*.22,screenW/2,screenH/2,screenW*.66);grad.addColorStop(0,'rgba(201,62,42,0)');grad.addColorStop(1,'rgba(201,62,42,'+(redFlash*.5)+')');c.fillStyle=grad;c.fillRect(0,0,screenW,screenH);}
   if(phase==='menu')return;
   drawAim();
+  if(throwFlight?.grounded){const p=screenPoint(throwFlight.x,throwFlight.groundY+1.2,throwFlight.z);if(p.inside){c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#10201e';c.strokeText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);c.fillStyle='#ffe2a3';c.fillText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);}}
   for(const e of enemies)if(e.hurtTimer>0||focusedTarget===e||(e.miniBoss&&Math.hypot(e.x-player.x,e.z-player.z)<24))drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,e.miniBoss?'#ff9c80':e.palette==='metal'?'#ffc18a':'#a6d6ae',Math.min(1,e.hurtTimer||1),e.miniBoss?e.name:'');
   const objectNames={townhouse:'ΚΑΤΟΙΚΙΑ',apartment:'ΠΟΛΥΚΑΤΟΙΚΙΑ',shop:'ΚΑΤΑΣΤΗΜΑ',office:'ΓΡΑΦΕΙΑ',townhall:'ΔΗΜΑΡΧΕΙΟ',police:'ΑΣΤΥΝΟΜΙΚΟ ΤΜΗΜΑ',hospital:'ΝΟΣΟΚΟΜΕΙΟ',skyscraper:'ΟΥΡΑΝΟΞΥΣΤΗΣ',construction:'ΕΡΓΟΤΑΞΙΟ',warehouse:'ΑΠΟΘΗΚΗ',policecar:'ΠΕΡΙΠΟΛΙΚΟ',ambulance:'ΑΣΘΕΝΟΦΟΡΟ',car:'ΑΥΤΟΚΙΝΗΤΟ',wall:'ΤΟΙΧΟΣ',tree:'ΔΕΝΤΡΟ',barrel:'ΒΑΡΕΛΙ',crate:'ΚΙΒΩΤΙΟ',lamp:'ΦΑΝΑΡΙ',bench:'ΠΑΓΚΑΚΙ'};
   for(const o of world.objects)if(!o.dead&&(o.hurtTimer>0||aimPreview?.contact?.target===o)){
@@ -1464,9 +1599,15 @@ function cancelTouchThrow(){
   touchThrowAim=null;touchThrowQueued=null;pointer.active=false;$('throwButton')?.classList.remove('aiming','queued','channeling');
 }
 function initInput(){
-  $('startButton').onclick=startGame;$('retryButton').onclick=startGame;$('restartButton').onclick=startGame;
+  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?Number($('startingLevel').value):1,{test:testRun,resume:!testRun});
+  $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};
+  $('resumeCharacterButton').onclick=()=>startGame(1,{resume:true});
+  $('startingLevel').replaceChildren();for(let n=1;n<=MAX_CHARACTER_LEVEL;n++){const option=document.createElement('option');option.value=String(n);option.textContent=String(n);$('startingLevel').appendChild(option);}$('startingLevel').value='10';
+  const preview=()=>{const s=getCharacterStats(createCharacterProgression(Number($('startingLevel').value)));$('startingLoadout').textContent=s.weaponName+' · '+(s.canLightning?'Αναπηδήσεις και κεραυνοί':s.canReturn?'Αυτόματη επιστροφή':s.canAirSmash?'Εναέρια συντριβή':'Μικρό άλμα, ρίψη και συλλογή');};
+  $('startingLevel').onchange=preview;preview();$('testStartButton').onclick=()=>startGame(Number($('startingLevel').value),{test:true});$('forgeButton').onclick=forgeWeapon;
+  window.addEventListener('pagehide',persistCharacter);
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
-  $('continueButton').onclick=()=>{round++;sector++;resetWorld(true);setPhase('playing');audio.play('start');announce('ΤΟΜΕΑΣ '+String(sector).padStart(2,'0'),'Η ορδή δυναμώνει. Οι αναβαθμίσεις σου παραμένουν.',3.2);};
+  $('continueButton').onclick=()=>{boss=null;$('bossHud').hidden=true;beginWave(round+1);setPhase('playing');audio.play('start');announce('Η ΠΟΛΗ ΑΝΤΕΧΕΙ ΑΚΟΜΑ','Συνέχισε να εξελίσσεσαι. Η επόμενη ορδή πλησιάζει.',3.2);};
   $('soundButton').onclick=toggleSound;if($('muteButton'))$('muteButton').onclick=toggleSound;
   $('upgradesToggle').onclick=()=>toggleUpgradePanel();$('upgradeCloseButton').onclick=()=>toggleUpgradePanel(false);
   // This lives inside a scrolling drawer, so a completed tap (not the first
@@ -1625,20 +1766,20 @@ async function init(){
   fillLight=new THREE.HemisphereLight(0xb9dcd9,0x536650,1.45);scene.add(fillLight);
   sun=new THREE.DirectionalLight(0xffdfb1,2.25);sun.position.set(-15,28,8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-23;sun.shadow.camera.right=23;sun.shadow.camera.top=23;sun.shadow.camera.bottom=-23;sun.shadow.camera.far=75;sun.shadow.normalBias=.04;sun.shadow.bias=-.0002;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight(0x80c7dd,1.15);rim.position.set(8,14,-18);scene.add(rim);
-  hero=makeWarrior();scene.add(hero);player.materials=prepareMaterials(hero);
-  hammerMaterials=prepareMaterials(hero.userData.hammerPivot);player.materials.push(...hammerMaterials);hammerAura=createHammerAura();
+  hero=makeWarrior();scene.add(hero);player.materials=hero.userData.getEquipmentMaterials?.()||prepareMaterials(hero);
+  const heldMaterials=new Set();hero.userData.hammerPivot.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])heldMaterials.add(m);});hammerMaterials=[...heldMaterials];hammerAura=createHammerAura();
   chargeRing=new THREE.Mesh(new THREE.RingGeometry(.93,1,48),new THREE.MeshBasicMaterial({color:color.gold,side:THREE.DoubleSide,transparent:true,opacity:.5,depthWrite:false}));chargeRing.rotation.x=-Math.PI/2;chargeRing.visible=false;scene.add(chargeRing);
   const arrowGeo=new THREE.BufferGeometry();arrowGeo.setAttribute('position',new THREE.Float32BufferAttribute([-.19,0,-.1,.19,0,-.1,0,0,.25],3));
   directionMarker=new THREE.Mesh(arrowGeo,new THREE.MeshBasicMaterial({color:0xf6cf8a,side:THREE.DoubleSide,transparent:true,opacity:.64,depthWrite:false}));scene.add(directionMarker);
   guardRing=new THREE.Mesh(new THREE.RingGeometry(1.68,1.72,64),new THREE.MeshBasicMaterial({color:0x9ee4db,side:THREE.DoubleSide,transparent:true,opacity:.15,depthWrite:false}));guardRing.visible=false;scene.add(guardRing);
   landingMarker=makeTelegraph(0,0,1,0xffc371);landingMarker.visible=false;
   groundShadow=new THREE.Mesh(new THREE.CircleGeometry(.65,24),new THREE.MeshBasicMaterial({color:0x081719,transparent:true,opacity:.32,depthWrite:false}));groundShadow.rotation.x=-Math.PI/2;scene.add(groundShadow);
-  fragments=new Fragments();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
+  fragments=new Fragments();impactClouds=new ImpactClouds();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
   initInput();resize();setPhase('menu');
   $('gameCanvas').setAttribute('tabindex','-1');
   // Shader compilation is local; no network assets are loaded during play.
   if(renderer.compileAsync)await renderer.compileAsync(scene,camera);
-  $('startButton').disabled=false;$('loadingStatus').textContent='Ο κόσμος είναι έτοιμος. Το σφυρί είναι δικό σου.';
+  $('startButton').disabled=false;$('testStartButton').disabled=false;updateSavedCharacter();$('loadingStatus').textContent='Από κούτσουρο σε σφυρί καταιγίδας. Η πόλη είναι έτοιμη.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');
   requestAnimationFrame(frame);
 }
