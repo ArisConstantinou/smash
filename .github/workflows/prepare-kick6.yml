@@ -1,0 +1,88 @@
+name: Prepare and validate IRONFALL kick6
+on:
+  push:
+    branches:
+      - release/kick6-prepare-20261106-v1
+permissions:
+  contents: write
+concurrency:
+  group: prepare-kick6-20261106
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify payload and apply exact release on its base
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const zlib = require('node:zlib');
+          const crypto = require('node:crypto');
+          const chunks = [0,1,2].map(i => fs.readFileSync(`.publish/kick6.${i}.br`));
+          const patch = zlib.brotliDecompressSync(Buffer.concat(chunks));
+          const sha = crypto.createHash('sha256').update(patch).digest('hex');
+          if (sha !== '68d5ab3ef75c68937ae78e63bfacb48c30ab46afc3a6efa0e039799c4173b620') throw new Error('Patch checksum mismatch');
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/kick6.patch`, patch);
+          console.log(`Verified patch: ${patch.length} bytes, SHA256 ${sha}`);
+          NODE
+          test "$(git rev-parse HEAD^)" = e7b64e42854eea335738057d28dbbef6eb8250ee
+          git checkout --detach e7b64e42854eea335738057d28dbbef6eb8250ee
+          test "$(git rev-parse HEAD^{tree})" = 77f3737d1a9b828643e9484bba1ae2242eea9474
+          git apply --check --unidiff-zero "$RUNNER_TEMP/kick6.patch"
+          git apply --index --unidiff-zero "$RUNNER_TEMP/kick6.patch"
+          git diff --cached --check
+          test "$(git write-tree)" = fd2533761e0d09c2f07b2b515e05dfc723e8035f
+          git diff --cached --stat
+      - name: Run all 315 regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in audio.js core.js game.js hammer-motion.js kick-physics.js models.js world.js; do node --check "$f"; done
+          if ! npm test > "$RUNNER_TEMP/kick6-tests.log" 2>&1; then cat "$RUNNER_TEMP/kick6-tests.log"; exit 1; fi
+          tail -14 "$RUNNER_TEMP/kick6-tests.log"
+          grep -Eq '^# tests 315$' "$RUNNER_TEMP/kick6-tests.log"
+          grep -Eq '^# fail 0$' "$RUNNER_TEMP/kick6-tests.log"
+          git diff --exit-code
+          test "$(git write-tree)" = fd2533761e0d09c2f07b2b515e05dfc723e8035f
+      - name: Create verified clean commit without moving main
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { execFileSync } = require('node:child_process');
+            const base = 'e7b64e42854eea335738057d28dbbef6eb8250ee';
+            const baseTree = '77f3737d1a9b828643e9484bba1ae2242eea9474';
+            const expectedTree = 'fd2533761e0d09c2f07b2b515e05dfc723e8035f';
+            const { owner, repo } = context.repo;
+            const head = await github.rest.git.getRef({owner, repo, ref: 'heads/main'});
+            if (head.data.object.sha !== base) throw new Error('main changed; stop for reconciliation');
+            const git = (...args) => execFileSync('git', args, {encoding:'utf8'}).trim();
+            if (git('write-tree') !== expectedTree) throw new Error('Local tree differs from validated release');
+            const files = execFileSync('git', ['diff','--cached','--name-only','-z'], {encoding:'utf8'}).split('\0').filter(Boolean);
+            if (files.length !== 16 || files.some(p => p.startsWith('.github/') || p.startsWith('.publish/'))) throw new Error('Unexpected release file set');
+            const entries = [];
+            for (const path of files) {
+              const content = fs.readFileSync(path).toString('base64');
+              const blob = await github.rest.git.createBlob({owner, repo, content, encoding:'base64'});
+              if (blob.data.sha !== git('rev-parse', `:${path}`)) throw new Error(`Blob mismatch: ${path}`);
+              const mode = git('ls-files','--stage','--',path).split(' ')[0];
+              entries.push({path, mode, type:'blob', sha:blob.data.sha});
+              core.info(`Verified ${path}: ${blob.data.sha}`);
+            }
+            const tree = await github.rest.git.createTree({owner, repo, base_tree:baseTree, tree:entries});
+            if (tree.data.sha !== expectedTree) throw new Error('Remote tree checksum mismatch');
+            const message = 'Add mass-aware kicks, correct arm grip and vary melee combat\n\nFix mirrored hands, wrist alignment and elbow bend. Add E/touch kick with\ncontact feedback, mass-based enemy knockback, wall damage and stuns, and\nupgradable car movement with synchronized world colliders. Show enemy\nlevels and level-colored health bars. Enable small aerial smash at every\nlevel, jump/dash combinations, varied six-stroke attacks for each grip,\nand continuous spin transitions. Preserve illustrated desktop actions\nand compact touch icons.\n\nApply the prepared kick6 patch exactly: all 16 files and the full tree\nmatch the locally validated build. All 315 regression tests passed in\nGitHub Actions before commit creation. Temporary payload and preparation\nworkflow are excluded. Device gameplay and audio feel are not verified.';
+            const commit = await github.rest.git.createCommit({owner, repo, message, tree:tree.data.sha, parents:[base]});
+            core.info(`PREPARED_COMMIT=${commit.data.sha}`);
+            core.info(`VERIFIED_TREE=${tree.data.sha}`);
+            await core.summary.addHeading('IRONFALL kick6 ready').addRaw(`315 tests passed.\n\nCommit: ${commit.data.sha}\n\nTree: ${tree.data.sha}\n\nNo branch was moved by this job.\n`).write();
