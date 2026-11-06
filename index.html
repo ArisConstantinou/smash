@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261106-feel1">
+  <link rel="stylesheet" href="./style.css?v=20261106-audio2">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -102,6 +102,10 @@
         <svg class="button-arrow"><use href="#i-arrow"/></svg>
       </button>
       <button id="resumeCharacterButton" class="resume-character" type="button" hidden disabled>ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ</button>
+      <div class="menu-audio-check">
+        <button id="menuAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
+        <span id="menuAudioStatus" role="status" aria-live="polite">Χτυπήματα · μέταλλο · φωνές</span>
+      </div>
       <details class="character-testing">
         <summary>ΔΟΚΙΜΗ ΧΑΡΑΚΤΗΡΑ <span>Διάλεξε αρχικό επίπεδο</span></summary>
         <div class="test-level-row"><label for="startingLevel">ΕΠΙΠΕΔΟ</label><select id="startingLevel" aria-describedby="startingLoadout"><option value="10">10</option></select><button id="testStartButton" type="button" disabled>ΔΟΚΙΜΗ</button></div>
@@ -329,7 +333,13 @@
       <h2>ΡΥΘΜΙΣΕΙΣ<span>.</span></h2>
       <label class="setting-row" for="qualitySelect"><span><b>Γραφικά</b><small>Ποιότητα εικόνας & εφέ</small></span><select id="qualitySelect"><option value="high" selected>Υψηλά</option><option value="medium">Μεσαία</option><option value="low">Χαμηλά</option></select></label>
       <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
-      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="60" aria-label="Ένταση ήχου"></label>
+      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
+      <div class="audio-check">
+        <button id="testAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
+        <p id="audioStatus" role="status" aria-live="polite">Πάτησε για χτυπήματα σε ξύλο, μέταλλο και εχθρό.</p>
+        <small>Ο ήχος ξεκινά με πάτημα. Έλεγξε και την ένταση πολυμέσων του κινητού.</small>
+        <a href="./assets/audio/CREDITS.md" target="_blank" rel="noopener">Συντελεστές ήχου</a>
+      </div>
       <button id="closeSettingsButton" class="primary-button" type="button"><span>ΕΠΙΣΤΡΟΦΗ</span><svg><use href="#i-arrow"/></svg></button>
     </div>
   </section>
@@ -349,6 +359,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261106-feel1"></script>
+  <script type="module" src="./game.js?v=20261106-audio2"></script>
 </body>
 </html>

@@ -1,5 +1,6 @@
-// Original procedural sound design: no network requests or borrowed recordings.
-// Contacts carry their surface; exertion/pain uses short synthesized vocal formants.
+import { RecordedSounds } from './audio-samples.js?v=20261106-audio2';
+// Recorded foley + human vocals, with lightweight procedural air/debris layers.
+// All recordings are bundled locally; attribution is in assets/audio/CREDITS.md.
 const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
 const MAX_SOURCES = 64;
 const METAL_VOICES = new Set(['robot', 'mech', 'siegeMech', 'boss']);
@@ -24,6 +25,19 @@ export class GameAudio {
     this._activated = false;
     this._disposed = false;
     this._session = null;
+    this.samples = new RecordedSounds();
+    this.onStatusChange = null;
+    this._preview = 0;
+    this._previewTimers = new Set();
+  }
+
+  preload() { return this.samples.preload(); }
+  _status() { this.onStatusChange?.(); }
+  get sampleCount() { return this.samples.buffers.size; }
+  get state() {
+    if (this.muted || this.volume <= 0) return 'muted';
+    if (this._hidden) return 'background';
+    return this.ready && this.ctx?.state === 'running' ? 'ready' : 'blocked';
   }
 
   // Capture real input without consuming it. Keep these listeners after the
@@ -35,8 +49,13 @@ export class GameAudio {
       node.addEventListener(name, handler, options);
       this._bindings.push(() => node.removeEventListener(name, handler, options));
     };
-    const gesture = () => { if (!this.muted && this.volume > 0) void this.unlock(); };
-    for (const event of ['pointerdown', 'touchend', 'keydown']) bind(target, event, gesture, { capture: true, passive: true });
+    const gesture = event => {
+      // Dedicated sound buttons must not unlock on pointerdown and then mute
+      // themselves on click. Their click handlers own the whole action.
+      if (event.target?.closest?.('[data-audio-control]')) return;
+      if (!this.muted && this.volume > 0) void this.unlock();
+    };
+    for (const event of ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click']) bind(target, event, gesture, { capture: true, passive: true });
     const visibility = () => {
       this._hidden = !!target.hidden;
       if (this._hidden) this._pauseForBackground();
@@ -92,6 +111,7 @@ export class GameAudio {
       if (this.ctx !== ctx || this._disposed) return;
       this.ready = ctx.state === 'running' && !this._hidden;
       if (this.ready) this._activated = true;
+      this._status();
     };
     this._makeAmbience();
     return true;
@@ -101,8 +121,9 @@ export class GameAudio {
     if (this._disposed || this._hidden || this.muted || this.volume <= 0) return false;
     try {
       if (this.ctx?.state === 'closed') this._dropGraph();
-      if (!this.ctx && !this._createContext()) return false;
+      // Claim playback before creating/starting the graph, not afterward.
       this._claimSession();
+      if (!this.ctx && !this._createContext()) { this._releaseSession(); this._status(); return false; }
       const ctx = this.ctx;
       if (ctx.state !== 'running') {
         // Call resume synchronously inside the gesture, including WebKit's
@@ -121,36 +142,43 @@ export class GameAudio {
       this.ready = ctx.state === 'running' && !this._hidden;
       if (this.ready) this._activated = true;
       else this._releaseSession();
+      if (this.ready) void this.samples.decode(ctx).then(() => { if (!this._disposed) this._status(); });
+      this._status();
       return this.ready;
     } catch (_) {
       // A blocked device or interruption must not prevent playing the game.
       this.ready = false;
       this._releaseSession();
+      this._status();
       return false;
     }
   }
 
   _pauseForBackground() {
+    this._cancelPreview();
     this.ready = false;
     this._stopTransientSources();
     this._releaseSession();
     if (this.ctx && this.ctx.state !== 'closed') {
       try { this.ctx.suspend().catch(() => {}); } catch (_) {}
     }
+    this._status();
   }
 
   setVolume(value) {
     this.volume = clamp(value);
     this._applyVolume();
-    if (this.volume <= 0) this._releaseSession();
+    if (this.volume <= 0) { this._cancelPreview(); this._stopTransientSources(); this._releaseSession(); }
     else if (this.ready && !this.muted) this._claimSession();
+    this._status();
   }
 
   toggle() {
     this.muted = !this.muted;
     this._applyVolume();
-    if (this.muted) this._releaseSession();
+    if (this.muted) { this._cancelPreview(); this._stopTransientSources(); this._releaseSession(); }
     else void this.unlock();
+    this._status();
     return this.muted;
   }
 
@@ -215,8 +243,53 @@ export class GameAudio {
     return true;
   }
 
+  _sample(group, volume = .75, rate = 1, delay = 0, vocal = false) {
+    if (!this._canAllocate() || (vocal && this._voices.size >= 2)) return false;
+    const buffer = this.samples.choose(group);
+    if (!buffer) return false;
+    const t = this.ctx.currentTime + Math.max(0, delay);
+    const source = this.ctx.createBufferSource(), envelope = this.ctx.createGain();
+    source.buffer = buffer; source.playbackRate.value = clamp(rate, .65, 1.4);
+    envelope.gain.value = clamp(volume, 0, 1.25);
+    source.connect(envelope); envelope.connect(this.master);
+    this._register(source, [envelope]);
+    if (vocal) this._voices.add(source);
+    source.start(t); source.stop(t + buffer.duration / source.playbackRate.value + .02);
+    return true;
+  }
+
+  _cancelPreview() {
+    this._preview++;
+    for (const timer of this._previewTimers) clearTimeout(timer);
+    this._previewTimers.clear();
+  }
+
+  async preview() {
+    this._cancelPreview();
+    const generation = this._preview;
+    // resume must run synchronously in the click stack, before any fetch/await.
+    const resumed = this.unlock();
+    let timer;
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), 1800); });
+    const ready = await Promise.race([resumed, timeout]);
+    clearTimeout(timer);
+    if (!ready || generation !== this._preview || this._disposed || this._hidden || this.muted || this.volume <= 0) return false;
+    this._recent.clear();
+    const sequence = [[0,'hit',{material:'wood',weapon:'wood'}],[360,'hit',{material:'metal'}],[760,'hit',{material:'flesh',weapon:'wood'}],[1080,'exert',{}]];
+    for (const [delay, name, details] of sequence) {
+      const id = setTimeout(() => {
+        this._previewTimers.delete(id);
+        if (generation === this._preview) this.play(name, .5, details);
+      }, delay);
+      this._previewTimers.add(id);
+    }
+    return true;
+  }
+
   _vocal(kind, power = 0, type = 'player', fatal = false, delay = 0) {
     if (!this._canAllocate() || this._voices.size >= 2) return;
+    const pitch = ({player:1,zombie:.83,crawler:1.23,brute:.73,mutant:.91,titan:.67}[type] || .86) * (.96 + Math.random() * .08);
+    if (this._sample(kind === 'pain' ? 'pain' : 'exert', kind === 'pain' ? .62 : .55, pitch, delay, true)) return;
     const t = this.ctx.currentTime + delay, p = clamp(power), pain = kind === 'pain';
     const variation = .92 + Math.random() * .16;
     const base = ({ player: 128, zombie: 105, crawler: 185, brute: 83, mutant: 116, titan: 72 }[type] || 112) * variation;
@@ -250,6 +323,13 @@ export class GameAudio {
 
   _impact(material, power, weapon = 'metal') {
     const p = clamp(power), v = .85 + p * .35, pitch = .95 + Math.random() * .1;
+    const surface = material === 'stone' || material === 'ground' ? 'masonry' : material;
+    if (this._sample(surface, .8 + p * .2, pitch)) {
+      // Small physical body layer; the recorded transient remains dominant.
+      this._tone('sine', 155, 65, .09 + p * .04, .12);
+      if (weapon === 'wood' && surface !== 'wood') this._tone('triangle', 330, 170, .045, .06);
+      return;
+    }
     if (material === 'metal') {
       this._noise(.23 * v, .055, 3100, 'bandpass', 0, 1200);
       this._tone('sine', 148, 64, .26 * v, .16);
@@ -430,6 +510,7 @@ export class GameAudio {
   dispose() {
     if (this._disposed) return;
     this._disposed = true;
+    this._cancelPreview(); this.samples.dispose(); this.onStatusChange = null;
     for (const unbind of this._bindings.splice(0)) unbind();
     this._releaseSession();
     const ctx = this.ctx;

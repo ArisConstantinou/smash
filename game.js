@@ -2,7 +2,7 @@ import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261106-feel1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261106-feel1';
 import {createWorld} from './world.js?v=20261106-feel1';
-import {GameAudio} from './audio.js?v=20261106-feel1';
+import {GameAudio} from './audio.js?v=20261106-audio2';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,occludesBattlePoint,applyOccluderFade} from './occlusion.js?v=20261106-feel1';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-combos1';
@@ -15,14 +15,21 @@ import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
 const read = (key,fallback) => {try {return JSON.parse(localStorage.getItem(key)) ?? fallback;} catch {return fallback;}};
-const settings = Object.assign({quality:'high',shake:true,volume:0.6,muted:false},read('ironfall.settings',{}));
+const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false},read('ironfall.settings',{}));
+settings.volume=Number.isFinite(Number(settings.volume))?clamp(Number(settings.volume),0,1):.75;
+settings.muted=!!settings.muted;
 const keys = new Set();
 const touch = {x:0,y:0,attack:false};
 const inputResetters=[];
 let touchLayout=false,touchCanvasPointer=null,touchThrowAim=null,touchThrowQueued=null;
 const audio = new GameAudio();
+audio.muted=settings.muted;
 audio.setVolume(settings.volume);
+audio.onStatusChange=updateSoundButtons;
 audio.bindUnlock?.(document);
+audio.preload?.();
+// Sound tests work even while the renderer is still loading.
+for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
@@ -1644,19 +1651,39 @@ function syncCombatButtons(buttons){
   if((mouseButtons&1)&&!(previous&1)&&!(mouseButtons&2))pressAttack();
 }
 function updateSoundButtons(){
-  const silent=settings.muted||settings.volume<=0;
-  const label=silent?'Ήχος κλειστός — πάτησε για ενεργοποίηση':'Ήχος ενεργός — πάτησε για σίγαση';
+  const silent=audio.muted||audio.volume<=0;
+  const blocked=!silent&&audio.ready===false;
+  const label=silent?'Ήχος κλειστός — πάτησε για ενεργοποίηση':blocked?'Πάτησε για ενεργοποίηση ήχου':'Ήχος ενεργός — πάτησε για σίγαση';
   for(const id of ['soundButton','muteButton']){
     const button=$(id);if(!button)continue;
-    button.classList.toggle('muted',silent);button.setAttribute('aria-pressed',String(silent));button.setAttribute('aria-label',label);button.setAttribute('title',label);
+    button.setAttribute('data-audio-control','');
+    button.classList.toggle('muted',silent);button.classList.toggle('audio-blocked',blocked);
+    button.setAttribute('aria-pressed',String(silent));button.setAttribute('aria-label',label);button.setAttribute('title',label);
   }
   for(const id of ['muteIcon','soundIcon'])$(id)?.setAttribute('href',silent?'#a-sound-off':'#a-sound-on');
-  if($('muteValue'))$('muteValue').textContent=silent?'ΚΛΕΙΣΤΟΣ':'ΣΙΓΑΣΗ';
+  if($('muteValue'))$('muteValue').textContent=silent?'ΚΛΕΙΣΤΟΣ':blocked?'ΠΑΤΑ':'ΣΙΓΑΣΗ';
+  const status=silent?'Ο ήχος είναι σε σίγαση.':blocked?'Πάτησε «Δοκιμή ήχου» για ενεργοποίηση.':audio.sampleCount>0?'Ηχογραφημένα εφέ και φωνές έτοιμα.':'Ήχος ενεργός · φόρτωση ηχογραφήσεων…';
+  for(const id of ['audioStatus','menuAudioStatus'])if($(id))$(id).textContent=status;
+}
+function enableGameAudio(){
+  if(settings.volume<=0){settings.volume=.75;audio.setVolume(.75);$('volumeRange').value=75;}
+  if(audio.muted)audio.toggle();
+  settings.muted=false;
+  save('ironfall.settings',settings);
 }
 function toggleSound(){
-  if(settings.muted||settings.volume<=0){if(settings.volume<=0){settings.volume=.6;audio.setVolume(.6);$('volumeRange').value=60;}if(audio.muted)audio.toggle();settings.muted=false;audio.unlock().then(()=>audio.play('ui'));}
-  else{settings.muted=audio.toggle();}
+  if(settings.muted||settings.volume<=0){enableGameAudio();audio.unlock().then(()=>audio.play('ui'));}
+  else if(audio.ready===false){audio.unlock().then(()=>{audio.play('ui');updateSoundButtons();});}
+  else settings.muted=audio.toggle();
   updateSoundButtons();save('ironfall.settings',settings);
+}
+async function testGameAudio(){
+  enableGameAudio();
+  // This call stays inside the user's click; no asynchronous asset fetch first.
+  const preview=audio.preview?.()||audio.unlock().then(()=>{audio.play('start');return true;});
+  const played=await preview;
+  updateSoundButtons();
+  if(!played)for(const id of ['audioStatus','menuAudioStatus'])if($(id))$(id).textContent='Η αναπαραγωγή μπλοκαρίστηκε. Πάτησε ξανά για δοκιμή.';
 }
 const isTouchPointer=e=>e?.pointerType==='touch'||e?.pointerType==='pen';
 function aimFromClient(e){
@@ -1731,7 +1758,7 @@ function initInput(){
   $('qualitySelect').onchange=e=>{settings.quality=e.target.value;resize();save('ironfall.settings',settings);};
   $('shakeToggle').onchange=e=>{settings.shake=e.target.checked;save('ironfall.settings',settings);};
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
-  if(settings.muted)audio.toggle();updateSoundButtons();
+  updateSoundButtons();
   window.addEventListener('keydown',e=>{
     const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyU'];
     if(handled.includes(e.code)&&!['INPUT','SELECT'].includes(document.activeElement?.tagName))e.preventDefault();
@@ -1889,7 +1916,7 @@ async function init(){
   fragments=new Fragments();impactClouds=new ImpactClouds();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
   initInput();resize();setPhase('menu');
   $('gameCanvas').setAttribute('tabindex','-1');
-  // Shader compilation is local; no network assets are loaded during play.
+  // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync)await renderer.compileAsync(scene,camera);
   $('startButton').disabled=false;$('testStartButton').disabled=false;updateSavedCharacter();$('loadingStatus').textContent='Από κούτσουρο σε σφυρί καταιγίδας. Η πόλη είναι έτοιμη.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');
