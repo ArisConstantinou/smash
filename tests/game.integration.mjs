@@ -19,6 +19,9 @@ import * as hammerMotion from '../hammer-motion.js';
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
 const timerCallbacks = new Map();
+const viewport = { width: 1440, height: 900 };
+const inputMedia = { coarse: false, anyCoarse: false };
+const mediaListeners = new Map(), viewportListeners = new Map();
 let scheduledFrames = 0, renderedFrames = 0, time = 0, seed = 28461;
 const random = () => ((seed = (Math.imul(1664525, seed) + 1013904223) >>> 0) / 4294967296);
 
@@ -52,17 +55,35 @@ class Element {
     this.style = { setProperty(key, value) { this[key] = value; } };
     this.dataset = {}; this.hidden = true; this.disabled = false; this.checked = false;
     this.textContent = ''; this.innerHTML = ''; this.value = '';
-    this.events = new Map(); this.width = 140; this.height = 140;
+    this.events = new Map(); this.width = 140; this.height = 140; this.capturedPointers = new Set();
   }
   appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
   replaceChildren(...children) { this.children.forEach(c => { c.parentNode = null; }); this.children = []; children.forEach(c => this.appendChild(c)); }
   get firstChild() { return this.children[0] || null; }
   remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(c => c !== this); this.parentNode = null; }
-  setAttribute(name, value) { this[name] = value; }
+  setAttribute(name, value) {
+    if (name === 'style') {
+      this.style.cssText = String(value);
+      for (const declaration of String(value).split(';')) {
+        const colon = declaration.indexOf(':');
+        if (colon > 0) this.style[declaration.slice(0, colon).trim()] = declaration.slice(colon + 1).trim();
+      }
+      return;
+    }
+    this[name] = String(value);
+    if (name.startsWith('data-')) this.dataset[name.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = String(value);
+    if (name === 'class') { this.classList.values.clear(); this.classList.add(...String(value).split(/\s+/).filter(Boolean)); }
+  }
+  getAttribute(name) { return name === 'style' ? this.style.cssText ?? null : this[name] ?? null; }
   addEventListener(name, callback) { if (!this.events.has(name)) this.events.set(name, []); this.events.get(name).push(callback); }
   getContext(type) { assert.equal(type, '2d'); return this.context ||= context2D(); }
-  getBoundingClientRect() { return { x: 0, y: 0, left: 0, top: 0, width: this.id === 'gameCanvas' ? 1440 : 140, height: this.id === 'gameCanvas' ? 900 : 140 }; }
-  setPointerCapture() {}
+  getBoundingClientRect() {
+    const rect = { left: 0, top: 0, width: this.id === 'gameCanvas' ? viewport.width : 140, height: this.id === 'gameCanvas' ? viewport.height : 140, ...this.rect };
+    return { x: rect.left, y: rect.top, right: rect.left + rect.width, bottom: rect.top + rect.height, ...rect };
+  }
+  setPointerCapture(id) { this.capturedPointers.add(id); }
+  releasePointerCapture(id) { this.capturedPointers.delete(id); }
+  hasPointerCapture(id) { return this.capturedPointers.has(id); }
   focus() { document.activeElement = this; }
   click() { if (!this.disabled) this.onclick?.({ target: this, preventDefault() {} }); }
 }
@@ -71,23 +92,45 @@ for (const [, tag, id] of html.matchAll(/<([a-z0-9-]+)\b[^>]*\bid="([^"]+)"/gi))
 const dataKeys = new Map();
 for (const [, tag, attrs] of html.matchAll(/<([a-z0-9-]+)\b([^>]*)>/gi)) {
   const key = attrs.match(/\bdata-key="([^"]+)"/)?.[1];
-  if (!key) continue;
   const id = attrs.match(/\bid="([^"]+)"/)?.[1];
+  if (!id && !key) continue;
   const el = (id && elements.get(id)) || new Element(tag);
-  el.dataset.key = key; dataKeys.set(key, el);
+  for (const [, name, value] of attrs.matchAll(/([a-z0-9:-]+)="([^"]*)"/gi)) el.setAttribute(name, value);
+  if (key) { el.dataset.key = key; dataKeys.set(key, el); }
 }
 const document = {
   body: new Element('body'), activeElement: null, hidden: false,
   getElementById: id => elements.get(id) || null,
   createElement: tag => new Element(tag),
   querySelector: selector => { const m = selector.match(/^\[data-key="([^"]+)"\]$/); return m ? dataKeys.get(m[1]) || null : null; },
-  querySelectorAll: selector => selector === '[data-key]' ? [...dataKeys.values()] : [],
+  querySelectorAll: selector => {
+    if (selector === '[data-key]') return [...dataKeys.values()];
+    const attribute = selector.match(/^\[([a-z0-9:-]+)\]$/i)?.[1];
+    return attribute ? [...elements.values()].filter(el => el.getAttribute(attribute) !== null) : [];
+  },
   addEventListener(name, callback) { if (!listeners.has('document:' + name)) listeners.set('document:' + name, []); listeners.get('document:' + name).push(callback); },
 };
 document.activeElement = document.body;
 const window = {
   addEventListener(name, callback) { if (!listeners.has(name)) listeners.set(name, []); listeners.get(name).push(callback); },
 };
+const visualViewport = {
+  width: viewport.width, height: viewport.height, offsetLeft: 0, offsetTop: 0, scale: 1,
+  addEventListener(name, callback) { if (!viewportListeners.has(name)) viewportListeners.set(name, []); viewportListeners.get(name).push(callback); },
+};
+window.visualViewport = visualViewport;
+function mediaMatches(query) {
+  if (/any-pointer\s*:\s*coarse/.test(query)) return inputMedia.anyCoarse || inputMedia.coarse;
+  if (/pointer\s*:\s*coarse/.test(query)) return inputMedia.coarse;
+  return false;
+}
+function matchMedia(query) {
+  return {
+    media: query, get matches() { return mediaMatches(query); },
+    addEventListener(name, callback) { if (name === 'change') { if (!mediaListeners.has(query)) mediaListeners.set(query, []); mediaListeners.get(query).push(callback); } },
+    addListener(callback) { this.addEventListener('change', callback); },
+  };
+}
 const storage = new Map();
 class FakeRenderer {
   shadowMap = {};
@@ -108,7 +151,7 @@ class StubAudio {
 const sandbox = vm.createContext({
   console: { log: console.log, warn: console.warn, error: (...args) => browserErrors.push(args) },
   document, window, innerWidth: 1440, innerHeight: 900, devicePixelRatio: 1,
-  matchMedia: () => ({ matches: false }),
+  matchMedia,
   performance: { now: () => time },
   Math: Object.assign(Object.create(Math), { random }),
   localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
@@ -142,6 +185,8 @@ export const __integration = {
   get elapsed(){return elapsed;}, get round(){return round;}, get relics(){return relics;},
   get kills(){return kills;}, get bolts(){return bolts;}, get score(){return score;},
   get scene(){return scene;}, get keys(){return keys;}, get pointer(){return pointer;},
+  get touch(){return touch;}, get touchThrowAim(){return touchThrowAim;},
+  get camera(){return camera;}, get renderer(){return renderer;},
   get wave(){return wave;}, get sector(){return sector;},
   get upgradeQueue(){return upgradeQueue;}, get upgradePanelOpen(){return upgradePanelOpen;},
   get nearbyTargets(){return nearbyTargets;}, get focusedTarget(){return focusedTarget;},
@@ -153,7 +198,7 @@ export const __integration = {
   updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
-  drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel,
+  drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
   setFacing(x,z){facing=normalize(x,z);pointer.active=false;},
   primeSwing(q){chargeHeld=false;chargeStarted=true;charge=q;attackCooldown=0;swing=null;},
   failFirstSpawnDuring(callback){const original=spawnEnemy;let attempts=0;spawnEnemy=(...args)=>++attempts===1?null:original(...args);try{callback();return attempts;}finally{spawnEnemy=original;}},
@@ -173,6 +218,18 @@ function emit(name, props = {}) {
   for (const fn of listeners.get(name) || []) fn(event);
 }
 const key = (code, down) => emit(down ? 'keydown' : 'keyup', { code });
+function setViewport(width = 1440, height = 900, { coarse = false, anyCoarse = coarse, visualWidth = width, visualHeight = height } = {}) {
+  const previousMatches = new Map([...mediaListeners.keys()].map(query => [query, mediaMatches(query)]));
+  viewport.width = width; viewport.height = height;
+  sandbox.innerWidth = width; sandbox.innerHeight = height;
+  visualViewport.width = visualWidth; visualViewport.height = visualHeight;
+  inputMedia.coarse = coarse; inputMedia.anyCoarse = anyCoarse;
+  for (const [query, callbacks] of mediaListeners) if (previousMatches.get(query) !== mediaMatches(query)) {
+    callbacks.forEach(callback => callback({ media: query, matches: mediaMatches(query) }));
+  }
+  emit('resize');
+  for (const callback of viewportListeners.get('resize') || []) callback({ target: visualViewport });
+}
 function pointerEvent(id, type, props = {}) {
   const element = elements.get(id);
   assert.ok(element, `The actual HTML contains ${id}`);
@@ -243,6 +300,24 @@ function arena() {
   api.world.rebuildSpatialIndex();
   for (const h of api.world.hazards) { h.x = 500; h.z = 500; }
   api.setFacing(0, 1); api.poseHero(.05); api.player.invincible = 0;
+}
+function touchArena(callback) {
+  try {
+    setViewport(390, 844, { coarse: true }); arena();
+    elements.get('joystick').rect = { left: 18, top: 500, width: 112, height: 112 };
+    callback();
+  } finally {
+    api.clearInput(); elements.get('joystick').rect = undefined;
+    setViewport();
+  }
+}
+function moveStick(type, horizontal = 0, vertical = 0, pointerId = 101) {
+  const rect = elements.get('joystick').getBoundingClientRect(), radius = rect.width * .34;
+  return pointerEvent('joystick', type, {
+    pointerId, pointerType: 'touch', buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1,
+    clientX: rect.left + rect.width / 2 + horizontal * radius,
+    clientY: rect.top + rect.height / 2 + vertical * radius,
+  });
 }
 function aimAt(x, z) {
   const p = api.screenPoint(x, api.player.y + 1.2, z);
@@ -681,6 +756,281 @@ test('the illustrated attack, held spin and combined smash buttons execute their
   arena();
   pointerEvent('slamButton', 'pointerdown'); pointerEvent('slamButton', 'pointerup');
   assert.ok(api.leap); assert.equal(api.leap.slam, true);
+});
+
+test('touch controls and accessible labels follow phone, landscape, tablet and desktop input modes', () => {
+  try {
+    arena();
+    for (const [width, height, coarse, anyCoarse, expected] of [
+      [390, 844, false, false, true], [844, 390, true, true, true],
+      [1024, 768, false, true, true], [1440, 900, false, false, false],
+    ]) {
+      setViewport(width, height, { coarse, anyCoarse }); api.updateHUD(true);
+      assert.equal(document.body.dataset.touchControls, String(expected));
+      assert.equal(elements.get('touchControls').hidden, !expected);
+      for (const id of ['attackButton', 'chargeButton', 'guardButton', 'leapButton', 'slamButton', 'throwButton', 'stanceButton', 'dashButton']) {
+        const button = elements.get(id), label = expected ? button.dataset.touchLabel : button.dataset.desktopLabel;
+        assert.ok(label, `${id} needs an accessible description for the current control surface`);
+        assert.equal(button.getAttribute('aria-label'), label);
+        assert.equal(button.getAttribute('title'), label);
+      }
+    }
+    api.setPhase('paused'); assert.equal(elements.get('touchControls').hidden, true);
+  } finally { api.clearInput(); setViewport(); }
+});
+
+test('the movement stick has a real deadzone, proportional walking speed and a capped full-speed edge', () => {
+  touchArena(() => {
+    const direction = core.screenMovement(1, 0), origin = { x: api.player.x, z: api.player.z };
+    moveStick('pointerdown', .08, 0); playerSteps(.25);
+    close(api.player.x, origin.x); close(api.player.z, origin.z);
+    close(api.touch.x, 0); close(api.touch.y, 0);
+    moveStick('pointermove', .56, 0); playerSteps(.25);
+    const slow = Math.hypot(api.player.x - origin.x, api.player.z - origin.z);
+    close(slow, api.stats.speed * .5 * .25, .002);
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    const start = { x: api.player.x, z: api.player.z };
+    moveStick('pointermove', 2, 0); playerSteps(.25);
+    const fast = Math.hypot(api.player.x - start.x, api.player.z - start.z);
+    close(fast, api.stats.speed * .25, .002); close(fast / slow, 2, .002);
+    assert.ok(Math.hypot(api.touch.x, api.touch.y) <= 1);
+    moveStick('pointermove', .05, -.05);
+    const stopped = { x: api.player.x, z: api.player.z }; playerSteps(.2);
+    close(api.player.x, stopped.x); close(api.player.z, stopped.z);
+    moveStick('pointerup');
+  });
+});
+
+test('a second finger cannot steal, steer or release an occupied movement stick', () => {
+  touchArena(() => {
+    moveStick('pointerdown', 1, 0, 101);
+    assert.equal(elements.get('joystick').hasPointerCapture(101), true);
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+      moveStick(type, -1, 0, 202); playerSteps(.02);
+      assert.ok(api.touch.x > .99, `${type} from another finger must leave the first thumb in control`);
+    }
+    moveStick('pointermove', 0, -1, 101); playerSteps(.05);
+    close(api.touch.x, 0); assert.ok(api.touch.y < -.99);
+    moveStick('pointerup', 0, -1, 101);
+    close(api.touch.x, 0); close(api.touch.y, 0);
+    moveStick('pointermove', 1, 0, 101); playerSteps(.03);
+    close(api.touch.x, 0); close(api.touch.y, 0);
+    moveStick('pointerdown', -1, 0, 202); playerSteps(.05);
+    assert.ok(api.touch.x < -.99, 'A fresh finger can take control after the old gesture ends');
+  });
+});
+
+test('a moving thumb can tap a real hammer hit or trigger an aimed leap with another finger', () => {
+  touchArena(() => {
+    const direction = core.screenMovement(1, 0);
+    moveStick('pointerdown', 1, 0); playerSteps(.04);
+    const enemy = stationaryEnemy('brute', api.player.x + direction.x * 2.3, api.player.z + direction.z * 2.3), hp = enemy.hp;
+    pointerEvent('attackButton', 'pointerdown', { pointerId: 202 });
+    pointerEvent('attackButton', 'pointerup', { pointerId: 202 });
+    const strike = api.swing; assert.ok(strike);
+    playerSteps(.36);
+    assert.equal(enemy.hp, hp - strike.damage, 'The touch action must deal the same swept-contact damage as a mouse swing');
+    assert.ok(api.touch.x > .99, 'Releasing attack must leave the movement thumb active');
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    pointerEvent('leapButton', 'pointerdown', { pointerId: 203 });
+    pointerEvent('leapButton', 'pointerup', { pointerId: 203 });
+    assert.ok(api.leap); close(api.leap.dir.x, direction.x); close(api.leap.dir.z, direction.z);
+    playerSteps(.2); assert.ok(api.player.y > 3);
+    assert.ok(api.touch.x > .99);
+  });
+});
+
+test('joystick movement and held spin or guard have independent owning fingers', () => {
+  for (const [id, state, speed] of [['chargeButton', 'spin', .84], ['guardButton', 'guarding', .55]]) {
+    touchArena(() => {
+      moveStick('pointerdown', 1, 0, 101);
+      pointerEvent(id, 'pointerdown', { pointerId: 202 }); playerSteps(.3);
+      assert.ok(api[state]); close(Math.hypot(api.player.x, api.player.z), api.stats.speed * speed * .3, .003);
+      pointerEvent(id, 'pointerdown', { pointerId: 303 });
+      pointerEvent(id, 'pointerup', { pointerId: 303 }); playerSteps(.03);
+      assert.ok(api[state], 'A different finger cannot release the held action');
+      moveStick('pointerup', 1, 0, 101);
+      const stopped = { x: api.player.x, z: api.player.z }; playerSteps(.1);
+      close(api.player.x, stopped.x); close(api.player.z, stopped.z);
+      assert.ok(api[state], 'Letting go of movement must not release the other thumb');
+      pointerEvent(id, 'pointerup', { pointerId: 202 }); playerSteps(.04);
+      assert.ok(!api[state]); assert.equal(api.swing, null);
+    });
+  }
+});
+
+test('touch cancellation, lost capture and releases outside the controls stop only their owned input', () => {
+  for (const reason of ['pointercancel', 'lostpointercapture', 'outside']) {
+    touchArena(() => {
+      moveStick('pointerdown', 1, 0, 101);
+      pointerEvent('chargeButton', 'pointerdown', { pointerId: 202 }); playerSteps(.05);
+      if (reason === 'outside') emit('pointerup', { pointerId: 101, pointerType: 'touch', target: document.body });
+      else moveStick(reason, 1, 0, 101);
+      close(api.touch.x, 0); close(api.touch.y, 0); assert.ok(api.spin);
+      if (reason === 'outside') emit('pointerup', { pointerId: 202, pointerType: 'touch', target: document.body });
+      else pointerEvent('chargeButton', reason, { pointerId: 202 });
+      assert.equal(api.spin, null); playerSteps(.4); assert.equal(api.swing, null);
+      assert.equal(elements.get('chargeButton').classList.contains('active'), false);
+      moveStick('pointerdown', -1, 0, 303); assert.ok(api.touch.x < -.99);
+    });
+  }
+});
+
+test('pause, blur and a changed mobile viewport clear gesture ownership without replay on resume', () => {
+  for (const reason of ['pause', 'blur', 'resize']) {
+    touchArena(() => {
+      moveStick('pointerdown', 1, 0, 101);
+      pointerEvent('chargeButton', 'pointerdown', { pointerId: 202 }); playerSteps(.15);
+      if (reason === 'pause') api.pauseGame();
+      else if (reason === 'blur') emit('blur');
+      else setViewport(390, 780, { coarse: true });
+      close(api.touch.x, 0); close(api.touch.y, 0); assert.equal(api.spin, null);
+      assert.equal(elements.get('joystick').classList.contains('active'), false);
+      assert.equal(elements.get('chargeButton').classList.contains('active'), false);
+      if (api.phase === 'paused') elements.get('resumeButton').click();
+      const stopped = { x: api.player.x, z: api.player.z };
+      moveStick('pointermove', 1, 0, 101);
+      pointerEvent('chargeButton', 'pointerup', { pointerId: 202 }); playerSteps(.35);
+      close(api.player.x, stopped.x); close(api.player.z, stopped.z);
+      assert.equal(api.spin, null); assert.equal(api.swing, null);
+      moveStick('pointerdown', -1, 0, 303); playerSteps(.05);
+      assert.ok(api.touch.x < -.99, 'A new touch must work immediately after cleanup');
+    });
+  }
+});
+
+test('an unchanged resize keeps a gesture active while Safari viewport changes resize the real renderer and camera', () => {
+  touchArena(() => {
+    moveStick('pointerdown', 1, 0, 101);
+    pointerEvent('guardButton', 'pointerdown', { pointerId: 202 }); playerSteps(.05);
+    emit('resize'); playerSteps(.03);
+    assert.ok(api.touch.x > .99 && api.guarding, 'An unchanged size event must not drop both thumbs');
+    visualViewport.height = 700;
+    for (const callback of viewportListeners.get('resize') || []) callback({ target: visualViewport });
+    assert.equal(api.renderer.width, 390); assert.equal(api.renderer.height, 700);
+    close((api.camera.right - api.camera.left) / (api.camera.top - api.camera.bottom), 390 / 700);
+    assert.equal(elements.get('fxCanvas').height, 700);
+    assert.equal(document.body.style['--app-height'], '700px');
+    close(api.touch.x, 0); close(api.touch.y, 0); assert.equal(api.guarding, false);
+    setViewport(844, 390, { coarse: true });
+    assert.equal(api.renderer.width, 844); assert.equal(api.renderer.height, 390);
+    close((api.camera.right - api.camera.left) / (api.camera.top - api.camera.bottom), 844 / 390);
+    assert.equal(document.body.dataset.touchControls, 'true');
+  });
+});
+
+test('touch and pen gestures on the world aim without starting an accidental attack or spin', () => {
+  for (const pointerType of ['touch', 'pen']) {
+    touchArena(() => {
+      const front = api.screenPoint(0, 1.2, 12), left = api.screenPoint(-12, 1.2, 0);
+      pointerEvent('gameCanvas', 'pointerdown', { pointerId: 202, pointerType, button: 0, buttons: 1, clientX: front.x, clientY: front.y });
+      playerSteps(.4); assert.ok(api.aim.z > .99);
+      assert.equal(api.spin, null); assert.equal(api.swing, null);
+      pointerEvent('gameCanvas', 'pointermove', { pointerId: 202, pointerType, buttons: 1, clientX: left.x, clientY: left.y });
+      playerSteps(.1); assert.ok(api.aim.x < -.99);
+      pointerEvent('gameCanvas', 'pointerup', { pointerId: 202, pointerType, buttons: 0, clientX: left.x, clientY: left.y });
+      playerSteps(.3); assert.equal(api.spin, null); assert.equal(api.swing, null);
+      const enemy = stationaryEnemy('brute', -2.3, 0), hp = enemy.hp;
+      pointerEvent('attackButton', 'pointerdown', { pointerId: 303, pointerType });
+      pointerEvent('attackButton', 'pointerup', { pointerId: 303, pointerType });
+      const damage = api.swing.damage; playerSteps(.36);
+      assert.equal(enemy.hp, hp - damage, 'A subsequent deliberate action must hit the manually aimed direction');
+    });
+  }
+});
+
+test('touch aiming converts client coordinates through a shifted or scaled canvas without losing the movement thumb', () => {
+  touchArena(() => {
+    try {
+      elements.get('gameCanvas').rect = { left: 17, top: 53, width: 312, height: 675.2 };
+      const projected = api.screenPoint(0, 1.2, 12), rect = elements.get('gameCanvas').getBoundingClientRect();
+      moveStick('pointerdown', 1, 0, 101); playerSteps(.04);
+      const current = api.screenPoint(api.player.x, api.player.y + 1.2, api.player.z + 12);
+      pointerEvent('gameCanvas', 'pointerdown', { pointerId: 202, pointerType: 'touch', buttons: 1,
+        clientX: rect.left + current.x * rect.width / 390, clientY: rect.top + current.y * rect.height / 844 });
+      assert.ok(projected.inside); close(api.aim.x, 0, .002); assert.ok(api.aim.z > .99);
+      playerSteps(.05); assert.ok(api.touch.x > .99);
+      const walking = core.screenMovement(1, 0); close(api.facing.x, walking.x); close(api.facing.z, walking.z);
+      pointerEvent('gameCanvas', 'pointerup', { pointerId: 202, pointerType: 'touch', buttons: 0 });
+      assert.ok(api.touch.x > .99, 'Releasing an aim finger must not release the stick');
+      assert.equal(api.swing, null); assert.equal(api.spin, null);
+    } finally { elements.get('gameCanvas').rect = undefined; }
+  });
+});
+
+test('a tap or tiny thumb wobble on the throw tile waits for release and throws along the current facing', () => {
+  for (const wobble of [0, 6]) {
+    touchArena(() => {
+      api.setFacing(1, 0); api.poseHero(1);
+      pointerEvent('throwButton', 'pointerdown', { pointerId: 202, clientX: 320, clientY: 740 });
+      assert.ok(api.touchThrowAim); assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null);
+      pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 320 - wobble, clientY: 740 });
+      playerSteps(.2); assert.equal(api.throwWindup, null, 'Holding the tile alone must not prematurely throw');
+      pointerEvent('throwButton', 'pointerup', { pointerId: 202, clientX: 320 - wobble, clientY: 740 });
+      assert.equal(api.touchThrowAim, null); assert.ok(api.throwWindup);
+      close(api.throwWindup.dir.x, 1); close(api.throwWindup.dir.z, 0);
+      playerSteps(.29); assert.ok(api.throwFlight); assert.equal(api.hero.userData.weaponHeld, false);
+    });
+  }
+});
+
+test('a tap throw reads the movement thumb immediately without waiting for a rendered frame', () => {
+  touchArena(() => {
+    const direction = core.screenMovement(1, 0);
+    api.setFacing(-direction.x, -direction.z); api.poseHero(1);
+    moveStick('pointerdown', 1, 0, 101);
+    pointerEvent('throwButton', 'pointerdown', { pointerId: 202, clientX: 320, clientY: 740 });
+    pointerEvent('throwButton', 'pointerup', { pointerId: 202, clientX: 320, clientY: 740 });
+    assert.ok(api.throwWindup);
+    close(api.throwWindup.dir.x, direction.x); close(api.throwWindup.dir.z, direction.z);
+  });
+});
+
+test('dragging the throw tile aims independently while walking and releases into a real enemy hit', () => {
+  touchArena(() => {
+    const walking = core.screenMovement(1, 0), throwing = core.screenMovement(-1, 0);
+    const enemy = stationaryEnemy('brute', throwing.x * 5, throwing.z * 5), hp = enemy.hp;
+    moveStick('pointerdown', 1, 0, 101); playerSteps(.05);
+    pointerEvent('throwButton', 'pointerdown', { pointerId: 202, clientX: 320, clientY: 740 });
+    pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 260, clientY: 740 });
+    playerSteps(.2);
+    assert.ok(api.touchThrowAim); assert.equal(api.throwWindup, null);
+    assert.ok(api.aim.x * throwing.x + api.aim.z * throwing.z > .99);
+    close(api.facing.x, walking.x); close(api.facing.z, walking.z);
+    const beforeReturn = { ...api.aim };
+    pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 320, clientY: 740 });
+    playerSteps(.03);
+    assert.ok(Number.isFinite(api.aim.x) && Number.isFinite(api.aim.z));
+    assert.ok(api.aim.x * beforeReturn.x + api.aim.z * beforeReturn.z > .99, 'Returning to the drag origin must retain the last useful aim');
+    emit('pointerup', { pointerId: 202, pointerType: 'touch', clientX: 320, clientY: 740, target: document.body });
+    assert.ok(api.throwWindup); assert.equal(api.touchThrowAim, null);
+    assert.ok(api.throwWindup.dir.x * throwing.x + api.throwWindup.dir.z * throwing.z > .99);
+    playerSteps(.75);
+    assert.equal(enemy.hp, hp - Math.round(api.stats.power * 2.2), 'The actual swept flying hammer must hit exactly once');
+    assert.ok(api.touch.x > .99); close(api.facing.x, walking.x); close(api.facing.z, walking.z);
+  });
+});
+
+test('a cancelled or interrupted touch throw cannot fire when its stale finger is released', () => {
+  for (const reason of ['pointercancel', 'lostpointercapture', 'pause', 'blur', 'resize']) {
+    touchArena(() => {
+      pointerEvent('throwButton', 'pointerdown', { pointerId: 202, clientX: 320, clientY: 740 });
+      pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 270, clientY: 700 });
+      assert.ok(api.touchThrowAim);
+      pointerEvent('throwButton', 'pointerup', { pointerId: 303, clientX: 270, clientY: 700 });
+      assert.ok(api.touchThrowAim, 'Another finger cannot release an aimed throw');
+      if (reason === 'pause') api.pauseGame();
+      else if (reason === 'blur') emit('blur');
+      else if (reason === 'resize') setViewport(390, 780, { coarse: true });
+      else pointerEvent('throwButton', reason, { pointerId: 202 });
+      assert.equal(api.touchThrowAim, null);
+      if (api.phase === 'paused') elements.get('resumeButton').click();
+      pointerEvent('throwButton', 'pointerup', { pointerId: 202, clientX: 270, clientY: 700 });
+      playerSteps(.5);
+      assert.equal(api.throwWindup, null); assert.equal(api.throwFlight, null);
+      assert.equal(api.hero.userData.weaponHeld, true);
+    });
+  }
 });
 
 test('holding the left mouse button continuously rotates the whole warrior and extended hammer through more than two full turns', () => {
