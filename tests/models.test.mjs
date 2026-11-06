@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
 import { makeWarrior } from '../models.js';
+import { sampleHammerSwing } from '../hammer-motion.js';
 
 const epsilon = 1e-7;
 function close(a, b, message = 'Values should match') {
@@ -192,6 +193,63 @@ test('shoulders follow torso rotation and retain complete arm chains during a bo
     }
     armsConnected(hero);
   }
+});
+
+test('weighted swings bend both elbows without stretching either arm or losing either grip', () => {
+  const up = new THREE.Vector3(0, 1, 0);
+  for (const stance of [0, 1]) {
+    const hero = makeWarrior(), u = hero.userData;
+    restingPose(hero, stance);
+    const restPosition = u.weaponRestPosition.clone(), restRotation = u.weaponRig.quaternion.clone();
+    const initialLengths = [u.leftArm, u.rightArm].map(arm => [arm.userData.upper.scale.y, arm.userData.fore.scale.y]);
+    const lastElbows = [null, null];
+    let greatestStep = 0;
+    for (let step = 0; step <= 240; step++) {
+      const pose = sampleHammerSwing(step / 240, { twoHanded: !!stance });
+      u.body.rotation.set(pose.bodyPitch, pose.bodyYaw, pose.bodyRoll); u.body.position.y = pose.bodyDrop;
+      const direction = new THREE.Vector3(Math.sin(pose.yaw), pose.elevation, Math.cos(pose.yaw)).normalize();
+      const rotation = new THREE.Quaternion().setFromUnitVectors(up, direction);
+      u.weaponRig.quaternion.copy(restRotation).slerp(rotation, pose.windup).slerp(restRotation, pose.recovery);
+      u.weaponRig.position.copy(restPosition).lerp(new THREE.Vector3(pose.gripX, pose.gripY, pose.gripZ), pose.windup).lerp(restPosition, pose.recovery);
+      u.updateGrip(); hero.updateMatrixWorld(true);
+      for (const [index, arm] of [u.leftArm, u.rightArm].entries()) {
+        close(arm.userData.upper.scale.y, initialLengths[index][0], 'The upper arm must not grow during a reachable swing');
+        close(arm.userData.fore.scale.y, initialLengths[index][1], 'The forearm must not grow during a reachable swing');
+        const elbowPoint = arm.userData.upper.localToWorld(new THREE.Vector3(0, .5, 0));
+        if (lastElbows[index]) greatestStep = Math.max(greatestStep, elbowPoint.distanceTo(lastElbows[index]));
+        lastElbows[index] = elbowPoint;
+      }
+      contact(u.rightGrip, u.rightGripAnchor); contact(u.leftGrip, stance ? u.leftGripAnchor : u.shieldGripAnchor);
+      armsConnected(hero);
+    }
+    assert.ok(greatestStep < .06, 'An elbow must follow the swing continuously instead of snapping between bend planes');
+  }
+});
+
+test('an unreachable grip extends both bones proportionally and returns without flipping the elbow', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  const arm = u.rightArm, armLength = .44 + .46;
+  const direction = new THREE.Vector3(.13, -.12, 1).normalize(), shoulder = arm.position.clone();
+  let lastElbow = null, greatestStep = 0, extendedFrames = 0;
+  for (let step = 0; step <= 1200; step++) {
+    const distance = .72 + .42 * Math.sin(Math.PI * step / 1200) ** 2;
+    u.weaponRig.rotation.set(0, 0, 0);
+    u.weaponRig.position.copy(shoulder).addScaledVector(direction, distance).sub(u.rightGripAnchor.position);
+    u.updateGrip(); hero.updateMatrixWorld(true);
+    const extension = Math.max(1, distance / armLength);
+    close(arm.userData.upper.scale.y, .44 * extension);
+    close(arm.userData.fore.scale.y, .46 * extension);
+    if (extension > 1) extendedFrames++;
+    const elbowPoint = arm.userData.upper.localToWorld(new THREE.Vector3(0, .5, 0));
+    if (lastElbow) greatestStep = Math.max(greatestStep, elbowPoint.distanceTo(lastElbow));
+    lastElbow = elbowPoint;
+    const elbowLocal = arm.worldToLocal(elbowPoint.clone());
+    const bend = elbowLocal.addScaledVector(direction, -elbowLocal.dot(direction));
+    assert.ok(bend.dot(arm.userData.elbowPole) > -epsilon, 'The elbow must keep its outward bend when returning from full extension');
+    contact(u.rightGrip, u.rightGripAnchor); armsConnected(hero);
+  }
+  assert.ok(extendedFrames > 300, 'The path must exercise the out-of-reach fallback used by the raised guard');
+  assert.ok(greatestStep < .04, 'Crossing full extension must not pop or flip the elbow');
 });
 
 test('cached throw bounds match projectiles and ignore hero or held-weapon rotation', () => {

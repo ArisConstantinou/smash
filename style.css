@@ -309,10 +309,11 @@ kbd.cooldown{opacity:.42;border-color:#6f8170;box-shadow:none}
 .run-counters { margin-top:9px; gap:21px; }
 .minimap-panel { top:199px; }
 
-/* Left mouse button images share the illustrated keyboard's visual language. */
+/* Mouse button images share the illustrated keyboard's visual language. */
 kbd.mouse-key { gap:4px; }
 .landing-controls .mouse-key { min-width:56px; height:34px; padding:2px 5px; font:700 9px/1 var(--body); }
 .landing-controls .mouse-key svg { width:20px; height:26px; }
+.combat-hints .mouse-key svg { flex:none; width:12px; height:16px; }
 #combatDock .action-key.mouse-key { gap:3px; padding:0 4px; }
 #combatDock .action-key.mouse-key svg { flex:none; width:11px; height:14px; margin:0; }
 .direction-note { line-height:1.6; }

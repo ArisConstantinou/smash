@@ -166,7 +166,8 @@ export function makeWarrior() {
     box(fore, P.timberDark, 0, 0, 0, .205, 1, .225);
     box(fore, P.steel, 0, .22, .015, .26, .49, .27);
     compact(fore);
-    arm.userData = { upper, fore, side };
+    const elbowPole = new THREE.Vector3(side * .65, -.9, 0).normalize();
+    arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone() };
     return arm;
   }
   const leftArm = grippingArm(-1);
@@ -300,6 +301,9 @@ export function makeWarrior() {
   const axisY = new THREE.Vector3(0, 1, 0);
   const zero = new THREE.Vector3();
   const segmentDelta = new THREE.Vector3();
+  const reachDirection = new THREE.Vector3();
+  const bendDirection = new THREE.Vector3();
+  const upperArmLength = .44, forearmLength = .46;
   function poseSegment(segment, start, end) {
     segment.position.copy(start).add(end).multiplyScalar(.5);
     segmentDelta.subVectors(end, start);
@@ -342,10 +346,30 @@ export function makeWarrior() {
     for (const [arm, grip] of [[leftArm, leftGrip], [rightArm, rightGrip]]) {
       grip.getWorldPosition(gripTarget);
       arm.worldToLocal(gripTarget);
-      elbow.copy(gripTarget).multiplyScalar(.45);
-      elbow.x += arm.userData.side * .19;
-      elbow.y -= .22;
-      elbow.z += .12;
+      const distance = gripTarget.length();
+      reachDirection.copy(gripTarget).divideScalar(Math.max(distance, 1e-8));
+      if (distance < 1e-8) reachDirection.set(0, 0, 1);
+      // A real two-bone chain bends at the elbow instead of growing and
+      // shrinking with each swing. Extreme guard/stance poses may put a grip
+      // outside the arm span; extend both bones proportionally to retain contact.
+      const extension = Math.max(1, distance / (upperArmLength + forearmLength));
+      const upperLength = upperArmLength * extension, foreLength = forearmLength * extension;
+      const along = Math.max(-upperLength, Math.min(upperLength,
+        (upperLength * upperLength - foreLength * foreLength + distance * distance) / (2 * Math.max(distance, 1e-8))));
+      const bend = Math.sqrt(Math.max(0, upperLength * upperLength - along * along));
+      bendDirection.copy(arm.userData.elbowPole).addScaledVector(reachDirection, -arm.userData.elbowPole.dot(reachDirection));
+      if (bendDirection.lengthSq() < 1e-5) {
+        // Keep the previous bend plane if the hand crosses the pole axis.
+        bendDirection.copy(arm.userData.elbowBend).addScaledVector(reachDirection, -arm.userData.elbowBend.dot(reachDirection));
+        if (bendDirection.lengthSq() < 1e-5) {
+          bendDirection.set(0, 0, 1).addScaledVector(reachDirection, -reachDirection.z);
+          if (bendDirection.lengthSq() < 1e-5) bendDirection.set(arm.userData.side, 0, 0);
+        }
+      }
+      bendDirection.normalize();
+      if (bendDirection.dot(arm.userData.elbowBend) < 0) bendDirection.negate();
+      arm.userData.elbowBend.copy(bendDirection);
+      elbow.copy(reachDirection).multiplyScalar(along).addScaledVector(bendDirection, bend);
       poseSegment(arm.userData.upper, zero, elbow);
       poseSegment(arm.userData.fore, elbow, gripTarget);
     }

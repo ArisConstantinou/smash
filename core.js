@@ -110,8 +110,8 @@ export function attackStats(stats, charge = 0) {
     halfAngle: 1.28 + q * 0.4,
     knockback: 5.4 + q * 12,
     lift: 2.3 + q * 3.5,
-    duration: 0.27 + q * 0.11,
-    impactAt: 0.075 + q * 0.025,
+    duration: 0.32 + q * 0.10,
+    impactAt: 0.12 + q * 0.035,
     charged: q >= 0.92
   };
 }

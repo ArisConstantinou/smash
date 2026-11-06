@@ -14,6 +14,7 @@ import * as combat from '../combat.js';
 import * as progression from '../progression.js';
 import * as waves from '../waves.js';
 import * as enemyModels from '../enemy-models.js';
+import * as hammerMotion from '../hammer-motion.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -128,6 +129,7 @@ const imports = new Map([
   ['./progression.js', synthetic(progression, 'real-progression')],
   ['./waves.js', synthetic(waves, 'real-waves')],
   ['./enemy-models.js', synthetic(enemyModels, 'real-city-enemies')],
+  ['./hammer-motion.js', synthetic(hammerMotion, 'real-hammer-motion')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
@@ -196,6 +198,23 @@ function mouseAttack(down, props = {}) {
     clientX: heldMousePoint.x, clientY: heldMousePoint.y, ...props,
   });
   if (!down) heldMousePoint = null;
+}
+function mouseGuard(down, props = {}) {
+  const point = api.screenPoint(api.player.x + api.aim.x * 12, api.player.y + 1.2, api.player.z + api.aim.z * 12);
+  return pointerEvent('gameCanvas', down ? 'pointerdown' : 'pointerup', {
+    pointerId: 10, pointerType: 'mouse', button: 2, buttons: down ? 2 : 0,
+    clientX: point.x, clientY: point.y, ...props,
+  });
+}
+function chordButtons(buttons, props = {}) {
+  // A mouse uses one pointer id. Additional pressed/released buttons are
+  // reported as pointermove transitions rather than extra pointerdown/up.
+  const point = heldMousePoint || api.screenPoint(api.player.x + api.aim.x * 12,
+    api.player.y + 1.2, api.player.z + api.aim.z * 12);
+  return pointerEvent('gameCanvas', 'pointermove', {
+    pointerId: 10, pointerType: 'mouse', button: -1, buttons,
+    clientX: point.x, clientY: point.y, ...props,
+  });
 }
 function advance(seconds, step = 1 / 60) {
   for (let remaining = seconds; remaining > 1e-8; remaining -= step) {
@@ -267,18 +286,26 @@ test('the visible control deck maps Space to jump and exposes the illustrated no
   assert.equal(dataKeys.has('KeyE'), false);
   assert.notEqual(dataKeys.get('Space'), elements.get('attackButton'));
   assert.ok(elements.has('a-mouse-left'));
+  assert.ok(elements.has('a-mouse-right'));
+  assert.equal(dataKeys.has('KeyQ'), false, 'The defense is pictured on the right mouse button');
   for (const id of ['power', 'size', 'range', 'speed', 'vitality', 'quake']) assert.ok(elements.has('upgrade-' + id));
   for (const id of ['upgradesToggle', 'upgradePanel', 'upgradeChoices', 'pendingUpgradeCount', 'upgradeQueueText', 'waveEnemiesValue', 'waveStatus']) assert.ok(elements.has(id));
   assert.equal(elements.has('upgradeMenu'), false, 'The former blocking upgrade overlay is removed');
   assert.match(html, /id="upgradePanel" class="upgrade-drawer"/);
 });
 
-test('right mouse clicks and the former E key do not attack, spin or jump', () => {
+test('right mouse holds defense and release stops it; the former Q and E keys do nothing', () => {
   arena();
-  pointerEvent('gameCanvas', 'pointerdown', { pointerId: 11, pointerType: 'mouse', button: 2, buttons: 2 });
+  mouseGuard(true);
   playerSteps(.3);
-  pointerEvent('gameCanvas', 'pointerup', { pointerId: 11, pointerType: 'mouse', button: 2, buttons: 0 });
-  key('KeyE', true); playerSteps(.1); key('KeyE', false);
+  assert.equal(api.guarding, true);
+  assert.equal(api.swing, null); assert.equal(api.spin, null); assert.equal(api.leap, null);
+  mouseGuard(false); playerSteps(.03);
+  assert.equal(api.guarding, false);
+  for (const code of ['KeyQ', 'KeyE']) {
+    key(code, true); playerSteps(.1); key(code, false);
+    assert.equal(api.guarding, false);
+  }
   assert.equal(api.swing, null); assert.equal(api.spin, null); assert.equal(api.leap, null);
   key('Space', true); key('Space', false);
   assert.ok(api.leap); assert.equal(api.leap.slam, false, 'Space alone starts a normal leap without arming the mouse attack');
@@ -303,13 +330,12 @@ test('wave one gives breathing room, starts with two weak zombies, and a normal 
   assert.equal(api.kills, 1);
 });
 
-test('keyboard movement preserves mouse facing and a released left-click hits a surviving brute', () => {
+test('stationary mouse aim directs a released left-click into a surviving brute', () => {
   arena();
   aimAt(0, 12); playerSteps(.1);
-  key('KeyD', true); advance(.12); key('KeyD', false);
   const before = { x: api.player.x, z: api.player.z }, facing = { ...api.facing };
-  assert.ok(before.x > 0 && before.z < 0);
-  assert.ok(facing.z > .9, 'Walking diagonally right must not overwrite the independent mouse direction');
+  close(before.x, 0); close(before.z, 0);
+  assert.ok(facing.z > .9, 'A stationary warrior can still turn toward the mouse');
   close(facing.x * api.aim.z - facing.z * api.aim.x, 0, .002);
   const enemy = stationaryEnemy('brute', before.x + facing.x * 2.3, before.z + facing.z * 2.3), hp = enemy.hp;
   mouseAttack(true); advance(.04);
@@ -327,6 +353,79 @@ test('keyboard movement preserves mouse facing and a released left-click hits a 
   assert.ok(Math.hypot(enemy.vx, enemy.vz) > 1);
   assert.ok(enemy.vy > 0 || enemy.y > 0);
   assert.ok(audioEvents.some(e => e.name === 'hit' || e.name === 'break'));
+});
+
+test('all eight WASD headings turn the warrior toward travel even with the mouse behind him', () => {
+  arena();
+  for (const [horizontal, vertical, codes] of [
+    [1, 0, ['KeyD']], [-1, 0, ['KeyA']], [0, -1, ['KeyW']], [0, 1, ['KeyS']],
+    [1, -1, ['KeyD', 'KeyW']], [-1, -1, ['KeyA', 'KeyW']],
+    [1, 1, ['KeyD', 'KeyS']], [-1, 1, ['KeyA', 'KeyS']],
+  ]) {
+    const direction = core.screenMovement(horizontal, vertical);
+    aimAt(api.player.x - direction.x * 12, api.player.z - direction.z * 12);
+    playerSteps(.08);
+    assert.ok(api.aim.x * direction.x + api.aim.z * direction.z < -.99);
+    const start = { x: api.player.x, z: api.player.z };
+    codes.forEach(code => key(code, true));
+    playerSteps(.12, 1 / 120, () => {
+      close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+      close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
+    });
+    codes.forEach(code => key(code, false));
+    const dx = api.player.x - start.x, dz = api.player.z - start.z;
+    assert.ok(dx * direction.x + dz * direction.z > .6);
+    close(dx * direction.z - dz * direction.x, 0, .001);
+  }
+});
+
+test('a moving normal swing strikes along travel instead of turning sideways toward the mouse', () => {
+  arena();
+  const direction = core.screenMovement(1, 0);
+  const point = api.screenPoint(-direction.x * 12, 1.2, -direction.z * 12);
+  aimAt(-direction.x * 12, -direction.z * 12);
+  key('KeyD', true); playerSteps(.04);
+  const front = stationaryEnemy('brute', api.player.x + direction.x * 2.3, api.player.z + direction.z * 2.3);
+  const behind = stationaryEnemy('brute', api.player.x - direction.x * 2.3, api.player.z - direction.z * 2.3);
+  mouseAttack(true, { clientX: point.x, clientY: point.y });
+  mouseAttack(false, { clientX: point.x, clientY: point.y });
+  const strike = api.swing; assert.ok(strike);
+  playerSteps(.4, 1 / 240, () => {
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
+  });
+  key('KeyD', false);
+  assert.equal(front.hp, front.maxHp - strike.damage);
+  assert.equal(behind.hp, behind.maxHp, 'A normal strike must not aim backward at the cursor while walking forward');
+});
+
+test('changing movement direction during a swing immediately turns the body with the feet', () => {
+  arena();
+  key('KeyD', true); playerSteps(.03);
+  mouseAttack(true); mouseAttack(false); playerSteps(.08);
+  assert.ok(api.swing);
+  key('KeyD', false); key('KeyW', true);
+  const direction = core.screenMovement(0, -1);
+  playerSteps(.1, 1 / 240, () => {
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
+  });
+  key('KeyW', false);
+});
+
+test('a jump and a dodge face their travel direction despite an opposite mouse aim', () => {
+  for (const code of ['Space', 'ShiftLeft']) {
+    arena();
+    const direction = core.screenMovement(1, 0);
+    aimAt(-direction.x * 12, -direction.z * 12);
+    key('KeyD', true); key(code, true); key(code, false); key('KeyD', false);
+    playerSteps(.14, 1 / 120, () => {
+      close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+      close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
+    });
+    assert.ok(api.player.x * direction.x + api.player.z * direction.z > 1);
+    close(api.player.x * direction.z - api.player.z * direction.x, 0, .001);
+  }
 });
 
 test('the initial stance holds the hammer in one hand and the real shield in the other', () => {
@@ -386,7 +485,7 @@ test('a continuous swing crosses many poses and damages a target only once', () 
   assert.ok(maximumStep < .5, `Hammer teleported ${maximumStep} metres in one 480 Hz sample`);
 });
 
-test('a quick left-click connects promptly and completes its whole swing in under 300 ms', () => {
+test('a quick left-click connects promptly and completes its weighted swing within 350 ms', () => {
   arena(); api.poseHero(1);
   const enemy = stationaryEnemy('brute', 0, 2.3), hp = enemy.hp;
   mouseAttack(true); mouseAttack(false);
@@ -396,9 +495,32 @@ test('a quick left-click connects promptly and completes its whole swing in unde
     if (contactTime === null && enemy.hp < hp) contactTime = duration;
   }
   assert.notEqual(contactTime, null, 'A tap must connect with the forward target');
-  assert.ok(contactTime <= .12, `Tap contact took ${contactTime.toFixed(3)} seconds`);
-  assert.ok(duration <= .3, `The full tap animation took ${duration.toFixed(3)} seconds`);
+  assert.ok(contactTime <= .14, `Tap contact took ${contactTime.toFixed(3)} seconds`);
+  assert.ok(duration <= .35, `The full tap animation took ${duration.toFixed(3)} seconds`);
   assert.equal(api.swing, null);
+});
+
+test('weighted swings move the torso and hammer vertically while every held grip stays attached', () => {
+  for (const twoHanded of [false, true]) {
+    arena();
+    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.08); }
+    mouseAttack(true); mouseAttack(false);
+    const u = api.hero.userData, headHeights = [], torsoTurns = [], torsoLeans = [];
+    for (let frame = 0; api.swing && frame < 240; frame++) {
+      api.updatePlayer(1 / 240);
+      headHeights.push(worldPosition(u.hammerHead).y - api.player.y);
+      torsoTurns.push(u.body.rotation.y); torsoLeans.push(u.body.rotation.x);
+      close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
+      close(worldPosition(u.leftGrip).distanceTo(worldPosition(twoHanded ? u.leftGripAnchor : u.shieldGripAnchor)), 0);
+    }
+    assert.equal(api.swing, null, 'The weighted swing must settle and finish');
+    assert.ok(Math.max(...headHeights) - Math.min(...headHeights) > .7,
+      'The head must follow a raised-to-lowered arc instead of a flat horizontal sweep');
+    assert.ok(Math.max(...torsoTurns) > .05 && Math.min(...torsoTurns) < -.05,
+      'Wind-up and follow-through must visibly carry the torso across the strike');
+    assert.ok(Math.max(...torsoLeans) - Math.min(...torsoLeans) > .1,
+      'The body must transfer its weight with the strike');
+  }
 });
 
 test('normal swings with either stock or upgraded hammer size reach nearby targets without striking behind', () => {
@@ -480,7 +602,7 @@ test('guarding or cancelling a held button clears the pending attack', () => {
     mouseAttack(true); mouseAttack(false); playerSteps(.2);
     if (cancelWithGuard) {
       mouseAttack(true); mouseAttack(false);
-      key('KeyQ', true); playerSteps(.1); key('KeyQ', false);
+      mouseGuard(true); playerSteps(.1); mouseGuard(false);
     } else {
       pointerEvent('chargeButton', 'pointerdown'); playerSteps(.02);
       pointerEvent('chargeButton', 'pointercancel');
@@ -535,6 +657,8 @@ test('all four illustrated WASD buttons move continuously and release on pointer
     const dx = api.player.x - start.x, dz = api.player.z - start.z;
     assert.ok(dx * direction.x + dz * direction.z > .5, `${code} must move in its pictured screen direction`);
     close(dx * direction.z - dz * direction.x, 0);
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
     pointerEvent(id, 'pointercancel');
     const stopped = { x: api.player.x, z: api.player.z }; playerSteps(.1);
     close(api.player.x, stopped.x); close(api.player.z, stopped.z);
@@ -652,7 +776,7 @@ test('releasing the left mouse button stops damage immediately without a charged
   mouseAttack(false);
   assert.equal(api.spin, null); assert.equal(api.swing, null);
   playerSteps(.8);
-  // Spin recovery returns to the independent mouse-facing direction.
+  // Once stationary, spin recovery returns to the mouse-facing direction.
   close(angleStep(Math.atan2(api.aim.x, api.aim.z), api.hero.rotation.y), 0, .01);
   assert.equal(enemy.hp, enemy.maxHp, 'The recovery pose must have no residual damage');
   assert.equal(audioEvents.filter(e => e.name === 'swing').length, events);
@@ -678,16 +802,20 @@ test('a second spin input preserves the active turn and its per-target contact c
   assert.equal(api.spin, null); assert.equal(api.swing, null);
 });
 
-test('Q, Space, R and Z cancel a held spin and carry out their own actions without restarting it', () => {
-  for (const action of ['KeyQ', 'Space', 'KeyR', 'KeyZ']) {
+test('RMB, Space, R and Z cancel a held spin and carry out their own actions without restarting it', () => {
+  for (const action of ['RMB', 'Space', 'KeyR', 'KeyZ']) {
     arena(); mouseAttack(true); playerSteps(.3); assert.ok(api.spin);
-    key(action, true); api.updatePlayer(.01);
+    if (action === 'RMB') chordButtons(3, { button: 2 });
+    else key(action, true);
+    api.updatePlayer(.01);
     assert.equal(api.spin, null, `${action} must cancel the old spin`);
-    if (action === 'KeyQ') assert.equal(api.guarding, true);
+    if (action === 'RMB') assert.equal(api.guarding, true);
     if (action === 'Space') { assert.ok(api.leap); assert.equal(api.leap.slam, true, 'Space inherits the held mouse attack as an armed smash'); }
     if (action === 'KeyR') assert.ok(api.throwWindup || api.throwFlight);
     if (action === 'KeyZ') assert.equal(api.stanceTarget, 1);
-    key(action, false); playerSteps(.3);
+    if (action === 'RMB') chordButtons(1, { button: 2 });
+    else key(action, false);
+    playerSteps(.3);
     assert.equal(api.spin, null, 'A cancelled held key must not restart after the overriding action');
     mouseAttack(false); playerSteps(.5);
     assert.equal(api.spin, null); assert.equal(api.swing, null, 'Release after cancellation must not add a ground swing');
@@ -721,6 +849,63 @@ test('canvas pointer cancellation or lost capture stops a held mouse spin withou
   }
 });
 
+test('RMB interrupts a held LMB spin and its release never reactivates the still-held left button', () => {
+  arena(); mouseAttack(true); playerSteps(.35);
+  assert.ok(api.spin);
+  chordButtons(3, { button: 2 }); playerSteps(.03);
+  assert.equal(api.spin, null); assert.equal(api.guarding, true);
+  const swings = audioEvents.filter(event => event.name === 'swing').length;
+  chordButtons(1, { button: 2 }); playerSteps(.5);
+  assert.equal(api.guarding, false); assert.equal(api.spin, null); assert.equal(api.swing, null);
+  mouseAttack(false); playerSteps(.2);
+  assert.equal(audioEvents.filter(event => event.name === 'swing').length, swings,
+    'A cancelled left press must not become a delayed tap when the last mouse button is released');
+  mouseAttack(true); mouseAttack(false);
+  assert.ok(api.swing, 'A fresh left-click must still work after the chord has ended');
+});
+
+test('adding and releasing LMB during an RMB guard keeps the defense held without a queued attack', () => {
+  arena(); mouseGuard(true); playerSteps(.05);
+  assert.equal(api.guarding, true);
+  const swings = audioEvents.filter(event => event.name === 'swing').length;
+  chordButtons(3, { button: 0 }); playerSteps(.25);
+  assert.equal(api.guarding, true); assert.equal(api.spin, null); assert.equal(api.swing, null);
+  chordButtons(2, { button: 0 }); playerSteps(.1);
+  assert.equal(api.guarding, true, 'Releasing LMB must not also release the still-held RMB');
+  mouseGuard(false); playerSteps(.5);
+  assert.equal(api.guarding, false); assert.equal(api.spin, null); assert.equal(api.swing, null);
+  assert.equal(audioEvents.filter(event => event.name === 'swing').length, swings);
+});
+
+test('RMB releases outside the canvas and clears on cancellation, lost capture, blur and pause', () => {
+  for (const action of ['outside', 'pointercancel', 'lostpointercapture', 'blur', 'pause']) {
+    arena(); mouseGuard(true); playerSteps(.05); assert.equal(api.guarding, true);
+    if (action === 'outside') emit('pointerup', {
+      pointerId: 10, pointerType: 'mouse', button: 2, buttons: 0,
+      clientX: 1500, clientY: 950, target: document.body,
+    });
+    else if (action === 'blur') emit('blur');
+    else if (action === 'pause') { key('Escape', true); key('Escape', false); }
+    else pointerEvent('gameCanvas', action, { pointerId: 10, pointerType: 'mouse', button: 2, buttons: 0 });
+    assert.equal(api.guarding, false, `${action} must release the defense`);
+    if (api.phase === 'paused') elements.get('resumeButton').click();
+    mouseGuard(false); playerSteps(.3);
+    assert.equal(api.guarding, false); assert.equal(api.spin, null); assert.equal(api.swing, null);
+  }
+});
+
+test('an unrelated pointer cannot release a held mouse guard and unowned mouse moves cannot begin it', () => {
+  arena();
+  chordButtons(2); playerSteps(.03);
+  assert.equal(api.guarding, false, 'A held button that began outside the canvas must not start an action');
+  mouseGuard(true); playerSteps(.03); assert.equal(api.guarding, true);
+  pointerEvent('gameCanvas', 'pointerup', { pointerId: 22, pointerType: 'touch', buttons: 0 });
+  playerSteps(.03); assert.equal(api.guarding, true, 'A different touch pointer cannot release the mouse guard');
+  emit('pointermove', { pointerType: 'mouse', clientX: 600, clientY: 450 });
+  playerSteps(.03); assert.equal(api.guarding, true, 'A missing buttons field is not a mouse-button release');
+  mouseGuard(false); assert.equal(api.guarding, false);
+});
+
 test('two-handed spin keeps both hands attached and carries the stance damage bonus', () => {
   arena(); key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
   assert.equal(api.stance, 1);
@@ -737,15 +922,15 @@ test('two-handed spin keeps both hands attached and carries the stance damage bo
   pointerEvent('chargeButton', 'pointerup');
 });
 
-test('Q aims a vertical frontal propeller with the mouse, blocks the front and leaves the rear exposed', () => {
+test('RMB aims a vertical frontal propeller while stationary, blocks the front and leaves the rear exposed', () => {
   arena(); aimAt(9, 0);
-  key('KeyQ', true); api.updatePlayer(.05);
+  mouseGuard(true); api.updatePlayer(.05);
   assert.equal(api.guarding, true); close(api.aim.x, 1); close(api.aim.z, 0);
   const hp = api.player.hp;
   api.hurtPlayer(24, -api.aim.x, -api.aim.z);
-  assert.equal(api.player.hp, hp, 'Front-facing Q must block an incoming strike');
+  assert.equal(api.player.hp, hp, 'Front-facing RMB defense must block an incoming strike');
   api.hurtPlayer(24, api.aim.x, api.aim.z);
-  assert.equal(api.player.hp, hp - 24, 'Q must not provide a circular or rear shield');
+  assert.equal(api.player.hp, hp - 24, 'RMB must not provide a circular or rear shield');
   const points = [];
   playerSteps(.38, 1 / 120, () => points.push(worldPosition(api.hero.userData.hammerHead).sub(api.hero.position)));
   const heights = points.map(p => p.y), depths = points.map(p => p.x * api.aim.x + p.z * api.aim.z);
@@ -754,12 +939,12 @@ test('Q aims a vertical frontal propeller with the mouse, blocks the front and l
   assert.ok(Math.max(...lateral) - Math.min(...lateral) > 2);
   assert.ok(Math.max(...depths) - Math.min(...depths) < .02, 'The spin stays in one vertical plane in front');
   assert.ok(Math.min(...depths) > .8, 'The propeller does not orbit around the warrior');
-  key('KeyQ', false); assert.equal(api.guarding, false);
+  mouseGuard(false); assert.equal(api.guarding, false);
 });
 
-test('Q reflects a frontal robot bolt back into an enemy without hurting the warrior', () => {
+test('RMB reflects a frontal robot bolt back into an enemy without hurting the warrior', () => {
   arena(); aimAt(0, 10);
-  key('KeyQ', true); api.updatePlayer(.05);
+  mouseGuard(true); api.updatePlayer(.05);
   const robot = stationaryEnemy('robot', 0, 5), hp = api.player.hp, robotHP = robot.hp;
   api.shoot(robot);
   for (let i = 0; i < 120 && !api.bolts[0]?.reflected; i++) api.updateEnemies(1 / 120);
@@ -767,7 +952,47 @@ test('Q reflects a frontal robot bolt back into an enemy without hurting the war
   assert.ok(api.bolts[0].vz > 0); assert.equal(api.player.hp, hp);
   for (let i = 0; i < 120 && api.bolts.length; i++) api.updateEnemies(1 / 120);
   assert.equal(api.bolts.length, 0); assert.ok(robot.hp < robotHP); assert.equal(api.player.hp, hp);
-  key('KeyQ', false);
+  mouseGuard(false);
+});
+
+test('walking RMB defense and its physical vertical plane follow travel instead of the opposite cursor', () => {
+  arena();
+  const direction = core.screenMovement(1, 0);
+  aimAt(-direction.x * 12, -direction.z * 12);
+  key('KeyD', true); playerSteps(.05); mouseGuard(true); playerSteps(.04);
+  assert.equal(api.guarding, true);
+  assert.ok(api.aim.x * direction.x + api.aim.z * direction.z < -.99);
+  const points = [];
+  playerSteps(.25, 1 / 120, () => {
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
+    points.push(worldPosition(api.hero.userData.hammerHead).sub(api.hero.position));
+  });
+  const depth = points.map(point => point.x * direction.x + point.z * direction.z);
+  assert.ok(Math.min(...depth) > .8);
+  assert.ok(Math.max(...depth) - Math.min(...depth) < .02,
+    'The physical propeller plane must agree with the visible walking direction');
+  const hp = api.player.hp;
+  api.hurtPlayer(24, -direction.x, -direction.z);
+  assert.equal(api.player.hp, hp, 'The direction faced while walking is the protected front');
+  api.hurtPlayer(24, direction.x, direction.z);
+  assert.equal(api.player.hp, hp - 24, 'The cursor behind the warrior must not turn the defense backward');
+  key('KeyD', false); mouseGuard(false);
+});
+
+test('moving defense reflects projectiles along the faced direction even with the cursor behind', () => {
+  arena();
+  const direction = core.screenMovement(1, 0);
+  aimAt(-direction.x * 12, -direction.z * 12);
+  key('KeyD', true); playerSteps(.05); mouseGuard(true); playerSteps(.03);
+  const robot = stationaryEnemy('robot', api.player.x + direction.x * 5, api.player.z + direction.z * 5);
+  const hp = api.player.hp;
+  api.shoot(robot);
+  for (let i = 0; i < 120 && !api.bolts[0]?.reflected; i++) api.updateEnemies(1 / 120);
+  assert.equal(api.bolts.length, 1); assert.equal(api.bolts[0].reflected, true);
+  assert.ok(api.bolts[0].vx * direction.x + api.bolts[0].vz * direction.z > 0);
+  assert.equal(api.player.hp, hp);
+  key('KeyD', false); mouseGuard(false);
 });
 
 test('Space makes a high forward leap and damages nearby targets once on its ordinary landing', () => {
@@ -886,7 +1111,7 @@ test('R uses mouse aim, sweeps into the first thin wall, and returns the only vi
   assert.equal(u.weaponHeld, false); assert.equal(u.hammerPivot.visible, false);
   assert.equal(u.leftGrip.visible, true); assert.equal(u.rightGrip.visible, true);
   assert.equal(api.scene.children.filter(child => child.userData.kind === 'hammer-projectile').length, 1);
-  mouseAttack(true); mouseAttack(false); key('KeyQ', true); api.updatePlayer(.01); key('KeyQ', false);
+  mouseAttack(true); mouseAttack(false); mouseGuard(true); api.updatePlayer(.01); mouseGuard(false);
   assert.equal(api.swing, null); assert.equal(api.guarding, false, 'The absent hammer cannot swing or guard');
   // One large segment traverses both fixtures: endpoint-only collision would
   // miss the thin wall and either hit the farther robot or tunnel through both.
@@ -898,6 +1123,25 @@ test('R uses mouse aim, sweeps into the first thin wall, and returns the only vi
   assert.equal(api.throwFlight, null); assert.equal(u.weaponHeld, true); assert.equal(u.hammerPivot.visible, true);
   assert.equal(thrown.mesh.parent, null);
   assert.equal(api.scene.children.filter(child => child.userData.kind === 'hammer-projectile').length, 0);
+});
+
+test('R retains mouse-directed throwing while the walking body stays aligned with travel', () => {
+  arena();
+  const direction = core.screenMovement(1, 0);
+  aimAt(-direction.x * 12, -direction.z * 12);
+  key('KeyD', true); playerSteps(.05);
+  const throwDirection = { ...api.aim };
+  assert.ok(throwDirection.x * direction.x + throwDirection.z * direction.z < -.99);
+  key('KeyR', true); key('KeyR', false);
+  assert.ok(api.throwWindup);
+  playerSteps(.31, 1 / 120, () => {
+    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
+    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
+  });
+  assert.ok(api.throwFlight);
+  close(api.throwFlight.dir.x, throwDirection.x, .001);
+  close(api.throwFlight.dir.z, throwDirection.z, .001);
+  key('KeyD', false);
 });
 
 test('enemy target marks follow proximity and visibility and clear when the warrior moves away', () => {
