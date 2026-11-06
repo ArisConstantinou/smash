@@ -1,0 +1,49 @@
+name: Verify portrait melee update
+on:
+  push:
+    branches: [work/portrait-melee-build-20261106]
+    paths: [tools/portrait.patch.gz.b64]
+permissions:
+  contents: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply exact tested update to the original release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp tools/portrait-manifest.json /tmp/portrait-manifest.json
+          base64 --decode tools/portrait.patch.gz.b64 | gzip -d > /tmp/portrait.patch
+          git checkout --detach e126c48e33e4caab056ba942bc49d318a9ed7992
+          git apply --check /tmp/portrait.patch
+          git apply /tmp/portrait.patch
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          manifest = json.loads(pathlib.Path('/tmp/portrait-manifest.json').read_text())
+          for name, expected in manifest.items():
+              actual = hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f'Hash mismatch: {name}: {actual} != {expected}')
+          print(f'Verified {len(manifest)} exact source files.')
+          PY
+          git diff --check
+      - name: Run all regression tests
+        run: npm test
+      - name: Publish a tested source commit without the transfer workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md audio.js character-progression.js combat-feedback.js combat-visibility.js docs/portrait-qa.json game.js hammer-motion.js index.html mobile-hud.css models.js tests/audio.test.mjs tests/combat-feedback.test.mjs tests/game.integration.mjs tests/hammer-motion.test.mjs tests/models.test.mjs
+          git commit -m 'Polish portrait HUD, two-handed melee, sound, combos and combat visibility'
+          git push origin HEAD:refs/heads/work/portrait-melee-tested-20261106
+          echo "Tested commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
