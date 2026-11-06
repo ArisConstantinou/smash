@@ -1,0 +1,555 @@
+diff --git a/assets/audio/CREDITS.md b/assets/audio/CREDITS.md
+new file mode 100644
+index 0000000..36c5059
+--- /dev/null
++++ b/assets/audio/CREDITS.md
+@@ -0,0 +1,33 @@
++# IRONFALL — recorded audio credits
++
++These recordings are bundled with the game. No third-party service is contacted during playback.
++
++## Physical impacts (12 clips)
++**Impact Sounds** by **Kenney (Kenney.nl)**.
++Source: https://kenney.nl/assets/impact-sounds
++License: **CC0 1.0 Universal**, https://creativecommons.org/publicdomain/zero/1.0/
++Original license is included as `KENNEY-LICENSE.txt`.
++Selected punch, metal, mining and wood recordings were trimmed, peak-normalized,
++faded and converted to mono MP3. No endorsement by Kenney is implied.
++
++## Player effort (3 clips)
++**Generic Hero Effort Noises / Valiant Genericus (Effort Noises)** by **tinsin**.
++Source: https://opengameart.org/content/generic-hero-effort-noises
++License selected: **Creative Commons Attribution 3.0 Unported**,
++https://creativecommons.org/licenses/by/3.0/
++Short excerpts at 0.235–0.480 s, 0.750–1.100 s and 1.500–1.980 s were extracted,
++trimmed, peak-normalized, faded and converted to mono MP3. Runtime pitch may vary.
++These are recordings of a human performer, not speech synthesis. No endorsement
++by the performer is implied. Attribution must accompany redistribution.
++
++## Pain / enemy reactions (4 clips)
++**Hurt Sound Effects** by **EZduzziteh**.
++Source: https://opengameart.org/content/hurt-sound-effects
++License: **CC0 1.0 Universal**, https://creativecommons.org/publicdomain/zero/1.0/
++Source files `hurt_01.mp3` through `hurt_04.mp3` were trimmed, normalized, faded
++and converted to mono MP3. Playback rate varies with enemy type.
++
++The source hashes, output hashes and excerpt mapping are in `manifest.json`.
++`python3 tools/build-audio.py` reproduces the recorded bank using FFmpeg and
++verified source downloads. Existing procedural swing air, debris, ambience,
++robot reactions and reward stingers are original game effects, not recordings.
+diff --git a/audio-samples.js b/audio-samples.js
+new file mode 100644
+index 0000000..81d7c5a
+--- /dev/null
++++ b/audio-samples.js
+@@ -0,0 +1,74 @@
++// Same-origin recorded foley and human effort/pain. See assets/audio/CREDITS.md.
++// Requests/decode are bounded, optional and never delay game input or autoplay.
++export const SAMPLE_GROUPS = Object.freeze({
++  flesh: ['flesh-1', 'flesh-2', 'flesh-3'],
++  metal: ['metal-1', 'metal-2', 'metal-3'],
++  masonry: ['masonry-1', 'masonry-2', 'masonry-3'],
++  wood: ['wood-1', 'wood-2', 'wood-3'],
++  exert: ['exert-1', 'exert-2', 'exert-3'],
++  pain: ['pain-1', 'pain-2', 'pain-3', 'pain-4'],
++});
++export const SAMPLE_NAMES = Object.freeze(Object.values(SAMPLE_GROUPS).flat());
++export class RecordedSounds {
++  constructor({ fetcher = globalThis.fetch?.bind(globalThis), base = new URL('./assets/audio/', import.meta.url), timeout = 12000 } = {}) {
++    this.fetcher = fetcher; this.base = base; this.timeout = timeout;
++    this.encoded = new Map(); this.buffers = new Map(); this.last = new Map();
++    this.controllers = new Set(); this.loading = null; this.decoding = null;
++    this.disposed = false; this.failed = 0; this.lastAttempt = -Infinity;
++  }
++  async preload({ retry = false } = {}) {
++    if (this.disposed || !this.fetcher) return 0;
++    if (this.loading) return this.loading;
++    if (this.lastAttempt > -Infinity && (!retry || Date.now() - this.lastAttempt < 15000)) return this.encoded.size;
++    this.lastAttempt = Date.now(); this.failed = 0;
++    const queue = SAMPLE_NAMES.filter(name => !this.encoded.has(name));
++    const worker = async () => {
++      while (queue.length && !this.disposed) {
++        const name = queue.shift(), controller = new AbortController();
++        this.controllers.add(controller);
++        const timer = setTimeout(() => controller.abort(), this.timeout);
++        try {
++          const response = await this.fetcher(new URL(name + '.mp3', this.base), { signal: controller.signal });
++          if (!response.ok) throw new Error('Audio HTTP ' + response.status);
++          const bytes = await response.arrayBuffer();
++          if (bytes.byteLength < 128 || bytes.byteLength > 512000) throw new Error('Invalid audio size');
++          if (!this.disposed) this.encoded.set(name, bytes);
++        } catch (_) { if (!this.disposed) this.failed++; }
++        finally { clearTimeout(timer); this.controllers.delete(controller); }
++      }
++    };
++    this.loading = Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker)).then(() => this.encoded.size);
++    try { return await this.loading; } finally { this.loading = null; }
++  }
++  async decode(ctx) {
++    if (this.disposed || !ctx?.decodeAudioData) return this.buffers.size;
++    if (this.decoding) return this.decoding;
++    this.decoding = (async () => {
++      await this.preload();
++      for (const [name, bytes] of this.encoded) {
++        if (this.disposed || ctx.state === 'closed') break;
++        if (this.buffers.has(name)) continue;
++        try {
++          // slice prevents Web Audio from detaching our cached compressed data.
++          const buffer = await ctx.decodeAudioData(bytes.slice(0));
++          if (!this.disposed && buffer.duration > 0 && buffer.duration < 5) this.buffers.set(name, buffer);
++        } catch (_) { /* Procedural fallback remains available for this sample. */ }
++      }
++      return this.buffers.size;
++    })();
++    try { return await this.decoding; } finally { this.decoding = null; }
++  }
++  choose(group, random = Math.random) {
++    const names = (SAMPLE_GROUPS[group] || []).filter(name => this.buffers.has(name));
++    if (!names.length || this.disposed) return null;
++    const candidates = names.length > 1 ? names.filter(name => name !== this.last.get(group)) : names;
++    const name = candidates[Math.min(candidates.length - 1, Math.floor(Math.max(0, random()) * candidates.length))];
++    this.last.set(group, name);
++    return this.buffers.get(name);
++  }
++  dispose() {
++    this.disposed = true;
++    for (const controller of this.controllers) controller.abort();
++    this.controllers.clear(); this.buffers.clear(); this.encoded.clear(); this.last.clear();
++  }
++}
+diff --git a/audio.js b/audio.js
+index b8f35d8..e90f529 100644
+--- a/audio.js
++++ b/audio.js
+@@ -1,3 +1,4 @@
+-// Original procedural sound design: no network requests or borrowed recordings.
+-// Contacts carry their surface; exertion/pain uses short synthesized vocal formants.
++import { RecordedSounds } from './audio-samples.js?v=20261106-audio2';
++// Recorded foley + human vocals, with lightweight procedural air/debris layers.
++// All recordings are bundled locally; attribution is in assets/audio/CREDITS.md.
+ const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
+@@ -26,2 +27,15 @@ export class GameAudio {
+     this._session = null;
++    this.samples = new RecordedSounds();
++    this.onStatusChange = null;
++    this._preview = 0;
++    this._previewTimers = new Set();
++  }
++
++  preload() { return this.samples.preload(); }
++  _status() { this.onStatusChange?.(); }
++  get sampleCount() { return this.samples.buffers.size; }
++  get state() {
++    if (this.muted || this.volume <= 0) return 'muted';
++    if (this._hidden) return 'background';
++    return this.ready && this.ctx?.state === 'running' ? 'ready' : 'blocked';
+   }
+@@ -37,4 +51,9 @@ export class GameAudio {
+     };
+-    const gesture = () => { if (!this.muted && this.volume > 0) void this.unlock(); };
+-    for (const event of ['pointerdown', 'touchend', 'keydown']) bind(target, event, gesture, { capture: true, passive: true });
++    const gesture = event => {
++      // Dedicated sound buttons must not unlock on pointerdown and then mute
++      // themselves on click. Their click handlers own the whole action.
++      if (event.target?.closest?.('[data-audio-control]')) return;
++      if (!this.muted && this.volume > 0) void this.unlock();
++    };
++    for (const event of ['pointerdown', 'pointerup', 'touchend', 'keydown', 'click']) bind(target, event, gesture, { capture: true, passive: true });
+     const visibility = () => {
+@@ -94,2 +113,3 @@ export class GameAudio {
+       if (this.ready) this._activated = true;
++      this._status();
+     };
+@@ -103,4 +123,5 @@ export class GameAudio {
+       if (this.ctx?.state === 'closed') this._dropGraph();
+-      if (!this.ctx && !this._createContext()) return false;
++      // Claim playback before creating/starting the graph, not afterward.
+       this._claimSession();
++      if (!this.ctx && !this._createContext()) { this._releaseSession(); this._status(); return false; }
+       const ctx = this.ctx;
+@@ -123,2 +144,4 @@ export class GameAudio {
+       else this._releaseSession();
++      if (this.ready) void this.samples.decode(ctx).then(() => { if (!this._disposed) this._status(); });
++      this._status();
+       return this.ready;
+@@ -128,2 +151,3 @@ export class GameAudio {
+       this._releaseSession();
++      this._status();
+       return false;
+@@ -133,2 +157,3 @@ export class GameAudio {
+   _pauseForBackground() {
++    this._cancelPreview();
+     this.ready = false;
+@@ -139,2 +164,3 @@ export class GameAudio {
+     }
++    this._status();
+   }
+@@ -144,4 +170,5 @@ export class GameAudio {
+     this._applyVolume();
+-    if (this.volume <= 0) this._releaseSession();
++    if (this.volume <= 0) { this._cancelPreview(); this._stopTransientSources(); this._releaseSession(); }
+     else if (this.ready && !this.muted) this._claimSession();
++    this._status();
+   }
+@@ -151,4 +178,5 @@ export class GameAudio {
+     this._applyVolume();
+-    if (this.muted) this._releaseSession();
++    if (this.muted) { this._cancelPreview(); this._stopTransientSources(); this._releaseSession(); }
+     else void this.unlock();
++    this._status();
+     return this.muted;
+@@ -217,4 +245,49 @@ export class GameAudio {
+ 
++  _sample(group, volume = .75, rate = 1, delay = 0, vocal = false) {
++    if (!this._canAllocate() || (vocal && this._voices.size >= 2)) return false;
++    const buffer = this.samples.choose(group);
++    if (!buffer) return false;
++    const t = this.ctx.currentTime + Math.max(0, delay);
++    const source = this.ctx.createBufferSource(), envelope = this.ctx.createGain();
++    source.buffer = buffer; source.playbackRate.value = clamp(rate, .65, 1.4);
++    envelope.gain.value = clamp(volume, 0, 1.25);
++    source.connect(envelope); envelope.connect(this.master);
++    this._register(source, [envelope]);
++    if (vocal) this._voices.add(source);
++    source.start(t); source.stop(t + buffer.duration / source.playbackRate.value + .02);
++    return true;
++  }
++
++  _cancelPreview() {
++    this._preview++;
++    for (const timer of this._previewTimers) clearTimeout(timer);
++    this._previewTimers.clear();
++  }
++
++  async preview() {
++    this._cancelPreview();
++    const generation = this._preview;
++    // resume must run synchronously in the click stack, before any fetch/await.
++    const resumed = this.unlock();
++    let timer;
++    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), 1800); });
++    const ready = await Promise.race([resumed, timeout]);
++    clearTimeout(timer);
++    if (!ready || generation !== this._preview || this._disposed || this._hidden || this.muted || this.volume <= 0) return false;
++    this._recent.clear();
++    const sequence = [[0,'hit',{material:'wood',weapon:'wood'}],[360,'hit',{material:'metal'}],[760,'hit',{material:'flesh',weapon:'wood'}],[1080,'exert',{}]];
++    for (const [delay, name, details] of sequence) {
++      const id = setTimeout(() => {
++        this._previewTimers.delete(id);
++        if (generation === this._preview) this.play(name, .5, details);
++      }, delay);
++      this._previewTimers.add(id);
++    }
++    return true;
++  }
++
+   _vocal(kind, power = 0, type = 'player', fatal = false, delay = 0) {
+     if (!this._canAllocate() || this._voices.size >= 2) return;
++    const pitch = ({player:1,zombie:.83,crawler:1.23,brute:.73,mutant:.91,titan:.67}[type] || .86) * (.96 + Math.random() * .08);
++    if (this._sample(kind === 'pain' ? 'pain' : 'exert', kind === 'pain' ? .62 : .55, pitch, delay, true)) return;
+     const t = this.ctx.currentTime + delay, p = clamp(power), pain = kind === 'pain';
+@@ -252,2 +325,9 @@ export class GameAudio {
+     const p = clamp(power), v = .85 + p * .35, pitch = .95 + Math.random() * .1;
++    const surface = material === 'stone' || material === 'ground' ? 'masonry' : material;
++    if (this._sample(surface, .8 + p * .2, pitch)) {
++      // Small physical body layer; the recorded transient remains dominant.
++      this._tone('sine', 155, 65, .09 + p * .04, .12);
++      if (weapon === 'wood' && surface !== 'wood') this._tone('triangle', 330, 170, .045, .06);
++      return;
++    }
+     if (material === 'metal') {
+@@ -432,2 +512,3 @@ export class GameAudio {
+     this._disposed = true;
++    this._cancelPreview(); this.samples.dispose(); this.onStatusChange = null;
+     for (const unbind of this._bindings.splice(0)) unbind();
+diff --git a/game.js b/game.js
+index 6adc062..b586376 100644
+--- a/game.js
++++ b/game.js
+@@ -4,3 +4,3 @@ import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261106-feel1
+ import {createWorld} from './world.js?v=20261106-feel1';
+-import {GameAudio} from './audio.js?v=20261106-feel1';
++import {GameAudio} from './audio.js?v=20261106-audio2';
+ import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
+@@ -17,3 +17,5 @@ const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value)
+ const read = (key,fallback) => {try {return JSON.parse(localStorage.getItem(key)) ?? fallback;} catch {return fallback;}};
+-const settings = Object.assign({quality:'high',shake:true,volume:0.6,muted:false},read('ironfall.settings',{}));
++const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false},read('ironfall.settings',{}));
++settings.volume=Number.isFinite(Number(settings.volume))?clamp(Number(settings.volume),0,1):.75;
++settings.muted=!!settings.muted;
+ const keys = new Set();
+@@ -23,4 +25,9 @@ let touchLayout=false,touchCanvasPointer=null,touchThrowAim=null,touchThrowQueue
+ const audio = new GameAudio();
++audio.muted=settings.muted;
+ audio.setVolume(settings.volume);
++audio.onStatusChange=updateSoundButtons;
+ audio.bindUnlock?.(document);
++audio.preload?.();
++// Sound tests work even while the renderer is still loading.
++for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
+ let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
+@@ -1646,16 +1653,36 @@ function syncCombatButtons(buttons){
+ function updateSoundButtons(){
+-  const silent=settings.muted||settings.volume<=0;
+-  const label=silent?'Ήχος κλειστός — πάτησε για ενεργοποίηση':'Ήχος ενεργός — πάτησε για σίγαση';
++  const silent=audio.muted||audio.volume<=0;
++  const blocked=!silent&&audio.ready===false;
++  const label=silent?'Ήχος κλειστός — πάτησε για ενεργοποίηση':blocked?'Πάτησε για ενεργοποίηση ήχου':'Ήχος ενεργός — πάτησε για σίγαση';
+   for(const id of ['soundButton','muteButton']){
+     const button=$(id);if(!button)continue;
+-    button.classList.toggle('muted',silent);button.setAttribute('aria-pressed',String(silent));button.setAttribute('aria-label',label);button.setAttribute('title',label);
++    button.setAttribute('data-audio-control','');
++    button.classList.toggle('muted',silent);button.classList.toggle('audio-blocked',blocked);
++    button.setAttribute('aria-pressed',String(silent));button.setAttribute('aria-label',label);button.setAttribute('title',label);
+   }
+   for(const id of ['muteIcon','soundIcon'])$(id)?.setAttribute('href',silent?'#a-sound-off':'#a-sound-on');
+-  if($('muteValue'))$('muteValue').textContent=silent?'ΚΛΕΙΣΤΟΣ':'ΣΙΓΑΣΗ';
++  if($('muteValue'))$('muteValue').textContent=silent?'ΚΛΕΙΣΤΟΣ':blocked?'ΠΑΤΑ':'ΣΙΓΑΣΗ';
++  const status=silent?'Ο ήχος είναι σε σίγαση.':blocked?'Πάτησε «Δοκιμή ήχου» για ενεργοποίηση.':audio.sampleCount>0?'Ηχογραφημένα εφέ και φωνές έτοιμα.':'Ήχος ενεργός · φόρτωση ηχογραφήσεων…';
++  for(const id of ['audioStatus','menuAudioStatus'])if($(id))$(id).textContent=status;
++}
++function enableGameAudio(){
++  if(settings.volume<=0){settings.volume=.75;audio.setVolume(.75);$('volumeRange').value=75;}
++  if(audio.muted)audio.toggle();
++  settings.muted=false;
++  save('ironfall.settings',settings);
+ }
+ function toggleSound(){
+-  if(settings.muted||settings.volume<=0){if(settings.volume<=0){settings.volume=.6;audio.setVolume(.6);$('volumeRange').value=60;}if(audio.muted)audio.toggle();settings.muted=false;audio.unlock().then(()=>audio.play('ui'));}
+-  else{settings.muted=audio.toggle();}
++  if(settings.muted||settings.volume<=0){enableGameAudio();audio.unlock().then(()=>audio.play('ui'));}
++  else if(audio.ready===false){audio.unlock().then(()=>{audio.play('ui');updateSoundButtons();});}
++  else settings.muted=audio.toggle();
+   updateSoundButtons();save('ironfall.settings',settings);
+ }
++async function testGameAudio(){
++  enableGameAudio();
++  // This call stays inside the user's click; no asynchronous asset fetch first.
++  const preview=audio.preview?.()||audio.unlock().then(()=>{audio.play('start');return true;});
++  const played=await preview;
++  updateSoundButtons();
++  if(!played)for(const id of ['audioStatus','menuAudioStatus'])if($(id))$(id).textContent='Η αναπαραγωγή μπλοκαρίστηκε. Πάτησε ξανά για δοκιμή.';
++}
+ const isTouchPointer=e=>e?.pointerType==='touch'||e?.pointerType==='pen';
+@@ -1733,3 +1760,3 @@ function initInput(){
+   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
+-  if(settings.muted)audio.toggle();updateSoundButtons();
++  updateSoundButtons();
+   window.addEventListener('keydown',e=>{
+@@ -1891,3 +1918,3 @@ async function init(){
+   $('gameCanvas').setAttribute('tabindex','-1');
+-  // Shader compilation is local; no network assets are loaded during play.
++  // Shader compilation is local. Optional recorded audio preloads separately.
+   if(renderer.compileAsync)await renderer.compileAsync(scene,camera);
+diff --git a/index.html b/index.html
+index 63b1cff..56360b8 100644
+--- a/index.html
++++ b/index.html
+@@ -9,3 +9,3 @@
+   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+-  <link rel="stylesheet" href="./style.css?v=20261106-feel1">
++  <link rel="stylesheet" href="./style.css?v=20261106-audio2">
+ </head>
+@@ -104,2 +104,6 @@
+       <button id="resumeCharacterButton" class="resume-character" type="button" hidden disabled>ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ</button>
++      <div class="menu-audio-check">
++        <button id="menuAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
++        <span id="menuAudioStatus" role="status" aria-live="polite">Χτυπήματα · μέταλλο · φωνές</span>
++      </div>
+       <details class="character-testing">
+@@ -331,3 +335,9 @@
+       <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
+-      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="60" aria-label="Ένταση ήχου"></label>
++      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
++      <div class="audio-check">
++        <button id="testAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
++        <p id="audioStatus" role="status" aria-live="polite">Πάτησε για χτυπήματα σε ξύλο, μέταλλο και εχθρό.</p>
++        <small>Ο ήχος ξεκινά με πάτημα. Έλεγξε και την ένταση πολυμέσων του κινητού.</small>
++        <a href="./assets/audio/CREDITS.md" target="_blank" rel="noopener">Συντελεστές ήχου</a>
++      </div>
+       <button id="closeSettingsButton" class="primary-button" type="button"><span>ΕΠΙΣΤΡΟΦΗ</span><svg><use href="#i-arrow"/></svg></button>
+@@ -351,3 +361,3 @@
+   </section>
+-  <script type="module" src="./game.js?v=20261106-feel1"></script>
++  <script type="module" src="./game.js?v=20261106-audio2"></script>
+ </body>
+diff --git a/style.css b/style.css
+index 93e3b33..b2da1d7 100644
+--- a/style.css
++++ b/style.css
+@@ -1088 +1088,15 @@ body[data-touch-controls="true"] .comic-burst { min-width:90px; min-height:54px;
+ }
++
++/* Compact sound feedback; never a persistent overlay above the battle. */
++.menu-audio-check{display:flex;align-items:center;gap:10px;width:400px;max-width:100%;margin-top:10px}
++.audio-test-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:9px 12px;border:1px solid #658172;background:#142925;color:#f4d79e;font:800 10px/1.3 var(--body);letter-spacing:.5px;touch-action:manipulation;flex-shrink:0}
++.audio-test-button svg{width:19px;height:19px;fill:none}
++.audio-test-button:focus-visible{outline:2px solid #ffd28b;outline-offset:3px}
++.audio-test-button:hover{background:#223d32}
++.menu-audio-check>span{color:#9db8a9;font-size:9px;line-height:1.5;max-width:210px}
++.audio-check{padding-top:13px;display:grid;grid-template-columns:1fr;gap:7px}
++.audio-check p{margin:0;font-size:11px;line-height:1.5;color:#d7e6d8}
++.audio-check small,.audio-check a{font-size:9px;line-height:1.5;color:#9bb7a6}
++.audio-check a{justify-self:start}
++.audio-blocked{outline:1px solid #e6c181;outline-offset:2px}
++@media(orientation:landscape) and (max-height:500px){.audio-check{grid-template-columns:auto 1fr;align-items:center;gap:4px 10px}.audio-check small{grid-column:2}.audio-check a{grid-column:2}.menu-audio-check{margin-top:7px}}
+diff --git a/tests/audio-samples.test.mjs b/tests/audio-samples.test.mjs
+new file mode 100644
+index 0000000..9a5625a
+--- /dev/null
++++ b/tests/audio-samples.test.mjs
+@@ -0,0 +1,33 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import fs from 'node:fs';
++import {RecordedSounds,SAMPLE_NAMES,SAMPLE_GROUPS} from '../audio-samples.js';
++const bytes=()=>new ArrayBuffer(256);
++test('recorded loading is limited to four requests and decoding is cached',async()=>{
++ let active=0,peak=0,calls=0,decodes=0;
++ const bank=new RecordedSounds({fetcher:async()=>{calls++;active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,1));active--;return{ok:true,arrayBuffer:async()=>bytes()};}});
++ const ctx={state:'running',decodeAudioData:async()=>{decodes++;return{duration:.2};}};
++ await Promise.all([bank.preload(),bank.preload()]);await Promise.all([bank.decode(ctx),bank.decode(ctx)]);
++ assert.equal(calls,SAMPLE_NAMES.length);assert.ok(peak<=4);assert.equal(decodes,SAMPLE_NAMES.length);
++ await bank.decode(ctx);assert.equal(decodes,SAMPLE_NAMES.length);bank.dispose();
++});
++test('recorded variations do not repeat consecutively and fallback is explicit',()=>{
++ const bank=new RecordedSounds();assert.equal(bank.choose('wood'),null);
++ for(const name of SAMPLE_GROUPS.wood)bank.buffers.set(name,{name});
++ let previous;for(let n=0;n<20;n++){const current=bank.choose('wood',()=>0).name;assert.notEqual(current,previous);previous=current;}
++ bank.dispose();assert.equal(bank.choose('wood'),null);
++});
++test('network failure leaves the procedural path available instead of rejecting',async()=>{
++ const bank=new RecordedSounds({fetcher:async()=>{throw new Error('offline');}});
++ assert.equal(await bank.preload(),0);assert.equal(bank.failed,SAMPLE_NAMES.length);assert.equal(bank.choose('flesh'),null);bank.dispose();
++});
++test('disposing during a load cancels requests and cannot repopulate caches',async()=>{
++ const bank=new RecordedSounds({fetcher:async(_,options)=>new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('aborted'))))});
++ const loading=bank.preload();bank.dispose();await loading;assert.equal(bank.encoded.size,0);assert.equal(bank.controllers.size,0);
++});
++test('the complete small MP3 bank, source provenance and attributions are bundled',()=>{
++ const manifest=JSON.parse(fs.readFileSync(new URL('../assets/audio/manifest.json',import.meta.url)));
++ assert.equal(Object.keys(manifest.clips).length,SAMPLE_NAMES.length);let total=0;
++ for(const name of SAMPLE_NAMES){const clip=manifest.clips[name];const data=fs.readFileSync(new URL('../assets/audio/'+clip.file,import.meta.url));assert.equal(data.length,clip.bytes);assert.ok(clip.seconds>.05&&clip.seconds<2);total+=data.length;}
++ assert.ok(total<200000);assert.match(fs.readFileSync(new URL('../assets/audio/CREDITS.md',import.meta.url),'utf8'),/tinsin/);
++});
+diff --git a/tests/audio.test.mjs b/tests/audio.test.mjs
+index b9723cc..57bc955 100644
+--- a/tests/audio.test.mjs
++++ b/tests/audio.test.mjs
+@@ -76,3 +76,3 @@ test('audio waits for a gesture and recovers the same context from interrupted s
+   assert.equal(Context.made.length, 0, 'Binding must not autoplay or request audio focus');
+-  assert.equal(document.count(), 4, 'A second bind must not double listeners');
++  assert.equal(document.count(), 6, 'A second bind must not double listeners');
+   document.emit('pointerdown'); await flush();
+@@ -185 +185,41 @@ test('finished voices free their filters, and a closed context can be rebuilt wi
+ });
++
++test('recorded material impacts and human reactions use decoded buffers and free their nodes', async t => {
++  const { audio } = environment(t); await audio.unlock();
++  const flesh={duration:.18}, pain={duration:.32}, exert={duration:.21};
++  audio.samples.buffers.set('flesh-1',flesh);audio.samples.buffers.set('pain-1',pain);audio.samples.buffers.set('exert-1',exert);
++  audio.play('hit',.6,{material:'flesh',weapon:'wood'});
++  assert.ok([...audio._sources].some(source=>source.buffer===flesh));
++  audio.play('enemyHurt',.6,{type:'zombie'});
++  const voice=[...audio._voices][0];assert.equal(voice.buffer,pain);assert.ok(voice.playbackRate.value<1);
++  voice.finish();assert.equal(audio._voices.size,0);assert.ok(voice.disconnected);
++  audio.play('exert',.5);assert.ok([...audio._voices].some(source=>source.buffer===exert));
++  for(const source of [...audio._sources])source.finish();
++  assert.equal(audio._sources.size,0);assert.equal(audio._cleanups.size,0);
++});
++
++test('dedicated audio controls own their click without capture-phase premature unlocking', async t=>{
++  const {audio,document}=environment(t);audio.bindUnlock(document);
++  for(const fn of document.events.get('pointerdown'))fn({target:{closest:()=>({})}});
++  for(const fn of document.events.get('click'))fn({target:{closest:()=>({})}});
++  assert.equal(Context.made.length,0);
++  assert.equal(await audio.unlock(),true);assert.equal(audio.muted,false);
++});
++
++test('preview is audible scheduling, repeatable, and cancelled immediately by mute or disposal',async t=>{
++  const {audio}=environment(t);assert.equal(await audio.preview(),true);
++  await new Promise(resolve=>setTimeout(resolve,10));
++  assert.equal(audio._previewTimers.size,3);assert.ok(audio._sources.size>0);
++  audio.toggle();assert.equal(audio._previewTimers.size,0);assert.equal(audio._sources.size,0);
++  assert.equal(await audio.preview(),false,'Testing must not override explicit mute in the engine');
++  audio.toggle();assert.equal(await audio.preview(),true);assert.equal(audio._previewTimers.size,4);
++  audio.dispose();assert.equal(audio._previewTimers.size,0);assert.equal(audio._sources.size,0);
++});
++
++test('status changes distinguish blocked, playing, muted and background audio',async t=>{
++  const {audio,document}=environment(t);const states=[];audio.onStatusChange=()=>states.push(audio.state);
++  assert.equal(audio.state,'blocked');audio.bindUnlock(document);await audio.unlock();
++  assert.equal(audio.state,'ready');audio.setVolume(0);assert.equal(audio.state,'muted');
++  audio.setVolume(.7);document.hidden=true;document.emit('visibilitychange');await flush();
++  assert.equal(audio.state,'background');assert.ok(states.includes('ready'));assert.ok(states.includes('muted'));assert.ok(states.includes('background'));
++});
+diff --git a/tools/build-audio.py b/tools/build-audio.py
+new file mode 100644
+index 0000000..44c2624
+--- /dev/null
++++ b/tools/build-audio.py
+@@ -0,0 +1,64 @@
++#!/usr/bin/env python3
++"""Rebuild the bundled recorded SFX (Python 3 + ffmpeg; no paid API).
++Use --source-dir for offline rebuilding. Source SHA-256 checks fail closed.
++Runtime playback never contacts these third-party download services.
++"""
++import argparse, array, hashlib, io, json, math, pathlib, subprocess, tempfile, urllib.request, zipfile
++ROOT=pathlib.Path(__file__).resolve().parents[1]
++SOURCES={
++ 'impact.zip':('https://kenney.nl/assets/impact-sounds','029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8'),
++ 'hero.wav':('https://opengameart.org/sites/default/files/Valiant%20Genericus%20%28Effort%20Noises%29.wav','d4d2ccd76df9697a9dd1c0709e00443894cf2cba8811f94ebc9c55d975593bcf'),
++ 'hurt_01.mp3':('https://opengameart.org/sites/default/files/hurt_01.mp3','45f19e4f637ff0e8936186977aa7cb131f67a95ca68660686476a47da224322e'),
++ 'hurt_02.mp3':('https://opengameart.org/sites/default/files/hurt_02.mp3','7c4cd404830bf3cd5f10ff3340266f573922399d06bfb4573daf9093c5b69833'),
++ 'hurt_03.mp3':('https://opengameart.org/sites/default/files/hurt_03.mp3','9950c1dbbf3f2c75952510f1f2a2ab6f36586ba7e62f4f1e74ad64e82db2aa52'),
++ 'hurt_04.mp3':('https://opengameart.org/sites/default/files/hurt_04.mp3','a6249c89f037553c71529ece4eb443bd3cc06ab33b833c5b3d47121da284d7d8'),
++}
++def download(url):
++ req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://kenney.nl/assets/impact-sounds'})
++ with urllib.request.urlopen(req,timeout=45) as r:
++  data=r.read(20000000)
++  if len(data)>=20000000: raise ValueError('Asset exceeds size limit')
++  return data
++
++def main():
++ parser=argparse.ArgumentParser();parser.add_argument('--source-dir',type=pathlib.Path);args=parser.parse_args()
++ output=ROOT/'assets/audio';output.mkdir(parents=True,exist_ok=True)
++ data={}
++ for name,(url,expected) in SOURCES.items():
++  if args.source_dir: raw=(args.source_dir/name).read_bytes()
++  else:
++   if name=='impact.zip': url=json.loads(download('https://kenney.nl/download-link/6173736574732f696d706163742d736f756e6473'))['url']
++   raw=download(url)
++  if hashlib.sha256(raw).hexdigest()!=expected: raise ValueError('Source hash mismatch: '+name)
++  data[name]=raw
++ archive=zipfile.ZipFile(io.BytesIO(data['impact.zip']))
++ (output/'KENNEY-LICENSE.txt').write_bytes(archive.read('License.txt'))
++ rate=44100;manifest={};clips={}
++ def decode(raw,start=None,end=None):
++  pcm=subprocess.run(['ffmpeg','-v','error','-i','pipe:0','-f','f32le','-ac','1','-ar',str(rate),'pipe:1'],input=raw,stdout=subprocess.PIPE,check=True).stdout
++  values=array.array('f');values.frombytes(pcm)
++  if start is not None: values=values[int(start*rate):int(end*rate)]
++  return values
++ def save(name,values,source):
++  peak=max(map(abs,values),default=0)
++  if peak<.0001: raise ValueError('Silent clip: '+name)
++  threshold=max(.00015,peak*.007)
++  indices=[i for i,v in enumerate(values) if abs(v)>threshold]
++  a=max(0,indices[0]-int(.005*rate));b=min(len(values),indices[-1]+int(.025*rate))
++  values=values[a:b];gain=.87/max(map(abs,values))
++  n=len(values)
++  for i,v in enumerate(values): values[i]=v*gain*min(1,i/(rate*.002),(n-1-i)/(rate*.012))
++  target=output/(name+'.mp3')
++  subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ac','1','-ar',str(rate),'-i','pipe:0','-c:a','libmp3lame','-b:a','96k','-map_metadata','-1','-id3v2_version','3',str(target)],input=values.tobytes(),check=True)
++  clips[name]=values
++  manifest[name]={'file':target.name,'source':source,'seconds':round(n/rate,4),'bytes':target.stat().st_size,'sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
++ for group,stem in [('flesh','impactPunch_heavy'),('metal','impactMetal_heavy'),('masonry','impactMining'),('wood','impactWood_heavy')]:
++  for n in range(3):
++   source=f'Audio/{stem}_{n:03}.ogg';save(f'{group}-{n+1}',decode(archive.read(source)),{'pack':'Kenney Impact Sounds','file':source,'license':'CC0-1.0'})
++ for n,(a,b) in enumerate([(.235,.48),(.75,1.10),(1.50,1.98)],1):
++  save(f'exert-{n}',decode(data['hero.wav'],a,b),{'author':'tinsin','file':'Valiant Genericus (Effort Noises).wav','excerpt':[a,b],'license':'CC-BY-3.0'})
++ for n in range(1,5):
++  source=f'hurt_{n:02}.mp3';save(f'pain-{n}',decode(data[source]),{'author':'EZduzziteh','file':source,'license':'CC0-1.0'})
++ (output/'manifest.json').write_text(json.dumps({'sampleRate':rate,'clips':manifest,'sources':{name:{'url':url,'sha256':sha} for name,(url,sha) in SOURCES.items()}},indent=2)+'\n')
++ print(f'Built {len(manifest)} recorded clips, {sum(x["bytes"] for x in manifest.values())} bytes')
++if __name__=='__main__':main()
