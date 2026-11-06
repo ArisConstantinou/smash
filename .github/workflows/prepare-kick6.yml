@@ -1,0 +1,70 @@
+name: Prepare and validate kick6
+on:
+  push:
+    branches: ['codex/prepare-kick6-20261106']
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply exact validated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, subprocess
+          parts = sorted(pathlib.Path('.publish-kick6').glob('part*.b64'))
+          assert len(parts) == 4, 'Incomplete publication payload'
+          raw = lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts), validate=True))
+          assert hashlib.sha256(raw).hexdigest() == '49c1f7a7b5729dd96b91de69d4d533334a6776aa512f4a91501b2237be611cb0', 'Payload checksum mismatch'
+          payload = json.loads(raw)
+          assert payload['base'] == 'e7b64e42854eea335738057d28dbbef6eb8250ee'
+          parent = subprocess.check_output(['git','rev-parse','HEAD^'], text=True).strip()
+          assert parent == payload['base'], 'Unexpected source revision'
+          for name, before, after, edits in payload['files']:
+              path = pathlib.Path(name)
+              assert not path.is_absolute() and '..' not in path.parts
+              data = path.read_bytes() if path.exists() else b''
+              assert hashlib.sha256(data).hexdigest() == before, 'Source changed: ' + name
+              for start, end, text in reversed(edits):
+                  assert 0 <= start <= end <= len(data)
+                  data = data[:start] + text.encode('latin1') + data[end:]
+              assert hashlib.sha256(data).hexdigest() == after, 'Output checksum mismatch: ' + name
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(data)
+              print(name, after)
+          PY
+          git rm -- .github/workflows/prepare-kick6.yml .publish-kick6/part*.b64
+          git add README.md RELEASE-kick6.md audio.js controls.css core.js game.js hammer-motion.js index.html kick-physics.js models.js tests/game.integration.mjs tests/hammer-motion.test.mjs tests/kick-physics.test.mjs tests/models.test.mjs tests/world.test.mjs world.js
+          git diff --cached --check
+          test "$(git write-tree)" = bf791058a7c2c57da55872769b3ec2d2775c8c05
+      - name: Run complete test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test | tee /tmp/kick6-tests.log
+      - name: Save validated tree to preparation branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git write-tree)" = bf791058a7c2c57da55872769b3ec2d2775c8c05
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Validate kick6 build and remove temporary publication files'
+          git push origin HEAD:refs/heads/codex/prepare-kick6-20261106
+          echo 'Validated tree: bf791058a7c2c57da55872769b3ec2d2775c8c05' >> "$GITHUB_STEP_SUMMARY"
+          tail -12 /tmp/kick6-tests.log >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kick6-validation
+          path: /tmp/kick6-tests.log
+          if-no-files-found: ignore
