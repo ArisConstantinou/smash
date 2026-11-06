@@ -648,6 +648,96 @@ test('the wider near-body sweep still stops at a surviving wall before the enemy
   assert.equal(strike.blocked, true);
 });
 
+test('each hand mode cycles its own three-stroke combo and a new run resets both sequences', () => {
+  arena();
+  const chains = hammerMotion.HAMMER_COMBOS;
+  const attack = expected => {
+    pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
+    assert.ok(api.swing); assert.equal(api.swing.variant, expected);
+    assert.equal(api.swing.twoHanded, api.stance > .9);
+    playerSteps(.4);
+  };
+  for (let i = 0; i < 4; i++) {
+    attack(chains.oneHanded[i % 3]);
+    key('KeyZ', true); key('KeyZ', false); playerSteps(1.1);
+    attack(chains.twoHanded[i % 3]);
+    key('KeyZ', true); key('KeyZ', false); playerSteps(1.1);
+  }
+  arena(); attack(chains.oneHanded[0]);
+  key('KeyZ', true); key('KeyZ', false); playerSteps(1.1);
+  attack(chains.twoHanded[0]);
+});
+
+test('an active combo stroke stays fixed and rejected recovery inputs do not skip the next stroke', () => {
+  arena();
+  const chain = hammerMotion.HAMMER_COMBOS.oneHanded;
+  mouseAttack(true); mouseAttack(false);
+  const first = api.swing; assert.equal(first.variant, chain[0]);
+  playerSteps(.06);
+  for (let i = 0; i < 3; i++) {
+    mouseAttack(true); mouseAttack(false); api.beginSwing();
+    key('KeyZ', true); key('KeyZ', false);
+    playerSteps(.025);
+    assert.equal(api.swing, first); assert.equal(first.variant, chain[0]);
+    assert.equal(first.twoHanded, false); assert.equal(api.stanceTarget, 0);
+  }
+  const observed = new Set([first]);
+  playerSteps(.8, 1 / 240, () => { if (api.swing) observed.add(api.swing); });
+  assert.deepEqual([...observed].map(s => s.variant), chain.slice(0, 2),
+    'Repeated inputs during recovery queue one actual attack and must not consume extra combo steps');
+  mouseAttack(true); mouseAttack(false);
+  assert.equal(api.swing.variant, chain[2]);
+  playerSteps(.4);
+});
+
+test('every combo stroke hits close and forward enemies promptly once without damaging enemies behind', () => {
+  for (const twoHanded of [false, true]) for (const sizeLevel of [0, 2]) for (const distance of [.9, 2.3]) {
+    arena();
+    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    api.levels.size = sizeLevel; api.applyStats(); api.poseHero(1);
+    const front = stationaryEnemy('brute', 0, distance), rear = stationaryEnemy('brute', 0, -1.1);
+    front.hp = front.maxHp = rear.hp = rear.maxHp = 10000;
+    const chain = twoHanded ? hammerMotion.HAMMER_COMBOS.twoHanded : hammerMotion.HAMMER_COMBOS.oneHanded;
+    for (const variant of chain) {
+      const before = front.hp; let previousHp = before, changes = 0, contactTime = null, duration = 0;
+      mouseAttack(true); mouseAttack(false);
+      const strike = api.swing; assert.equal(strike?.variant, variant);
+      while (api.swing && duration < .5) {
+        api.updatePlayer(1 / 240); duration += 1 / 240;
+        assert.equal(strike.variant, variant);
+        if (front.hp !== previousHp) { previousHp = front.hp; changes++; contactTime ??= duration; }
+      }
+      const label = `${variant}, size ${sizeLevel}, range ${distance}`;
+      assert.equal(api.swing, null, label); assert.equal(changes, 1, `${label}: the stroke must connect exactly once`);
+      assert.equal(front.hp, before - strike.damage, label);
+      assert.equal(rear.hp, rear.maxHp, `${label}: a normal stroke must not become a full-circle attack`);
+      assert.ok(contactTime <= .14, `${label}: contact took ${contactTime} seconds`);
+      assert.ok(duration <= .35, `${label}: the new angle must retain the quick swing timing`);
+      playerSteps(.04);
+    }
+  }
+});
+
+test('all combo angles including the overhead smash stop at a surviving wall before targets behind it', () => {
+  for (const twoHanded of [false, true]) {
+    arena();
+    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    api.poseHero(1);
+    const wall = placeObject('wall', 0, 1.7, { w: 5, d: .08, h: 3, hp: 10000, maxHp: 10000 });
+    const enemy = stationaryEnemy('brute', 0, 2.9);
+    const chain = twoHanded ? hammerMotion.HAMMER_COMBOS.twoHanded : hammerMotion.HAMMER_COMBOS.oneHanded;
+    for (const variant of chain) {
+      const before = wall.hp;
+      mouseAttack(true); mouseAttack(false);
+      const strike = api.swing; assert.equal(strike?.variant, variant);
+      playerSteps(.45, 1 / 240);
+      assert.equal(wall.hp, before - strike.damage, `${variant}: the blocking wall receives one physical hit`);
+      assert.equal(enemy.hp, enemy.maxHp, `${variant}: the new angle must not damage through a solid wall`);
+      assert.equal(strike.blocked, true, `${variant}: the visible swing must recoil at the surviving obstacle`);
+    }
+  }
+});
+
 test('a second short left-click during recovery executes once after the current swing', () => {
   arena();
   const before = audioEvents.filter(e => e.name === 'swing').length;
@@ -1622,6 +1712,112 @@ test('moving defense reflects projectiles along the faced direction even with th
   assert.ok(api.bolts[0].vx * direction.x + api.bolts[0].vz * direction.z > 0);
   assert.equal(api.player.hp, hp);
   key('KeyD', false); mouseGuard(false);
+});
+
+test('stationary defense on a roof edge keeps support until the full player circle clears the building', () => {
+  for (const twoHanded of [false, true]) {
+    arena();
+    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    const roof = placeObject('townhouse', 18, -12, { w: 12, d: 12, h: 4, hp: 10000, maxHp: 10000 });
+    // Only 9 cm of the foot circle still overlaps the roof. A narrower support
+    // circle would drop the actor into the building's larger side collider.
+    const start = { x: roof.x + roof.w / 2 + .35, z: roof.z };
+    Object.assign(api.player, { ...start, y: roof.h, vy: 0, vx: 0, vz: 0 });
+    api.setFacing(1, 0); api.poseHero(1); mouseGuard(true);
+    playerSteps(.45, 1 / 120, () => {
+      close(api.player.x, start.x); close(api.player.z, start.z); close(api.player.y, roof.h);
+      assert.equal(api.guarding, true, 'The check must exercise the live defensive pose');
+    });
+    mouseGuard(false);
+    assert.equal(roof.dead, false);
+  }
+});
+
+test('guarded walking off a roof edge falls locally without crossing the building or resetting position', () => {
+  arena();
+  const roof = placeObject('townhouse', 18, -12, { w: 12, d: 12, h: 4, hp: 10000, maxHp: 10000 });
+  Object.assign(api.player, { x: roof.x + roof.w / 2 + .2, y: roof.h, z: roof.z, vy: 0, vx: 0, vz: 0 });
+  api.setFacing(0, -1); api.poseHero(1); mouseGuard(true);
+  key('KeyW', true); key('KeyD', true);
+  const direction = core.screenMovement(1, -1), start = { x: api.player.x, z: api.player.z };
+  let previous = { x: api.player.x, y: api.player.y, z: api.player.z }, leftRoof = false;
+  playerSteps(1.7, 1 / 120, dt => {
+    const distance = Math.hypot(api.player.x - previous.x, api.player.z - previous.z);
+    assert.ok(distance <= api.stats.speed * dt + 1e-6,
+      `Walking beside the roof produced an uncommanded ${distance.toFixed(3)} m displacement`);
+    if (core.circleOverlaps(api.player.x, api.player.z, api.player.radius, roof)) {
+      assert.equal(leftRoof, false, 'An outward walk must not be relocated back onto another part of the roof');
+      close(api.player.y, roof.h);
+    } else {
+      leftRoof = true;
+      assert.ok(api.player.y <= previous.y + 1e-6, 'Falling off the roof must not snap upward');
+    }
+    previous = { x: api.player.x, y: api.player.y, z: api.player.z };
+  });
+  key('KeyW', false); key('KeyD', false); mouseGuard(false);
+  assert.equal(leftRoof, true); close(api.player.y, 0);
+  assert.ok(api.player.x > roof.x + roof.w / 2 + api.player.radius);
+  close((api.player.x - start.x) * direction.z - (api.player.z - start.z) * direction.x, 0, 1e-5);
+});
+
+test('dashing alongside a roof edge never ejects the player through a remote building face', () => {
+  arena();
+  const roof = placeObject('townhouse', 18, -12, { w: 12, d: 12, h: 4, hp: 10000, maxHp: 10000 });
+  const start = { x: roof.x + roof.w / 2 + .35, z: roof.z };
+  Object.assign(api.player, { ...start, y: roof.h, vy: 0, vx: 0, vz: 0 });
+  api.setFacing(0, 1); api.poseHero(1);
+  key('ShiftLeft', true); key('ShiftLeft', false);
+  let previousZ = start.z;
+  playerSteps(.4, 1 / 120, dt => {
+    close(api.player.x, start.x); close(api.player.y, roof.h);
+    assert.ok(api.player.z >= previousZ - 1e-6, 'A forward dash must never snap to the opposite building face');
+    assert.ok(api.player.z - previousZ <= 19 * dt + 1e-6);
+    previousZ = api.player.z;
+  });
+  assert.ok(api.player.z - start.z > 4, 'The real dash must cover its forward distance on the roof');
+});
+
+test('a dash back toward a roof after falling below it hits the nearby facade without snapping upward', () => {
+  arena();
+  const roof = placeObject('townhouse', 18, -12, { w: 12, d: 12, h: 4, hp: 10000, maxHp: 10000 });
+  // The player has just fallen 4 cm below the roof and reverses direction.
+  // A permissive height threshold used to ignore the wall, then lift the
+  // player back onto a roof that had never been crossed from above.
+  Object.assign(api.player, { x: roof.x + roof.w / 2 + .5, y: roof.h - .04, z: roof.z, vy: -1, vx: 0, vz: 0 });
+  api.setFacing(-1, 0); api.poseHero(1);
+  key('ShiftLeft', true); key('ShiftLeft', false);
+  let previous = { x: api.player.x, y: api.player.y, z: api.player.z };
+  playerSteps(.35, 1 / 60, dt => {
+    assert.ok(api.player.y <= previous.y, 'A dash under the roof plane must continue falling instead of snapping onto it');
+    assert.ok(Math.hypot(api.player.x - previous.x, api.player.z - previous.z) <= 19 * dt + 1e-6);
+    assert.equal(core.circleOverlaps(api.player.x, api.player.z, api.player.radius - 1e-6, roof), false);
+    assert.ok(api.player.x >= roof.x + roof.w / 2 + api.player.radius - 1e-6,
+      'The blocked dash must remain at the near facade');
+    previous = { x: api.player.x, y: api.player.y, z: api.player.z };
+  });
+  assert.ok(api.player.y < roof.h - .5);
+});
+
+test('a high forward jump catches a descending roof crossing once and stays at its local landing point', () => {
+  arena();
+  const roof = placeObject('townhouse', 0, 10, { w: 12, d: 10, h: 4, hp: 10000, maxHp: 10000 });
+  key('Space', true); key('Space', false);
+  let previous = { x: api.player.x, y: api.player.y, z: api.player.z }, apex = 0;
+  for (let i = 0; api.leap && i < 240; i++) {
+    api.updatePlayer(1 / 120); apex = Math.max(apex, api.player.y);
+    assert.ok(Math.hypot(api.player.x - previous.x, api.player.z - previous.z) <= 8.2 / 120 + 1e-6,
+      'A roof landing must preserve the jump trajectory without a horizontal correction across the building');
+    if (api.leap) assert.equal(roof.hp, 10000, 'The roof receives its landing impact only at contact');
+    else assert.ok(previous.y >= roof.h, 'Landing catches a descending crossing, not an upward roof snap');
+    previous = { x: api.player.x, y: api.player.y, z: api.player.z };
+  }
+  assert.equal(api.leap, null); assert.ok(apex > 7.5); close(api.player.y, roof.h);
+  assert.ok(api.player.z > 9 && api.player.z < 12);
+  assert.ok(roof.hp < 10000 && !roof.dead);
+  const landing = { x: api.player.x, z: api.player.z, hp: roof.hp };
+  mouseGuard(true); playerSteps(.45); mouseGuard(false);
+  close(api.player.x, landing.x); close(api.player.z, landing.z); close(api.player.y, roof.h);
+  assert.equal(roof.hp, landing.hp, 'The completed landing must not reapply its impact while guarding');
 });
 
 test('Space makes a high forward leap and damages nearby targets once on its ordinary landing', () => {

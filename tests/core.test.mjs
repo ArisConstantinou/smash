@@ -63,6 +63,43 @@ test('walls permit sliding and destroyed objects no longer block movement', () =
   close(e.x, 2.53);
 });
 
+test('shallow building contact resolves on the nearby face without teleporting across the building', () => {
+  const building = { x: 18, z: -12, w: 12, d: 12, h: 4 };
+  for (const normal of [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }]) {
+    for (const [name, outward, tangent] of [
+      ['outward', .02, 0], ['inward', -.02, 0], ['along the wall', 0, .02], ['stationary guard', 0, 0],
+    ]) {
+      const start = { x: building.x + normal.x * 6.35, z: building.z + normal.z * 6.35 };
+      const actor = { ...start, radius: .44 };
+      const dx = normal.x * outward - normal.z * tangent;
+      const dz = normal.z * outward + normal.x * tangent;
+      const moved = moveCircle(actor, dx, dz, [building]);
+      const label = `${name}, face ${normal.x},${normal.z}`;
+      assert.ok(Math.hypot(moved.x, moved.z) < .13,
+        `${label}: a 9 cm overlap moved the actor ${Math.hypot(moved.x, moved.z)} m`);
+      assert.ok((actor.x - building.x) * normal.x + (actor.z - building.z) * normal.z >= 6.439999,
+        `${label}: resolution must keep the actor at the contacted face`);
+      assert.equal(circleOverlaps(actor.x, actor.z, actor.radius - 1e-6, building), false, label);
+      close(moved.x, actor.x - start.x); close(moved.z, actor.z - start.z);
+    }
+  }
+});
+
+test('overlap at a building corner is corrected locally for movement and stationary defense', () => {
+  const building = { x: 18, z: -12, w: 12, d: 12, h: 4 };
+  for (const xSide of [-1, 1]) for (const zSide of [-1, 1]) {
+    for (const [dx, dz] of [[0, 0], [.02 * xSide, 0], [0, .02 * zSide], [-.02 * xSide, -.02 * zSide]]) {
+      const actor = { x: building.x + xSide * 6.25, z: building.z + zSide * 6.25, radius: .44 };
+      const moved = moveCircle(actor, dx, dz, [building]);
+      assert.ok(Math.hypot(moved.x, moved.z) < .15,
+        `Corner contact moved the actor ${Math.hypot(moved.x, moved.z)} m`);
+      assert.ok((actor.x - building.x) * xSide >= 6 && (actor.z - building.z) * zSide >= 6,
+        'The actor must remain outside the same corner, even when moving into it');
+      assert.equal(circleOverlaps(actor.x, actor.z, actor.radius - 1e-6, building), false);
+    }
+  }
+});
+
 test('a valid circle remains outside building corners after seeded high-speed movement', () => {
   const random = seeded(18342);
   const obstacles = [

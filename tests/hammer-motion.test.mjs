@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
 import { makeWarrior } from '../models.js';
-import { sampleHammerSwing, SWING_CONTACT_START, SWING_CONTACT_END } from '../hammer-motion.js';
+import { HAMMER_COMBOS, sampleHammerSwing, SWING_CONTACT_START, SWING_CONTACT_END } from '../hammer-motion.js';
 
 const delta = 1e-4;
 const angularSpeed = p => Math.abs(sampleHammerSwing(p + delta).yaw - sampleHammerSwing(p - delta).yaw) / (2 * delta);
@@ -86,5 +86,95 @@ test('recovery ends at neutral body pose and progress is safely clamped', () => 
     for (const field of ['bodyYaw', 'bodyPitch', 'bodyRoll', 'bodyDrop', 'leftLegPitch', 'rightLegPitch', 'leftLegRoll', 'rightLegRoll']) {
       assert.ok(Math.abs(start[field]) < 1e-10); assert.ok(Math.abs(end[field]) < 1e-10, `${field} did not settle`);
     }
+  }
+});
+
+test('both hand modes have visibly different forehand, reverse and finishing trajectories', () => {
+  assert.equal(HAMMER_COMBOS.oneHanded.length, 3); assert.equal(HAMMER_COMBOS.twoHanded.length, 3);
+  const variants = [...HAMMER_COMBOS.oneHanded, ...HAMMER_COMBOS.twoHanded];
+  assert.equal(new Set(variants).size, 6, 'Each hand mode needs its own three strokes');
+  const at = (variant, progress) => sampleHammerSwing(progress, { variant });
+  for (const [forward, reverse] of [HAMMER_COMBOS.oneHanded, HAMMER_COMBOS.twoHanded]) {
+    assert.ok(at(forward, .16).yaw > .8 && at(forward, .68).yaw < -.8);
+    assert.ok(at(reverse, .16).yaw < -.8 && at(reverse, .68).yaw > .8,
+      'The reverse stroke must visibly travel from the other side');
+  }
+  const turnRange = variant => {
+    const turns = Array.from({ length: 101 }, (_, i) => at(variant, i / 100).bodyYaw);
+    return Math.max(...turns) - Math.min(...turns);
+  };
+  assert.ok(turnRange(HAMMER_COMBOS.oneHanded[0]) < turnRange(HAMMER_COMBOS.twoHanded[0]) * .8,
+    'The shield stance must use a compact torso motion distinct from the broad two-handed stroke');
+  const diagonal = HAMMER_COMBOS.oneHanded[2], overhead = HAMMER_COMBOS.twoHanded[2];
+  assert.ok(at(diagonal, .16).elevation > at(HAMMER_COMBOS.oneHanded[0], .16).elevation + .4,
+    'The third one-handed stroke must load higher than the side sweep');
+  assert.ok(Math.abs(at(overhead, .68).yaw - at(overhead, .16).yaw) < .4,
+    'The overhead finisher must descend in front instead of repeating a side sweep');
+  assert.ok(Math.atan(at(overhead, .16).elevation) - Math.atan(at(overhead, .68).elevation) > 1,
+    'The overhead head must travel from a steep raised shaft to a downward strike');
+  assert.ok(at(overhead, .35).trail > .5, 'A vertical strike still needs a visible speed-based trail');
+});
+
+test('all six combo profiles remain finite and preserve velocity across their animation phases', () => {
+  for (const [mode, variants] of Object.entries(HAMMER_COMBOS)) for (const variant of variants) for (const charge of [0, 1]) {
+    const options = { variant, twoHanded: mode === 'twoHanded', charge };
+    for (let step = 0; step <= 500; step++) {
+      const pose = sampleHammerSwing(step / 500, options);
+      for (const [field, value] of Object.entries(pose)) assert.ok(Number.isFinite(value), `${variant}: ${field} became invalid at ${step}`);
+      for (const field of ['windup', 'recovery', 'trail']) assert.ok(pose[field] >= 0 && pose[field] <= 1);
+    }
+    const epsilon = 1e-5;
+    for (const boundary of [SWING_CONTACT_START, .40, SWING_CONTACT_END]) {
+      const before = sampleHammerSwing(boundary - epsilon, options), at = sampleHammerSwing(boundary, options), after = sampleHammerSwing(boundary + epsilon, options);
+      for (const field of ['yaw', 'elevation', 'gripX', 'gripY', 'gripZ']) {
+        const leftVelocity = (at[field] - before[field]) / epsilon, rightVelocity = (after[field] - at[field]) / epsilon;
+        assert.ok(Math.abs(leftVelocity - rightVelocity) < .02, `${variant}: ${field} velocity snaps at phase ${boundary}`);
+      }
+    }
+    const start = sampleHammerSwing(0, options), end = sampleHammerSwing(1, options);
+    for (const field of ['bodyYaw', 'bodyPitch', 'bodyRoll', 'bodyDrop', 'leftLegPitch', 'rightLegPitch', 'leftLegRoll', 'rightLegRoll']) {
+      assert.ok(Math.abs(start[field]) < 1e-10 && Math.abs(end[field]) < 1e-10, `${variant}: ${field} did not settle`);
+    }
+    assert.equal(end.trail, 0);
+  }
+});
+
+test('all six physical hammer paths keep both hands attached without stretching either arm', () => {
+  const paths = [];
+  for (const [mode, variants] of Object.entries(HAMMER_COMBOS)) for (const variant of variants) {
+    const twoHanded = mode === 'twoHanded', hero = makeWarrior(), u = hero.userData;
+    u.setStance(Number(twoHanded)); u.setReach(1.35);
+    const restPosition = u.weaponRestPosition.clone();
+    const restRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(u.weaponRest.x, u.weaponRest.y, u.weaponRest.z));
+    const up = new THREE.Vector3(0, 1, 0), direction = new THREE.Vector3(), targetRotation = new THREE.Quaternion(), targetPosition = new THREE.Vector3();
+    const path = [];
+    let previousHead = null, maxHeadStep = 0, maxArmReach = 0;
+    for (let step = 0; step <= 240; step++) {
+      const pose = sampleHammerSwing(step / 240, { variant, twoHanded });
+      u.body.rotation.set(pose.bodyPitch, pose.bodyYaw, pose.bodyRoll); u.body.position.y = pose.bodyDrop;
+      direction.set(Math.sin(pose.yaw), pose.elevation, Math.cos(pose.yaw)).normalize();
+      targetRotation.setFromUnitVectors(up, direction); targetPosition.set(pose.gripX, pose.gripY, pose.gripZ);
+      u.weaponRig.quaternion.copy(restRotation).slerp(targetRotation, pose.windup).slerp(restRotation, pose.recovery);
+      u.weaponRig.position.copy(restPosition).lerp(targetPosition, pose.windup).lerp(restPosition, pose.recovery);
+      u.updateGrip(); hero.updateMatrixWorld(true);
+      const head = u.hammerHead.getWorldPosition(new THREE.Vector3());
+      if (previousHead) maxHeadStep = Math.max(maxHeadStep, previousHead.distanceTo(head));
+      previousHead = head; path.push(head);
+      for (const [hand, anchor, arm] of [[u.rightGrip, u.rightGripAnchor, u.rightArm], [u.leftGrip, twoHanded ? u.leftGripAnchor : u.shieldGripAnchor, u.leftArm]]) {
+        const position = hand.getWorldPosition(new THREE.Vector3());
+        assert.ok(position.distanceTo(anchor.getWorldPosition(new THREE.Vector3())) < 1e-7,
+          `${variant}: a gauntlet separated from its actual hammer or shield anchor`);
+        maxArmReach = Math.max(maxArmReach, position.distanceTo(arm.getWorldPosition(new THREE.Vector3())));
+      }
+    }
+    assert.ok(maxHeadStep < .5, `${variant}: the head teleported ${maxHeadStep} m between poses`);
+    assert.ok(maxArmReach < .90, `${variant}: the arm stretched to ${maxArmReach} m`);
+    assert.ok(u.weaponRig.position.distanceTo(restPosition) < 1e-7);
+    assert.ok(u.weaponRig.quaternion.angleTo(restRotation) < 1e-7);
+    paths.push({ variant, path });
+  }
+  for (let a = 0; a < paths.length; a++) for (let b = a + 1; b < paths.length; b++) {
+    const maxSeparation = Math.max(...paths[a].path.map((point, i) => point.distanceTo(paths[b].path[i])));
+    assert.ok(maxSeparation > .45, `${paths[a].variant} and ${paths[b].variant} repeat effectively the same hammer path`);
   }
 });

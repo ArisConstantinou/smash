@@ -3,10 +3,10 @@ import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=2026110
 import {makeCityEnemy} from './enemy-models.js?v=20261105-city1';
 import {createWorld} from './world.js?v=20261105-city1';
 import {GameAudio} from './audio.js';
-import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-motion1';
+import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-combos1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261105-city1';
-import {sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-motion1';
+import {HAMMER_COMBOS,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-combos1';
 
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
@@ -25,6 +25,7 @@ let boss=null,bossSpawned=false,spawnCounter=0,lootCounter=0,announcementTimer=0
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeFeedback='';
 let shake=0,hitStop=0,redFlash=0,combo=0,comboTimer=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
+const swingComboSteps=[0,0];
 let attackBuffer=null,spin=null,spinRecovery=null,holdElapsed=0;
 const SPIN_HOLD_SECONDS=.18,SPIN_TURN_SECONDS=.62,ATTACK_BUFFER_SECONDS=.30,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
 let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0},stats=calculateStats(levels);
@@ -147,6 +148,7 @@ function weaponTrail(a,b,width=.3,tint=0xffc473){
 }
 function resetWorld(keepUpgrades=false){
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
+  swingComboSteps.fill(0);
   upgradePanelOpen=false;nearbyTargets=[];focusedTarget=null;
   for(const e of enemies){if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);}enemies=[];if(boss){if(boss.telegraph)removeEffect(boss.telegraph);disposeInstance(boss);}boss=null;
   for(const d of drops){scene.remove(d.mesh);disposeModelGeometry(d.mesh);}drops=[];
@@ -239,7 +241,10 @@ function beginSwing(){
   if(move.x||move.z)facing=move;else if(pointer.active)facing={...aim};
   hero.rotation.y=Math.atan2(facing.x,facing.z);
   const q=charge,details=attackStats(stats,q);
-  swing={time:0,q,...details,duration:details.duration,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
+  const twoHanded=stance>.9,comboIndex=twoHanded?1:0,chain=twoHanded?HAMMER_COMBOS.twoHanded:HAMMER_COMBOS.oneHanded;
+  const variant=chain[swingComboSteps[comboIndex]];
+  swing={time:0,q,...details,twoHanded,variant,duration:details.duration,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
+  swingComboSteps[comboIndex]=(swingComboSteps[comboIndex]+1)%chain.length;
   chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q);
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);
 }
@@ -354,7 +359,7 @@ function impact(from=headPrevious,to=headNow){
     const dir=normalize(e.x-player.x+s.fx*.3,e.z-player.z+s.fz*.3);s.hits.add(e);hits++;
     if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift);
   }
-  if(wall){s.hits.add(wall.target);hits++;if(hurtObject(wall.target,s.damage,s.q))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:stance>.9,charge:s.q});attackCooldown=Math.min(attackCooldown,.125);}}
+  if(wall){s.hits.add(wall.target);hits++;if(hurtObject(wall.target,s.damage,s.q))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
   if(hits){s.hit=true;shake=Math.max(shake,(.07+s.q*.14)*(breaks?1.2:1));audio.play(breaks?'break':'hit',s.q);if(!s.feedbackDone){s.feedbackDone=true;s.contactTime=s.time;hitStop=.012+s.q*.006;}}
   if(hits&&s.charged&&!s.quakeDone){
     s.quakeDone=true;const radius=2.3+stats.quake*.7;pulse(to.x,to.z,radius,0xffd48b,.35);
@@ -422,9 +427,12 @@ function startLeap(){
 function armAirSmash(){
   if(!leap||leap.slam)return;leap.slam=true;chargeHeld=false;chargeStarted=false;charge=0;audio.play('charge',.8);
 }
+const SUPPORT_EPSILON=1e-6;
 function supportHeight(x,z,ceiling=Infinity){
   let height=0;
-  for(const o of nearbyObjects(x,z,player.radius))if(o.h<=ceiling+.08&&circleOverlaps(x,z,player.radius*.65,o))height=Math.max(height,o.h);
+  // The same footprint supports the feet and collides with the facade. A
+  // smaller support circle started a fall while still embedded in the wall.
+  for(const o of nearbyObjects(x,z,player.radius))if(o.h<=ceiling+SUPPORT_EPSILON&&circleOverlaps(x,z,player.radius,o))height=Math.max(height,o.h);
   return height;
 }
 function landLeap(){
@@ -757,7 +765,9 @@ function updatePlayer(dt){
     const l=leap;l.time+=dt;const oldY=player.y;
     if(l.slam&&l.time>=.45&&!l.diving){l.diving=true;l.vy=-22;audio.play('swing',1);}
     l.vy-=(l.diving?38:30)*dt;player.y+=l.vy*dt;
-    const obstacles=nearbyObjects(player.x,player.z,player.radius+1).filter(o=>o.h>oldY+.12);
+    // Roofs below the previous feet position are landing surfaces; taller
+    // objects are side walls. One shared threshold leaves no gap between them.
+    const obstacles=nearbyObjects(player.x,player.z,player.radius+1).filter(o=>o.h>oldY+SUPPORT_EPSILON);
     moveCircle(player,l.dir.x*(l.diving?9:8.2)*dt,l.dir.z*(l.diving?9:8.2)*dt,obstacles,player.radius);
     const floor=supportHeight(player.x,player.z,oldY);
     if(l.vy<0&&player.y<=floor){player.y=floor;landLeap();}
@@ -766,7 +776,7 @@ function updatePlayer(dt){
     if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*dt;dz=dashDirection.z*19*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
     else{const speed=stats.speed*movementStrength()*(guarding?.55:spin?.84:swing?.92:Math.abs(stance-stanceTarget)>.005?.55:landingRecovery>0?.25:1);dx=move.x*speed*dt;dz=move.z*speed*dt;}
     dx+=player.vx*dt;dz+=player.vz*dt;player.vx*=Math.exp(-9*dt);player.vz*=Math.exp(-9*dt);
-    const actual=moveCircle(player,dx,dz,nearbyObjects(player.x,player.z,player.radius+Math.hypot(dx,dz)+.1).filter(o=>o.h>player.y+.1),player.radius);player.walk+=Math.hypot(actual.x,actual.z)*6;
+    const actual=moveCircle(player,dx,dz,nearbyObjects(player.x,player.z,player.radius+Math.hypot(dx,dz)+.1).filter(o=>o.h>player.y+SUPPORT_EPSILON),player.radius);player.walk+=Math.hypot(actual.x,actual.z)*6;
     const floor=supportHeight(player.x,player.z,player.y);
     if(player.y>floor){player.vy=(player.vy||0)-20*dt;player.y=Math.max(floor,player.y+player.vy*dt);}else{player.y=floor;player.vy=0;}
   }
@@ -793,7 +803,7 @@ function updatePlayer(dt){
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headNow);
   if(swing){const progress=swing.time/swing.duration;
     if(progress>=SWING_CONTACT_START&&progress<=SWING_CONTACT_END&&!swing.blocked){
-      const motion=sampleHammerSwing(progress,{twoHanded:stance>.9,charge:swing.q});
+      const motion=sampleHammerSwing(progress,{twoHanded:swing.twoHanded,charge:swing.q,variant:swing.variant});
       if(motion.trail>.05)weaponTrail(headPrevious,headNow,(.12+.15*motion.trail)*stats.size,swing.charged?0xffefae:0xffbe67);
       impact(headPrevious,headNow);
     }
@@ -826,7 +836,7 @@ function poseHero(dt,moving=false){
   else hero.rotation.y+=diff*(1-Math.exp(-dt*24));
   hero.position.set(player.x,player.y+(dashTime>0?.15:Math.abs(walk)*(swing?.025:.07)),player.z);
   const p=swing?clamp(swing.time/swing.duration,0,1):0;
-  const motion=swing?(swing.blocked?swing.blockPose:sampleHammerSwing(p,{twoHanded:stance>.9,charge:swing.q})):null;
+  const motion=swing?(swing.blocked?swing.blockPose:sampleHammerSwing(p,{twoHanded:swing.twoHanded,charge:swing.q,variant:swing.variant})):null;
   const settle=swing?.blocked?1-smooth((swing.time-swing.blockTime)/.12):1;
   const impactRecoil=swing?.contactTime!==undefined?Math.sin(clamp((swing.time-swing.contactTime)/.085,0,1)*Math.PI)*.055:0;
   const torque=spin?-.20:motion?motion.bodyYaw*settle:guarding?-.08:0;

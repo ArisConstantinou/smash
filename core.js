@@ -22,24 +22,64 @@ export function circleOverlaps(x, z, radius, object) {
 }
 export function moveCircle(entity, dx, dz, objects, radius = entity.radius || 0.5) {
   const beforeX = entity.x, beforeZ = entity.z;
+  const slop = 1e-7;
+  const solids = objects.filter(o => !o.dead);
+  function separateOverlaps() {
+    // A side collider can become active while falling past a roof edge. Resolve
+    // that existing overlap toward its nearest surface, never the opposite wall
+    // chosen from the current input direction. This also handles a still guard.
+    for (let pass = 0; pass < 4; pass++) {
+      let corrected = false;
+      for (const o of solids) {
+        const p = nearestPoint(entity.x, entity.z, o);
+        const ox = entity.x - p.x, oz = entity.z - p.z, distance = Math.hypot(ox, oz);
+        if (distance >= radius - slop) continue;
+        if (distance > slop) {
+          const correction = (radius + slop - distance) / distance;
+          entity.x += ox * correction; entity.z += oz * correction;
+        } else {
+          // The center itself is inside the box. Pick its closest exit, with a
+          // stable tie order; neither movement nor a changed stance picks it.
+          const left = entity.x - (o.x - o.w / 2), right = o.x + o.w / 2 - entity.x;
+          const back = entity.z - (o.z - o.d / 2), front = o.z + o.d / 2 - entity.z;
+          const minimum = Math.min(left, right, back, front);
+          if (minimum === left) entity.x = o.x - o.w / 2 - radius - slop;
+          else if (minimum === right) entity.x = o.x + o.w / 2 + radius + slop;
+          else if (minimum === back) entity.z = o.z - o.d / 2 - radius - slop;
+          else entity.z = o.z + o.d / 2 + radius + slop;
+        }
+        corrected = true;
+      }
+      if (!corrected) break;
+    }
+  }
+  function moveAxis(axis, amount) {
+    if (!amount) return;
+    const other = axis === 'x' ? 'z' : 'x';
+    const size = axis === 'x' ? 'w' : 'd', otherSize = axis === 'x' ? 'd' : 'w';
+    const start = entity[axis];
+    let end = clamp(start + amount, -BOUNDS + radius, BOUNDS - radius);
+    for (const o of solids) {
+      const gap = Math.max(0, Math.abs(entity[other] - o[other]) - o[otherSize] / 2);
+      if (gap >= radius - slop) continue;
+      const reach = Math.sqrt(Math.max(0, radius ** 2 - gap ** 2));
+      const low = o[axis] - o[size] / 2 - reach, high = o[axis] + o[size] / 2 + reach;
+      // Sweep the whole interval, including a thin wall crossed in one step.
+      // Only the face approached from the current position can stop movement.
+      if (amount > 0 && start <= low + slop && end > low) end = Math.min(end, low);
+      else if (amount < 0 && start >= high - slop && end < high) end = Math.max(end, high);
+    }
+    entity[axis] = end;
+  }
   // Substeps avoid tunnelling during dashes, knockback and boss charges.
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.24));
   for (let step = 0; step < steps; step++) {
-    entity.x = clamp(entity.x + dx / steps, -BOUNDS + radius, BOUNDS - radius);
-    for (const o of objects) if (circleOverlaps(entity.x, entity.z, radius, o)) {
-      const p = nearestPoint(entity.x, entity.z, o);
-      const gap = Math.sqrt(Math.max(0, radius ** 2 - (p.z - entity.z) ** 2));
-      if (dx > 0) entity.x = o.x - o.w / 2 - gap;
-      else if (dx < 0) entity.x = o.x + o.w / 2 + gap;
-    }
-    entity.z = clamp(entity.z + dz / steps, -BOUNDS + radius, BOUNDS - radius);
-    for (const o of objects) if (circleOverlaps(entity.x, entity.z, radius, o)) {
-      const p = nearestPoint(entity.x, entity.z, o);
-      const gap = Math.sqrt(Math.max(0, radius ** 2 - (p.x - entity.x) ** 2));
-      if (dz > 0) entity.z = o.z - o.d / 2 - gap;
-      else if (dz < 0) entity.z = o.z + o.d / 2 + gap;
-    }
+    separateOverlaps();
+    moveAxis('x', dx / steps);
+    moveAxis('z', dz / steps);
   }
+  entity.x = clamp(entity.x, -BOUNDS + radius, BOUNDS - radius);
+  entity.z = clamp(entity.z, -BOUNDS + radius, BOUNDS - radius);
   return {x: entity.x - beforeX, z: entity.z - beforeZ};
 }
 export function inArc(px, pz, fx, fz, x, z, range, halfAngle = 1.35, radius = 0) {
