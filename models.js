@@ -367,6 +367,8 @@ export function makeWarrior() {
     compact(grip);
   }
   let stance = 0, weaponHeld = true, reachScale = 1, equipmentTier = 4;
+  let unarmedPose = null;
+  function setUnarmedPose(pose) { unarmedPose = pose; }
   let shieldEquipped = true;
   const shieldFront = new THREE.Vector3(-.72, 1.025, .5);
   const shieldBack = new THREE.Vector3(0, 1.11, -.55);
@@ -385,13 +387,13 @@ export function makeWarrior() {
   const smooth = v => { const n = Math.max(0, Math.min(1, v)); return n * n * (3 - 2 * n); };
 
   function poseShield() {
-    const progress = smooth(stance / .65);
+    const progress = weaponHeld ? smooth(stance / .65) : 1;
     shieldPath.getPoint(progress, shieldRig.position);
     shieldRig.quaternion.slerpQuaternions(shieldFrontQuaternion, shieldBackQuaternion, progress);
     shieldRig.rotateX(-.35 * Math.sin(Math.PI * progress));
     shieldRig.position.applyMatrix4(body.matrix);
     shieldRig.quaternion.premultiply(body.quaternion);
-    shieldRig.userData.attachment = shieldEquipped ? (stance < .65 ? 'left-hand' : 'back') : 'none';
+    shieldRig.userData.attachment = shieldEquipped ? (weaponHeld && stance < .65 ? 'left-hand' : 'back') : 'none';
   }
 
   function anchorInHero(anchor, position, quaternion) {
@@ -452,7 +454,7 @@ export function makeWarrior() {
     if (weaponHeld) {
       anchorInHero(rightGripAnchor, rightGrip.position, rightGrip.quaternion);
     } else {
-      rightGrip.position.copy(emptyRight);
+      rightGrip.position.copy(unarmedPose?.right || emptyRight).applyMatrix4(body.matrix);
       rightGrip.quaternion.copy(emptyRightQuaternion);
     }
     if (shieldEquipped) anchorInHero(shieldGripAnchor, shieldContact, shieldContactQuaternion);
@@ -473,6 +475,11 @@ export function makeWarrior() {
         .addScaledVector(hammerContact, join ** 2);
       leftGrip.quaternion.slerpQuaternions(shieldContactQuaternion, hammerContactQuaternion, join);
     }
+    if (!weaponHeld && unarmedPose) {
+      leftGrip.position.copy(unarmedPose.left).applyMatrix4(body.matrix);
+      // A stowed shield must not claim the free hand during a punch.
+      shieldRig.visible = shieldEquipped;
+    } else shieldRig.visible = shieldEquipped;
     leftGrip.visible = true; rightGrip.visible = true;
     root.updateMatrixWorld(true);
     for (const [arm, grip] of [[leftArm, leftGrip], [rightArm, rightGrip]]) {
@@ -507,7 +514,7 @@ export function makeWarrior() {
       poseSegment(arm.userData.upper, zero, elbow);
       poseSegment(arm.userData.fore, elbow, gripTarget);
       orientHand(arm,grip,grip===rightGrip?(weaponHeld?rightGripAnchor:null):
-        (weaponHeld&&join>.99?leftGripAnchor:shieldEquipped&&join<.01?shieldGripAnchor:null));
+        (weaponHeld&&join>.99?leftGripAnchor:shieldEquipped&&join<.01&&!(unarmedPose&&!weaponHeld)?shieldGripAnchor:null));
     }
   }
 
@@ -526,7 +533,7 @@ export function makeWarrior() {
       weaponRestPosition.set(.48 - .60 * stance, .93 - .03 * stance, .25 + .05 * stance);
     }
     root.userData.stance = stance;
-    root.userData.shieldStored = shieldEquipped && stance >= .65;
+    root.userData.shieldStored = shieldEquipped && (!weaponHeld || stance >= .65);
     updateGrip();
     return stance;
   }
@@ -997,7 +1004,7 @@ export function makeWarrior() {
   root.userData = {
     body, leftLeg, rightLeg, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
     leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
-    shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach,
+    shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach, setUnarmedPose,
     setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld, getThrowMetrics,
     getSpinRadius, getHeadContactRadius, getHeadForwardExtent, getShaftContactRadius, getHeadHalfExtents, getHeadFloorY,
     weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,

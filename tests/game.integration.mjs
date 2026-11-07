@@ -20,6 +20,7 @@ import * as enemyReactions from '../enemy-reactions.js';
 import * as combatFeedback from '../combat-feedback.js';
 import * as occlusion from '../occlusion.js';
 import * as kickPhysics from '../kick-physics.js';
+import * as combatTools from '../combat-tools.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -183,11 +184,14 @@ const imports = new Map([
   ['./combat-feedback.js', synthetic(combatFeedback, 'real-combat-feedback')],
   ['./occlusion.js', synthetic(occlusion, 'real-occlusion')],
   ['./kick-physics.js', synthetic(kickPhysics, 'real-kick-physics')],
+  ['./combat-tools.js', synthetic(combatTools, 'real-combat-tools')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get punch(){return punch;},get settings(){return settings;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
+  beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,
   get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
   get phase(){return phase;}, get combatCombo(){return combatCombo;}, get comboXpCarry(){return comboXpCarry;}, get battleOccluders(){return battleOccluders;}, get heroSilhouette(){return heroSilhouette;}, get upgradeTab(){return upgradeTab;}, get comicState(){return comicState;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
@@ -296,7 +300,7 @@ function advance(seconds, step = 1 / 60) {
   }
 }
 function reset(startLevel = 15, options = {test: true}) {
-  heldMousePoint = null;
+  heldMousePoint = null;api.settings.throwAutoLock=true;
   // Existing combat regressions exercise the complete hammer kit. Ordinary
   // character progression is covered explicitly with reset(1, {test:false}).
   api.clearInput(); api.startGame(startLevel, options); advance(.1);
@@ -1621,8 +1625,9 @@ test('interruption or a new combat choice cancels a pending mobile throw before 
   });
 });
 
-test('a boosted mobile run keeps throw guidance aligned with the captured launch direction during windup', () => {
+test('a boosted mobile run keeps manual throw guidance aligned with the captured launch direction during windup', () => {
   touchArena(() => {
+    api.settings.throwAutoLock=false; // Explicit manual aiming mode added in combat7.
     api.levels.speed = 3; api.applyStats();
     const screenRight = core.screenMovement(1, 0);
     stationaryEnemy('zombie', screenRight.x * 7, screenRight.z * 7);
@@ -3196,4 +3201,122 @@ test('a light body collision slows the boss without cancelling its attack or lau
 test('kick rank persists with the normal character checkpoint',()=>{
  arena(1,{test:false});api.levels.kick=3;api.persistCharacter();const saved=JSON.parse(storage.get('ironfall.character'));
  assert.equal(saved.levels.kick,3);
+});
+
+// combat7 regressions: actual input, articulated fists, thrown geometry,
+// persisted stats and toggleable assistance, rather than mocked game actions.
+function unarmedArena(){
+ arena(1,{test:false});api.settings.throwAutoLock=false;
+ aimAt(0,14);api.startThrow();playerSteps(.32);
+ assert.ok(api.throwFlight);assert.equal(api.hero.userData.weaponHeld,false);
+ playerSteps(2);assert.ok(api.throwFlight?.grounded);
+ api.setFacing(0,1);api.pointer.active=false;api.poseHero(.1);
+}
+test('unarmed LMB punches on contact with a real hand, not a hidden hammer',()=>{
+ unarmedArena();const e=resilientEnemy('zombie',-.08,1.05),before=audioEvents.length;
+ mouseAttack(true);assert.ok(api.punch);assert.equal(api.swing,null);assert.equal(api.spin,null);assert.equal(e.hp,1000);
+ playerSteps(.035);assert.equal(e.hp,1000);const hand=api.punch.hand;
+ playerSteps(.14);assert.ok(e.hp<1000);assert.ok(e.flash>0&&e.impact);assert.equal(api.hero.userData.hammerPivot.visible,false);
+ assert.ok(worldPosition(api.hero.userData[hand+'Grip']).z>.65);
+ mouseAttack(false);playerSteps(.3);const hp=e.hp;playerSteps(.4);assert.equal(e.hp,hp);
+ assert.equal(audioEvents.slice(before).filter(e=>e.name==='hit').length,1);
+ assert.ok(audioEvents.slice(before).some(e=>e.name==='punch'));
+ assert.equal(elements.get('attackIcon').getAttribute('href'),'#a-punch');
+ assert.equal(elements.get('attackTouchIcon').getAttribute('href'),'#t-punch');
+});
+test('holding unarmed attack alternates fists and releasing stops without an extra strike',()=>{
+ unarmedArena();const e=resilientEnemy('zombie',0,1),hands=new Set(),start=audioEvents.length;
+ mouseAttack(true);playerSteps(1.2,1/120,()=>{if(api.punch)hands.add(api.punch.hand);});
+ assert.deepEqual([...hands].sort(),['left','right']);assert.equal(api.spin,null);
+ assert.ok(audioEvents.slice(start).filter(e=>e.name==='hit').length>=3);
+ mouseAttack(false);playerSteps(.4);const hp=e.hp;playerSteps(.7);assert.equal(e.hp,hp);assert.equal(api.punch,null);
+});
+test('unarmed kick interrupts punching and still applies mass-aware knockback',()=>{
+ unarmedArena();const e=resilientEnemy('zombie',.15,1.0);
+ mouseAttack(true);playerSteps(.02);key('KeyE',true);key('KeyE',false);
+ assert.equal(api.punch,null);assert.ok(api.kick);playerSteps(.25);
+ assert.ok(e.hp<1000&&e.vz>5);assert.equal(api.hero.userData.weaponHeld,false);mouseAttack(false);
+});
+test('unarmed fists do not reach rear/far targets or punch through a blocking wall',()=>{
+ for(const fixture of ['far','rear','wall']){
+  unarmedArena();const e=resilientEnemy('zombie',0,fixture==='far'?3:fixture==='rear'?-1:1.2);
+  const wall=fixture==='wall'?placeObject('wall',0,.6,{w:3,d:.1,h:3,hp:1000,maxHp:1000}):null;
+  mouseAttack(true);mouseAttack(false);playerSteps(.35);assert.equal(e.hp,1000,fixture);if(wall)assert.ok(wall.hp<1000);
+ }
+});
+test('unarmed dodge/jump remain usable and a returning pickup cancels any fist pose',()=>{
+ unarmedArena();mouseAttack(true);playerSteps(.03);assert.ok(api.dodge());assert.equal(api.punch,null);mouseAttack(false);
+ playerSteps(.3);assert.ok(api.startLeap());playerSteps(1.2);
+ const h=api.throwFlight;assert.ok(h?.grounded);api.player.x=h.x;api.player.z=h.z;
+ api.updatePlayer(1/120);assert.equal(api.throwFlight,null);assert.equal(api.punch,null);assert.equal(api.hero.userData.weaponHeld,true);
+ api.poseHero(.1);api.hero.updateMatrixWorld(true);
+ assert.ok(worldPosition(api.hero.userData.rightGrip).distanceTo(worldPosition(api.hero.userData.rightGripAnchor))<1e-5);
+});
+test('pausing an unarmed attack clears the hold and prevents phantom damage on resume',()=>{
+ unarmedArena();const e=resilientEnemy('zombie',0,1);mouseAttack(true);playerSteps(.025);
+ api.pauseGame();assert.equal(api.punch,null);api.setPhase('playing');playerSteps(.5);assert.equal(e.hp,1000);
+});
+test('a log beside a parked car rests entirely outside the collider and is reachable at its edge',()=>{
+ arena(1,{test:false});api.settings.throwAutoLock=false;
+ const car=placeObject('car',0,8,{w:2,d:3,h:1.55,hp:3000,maxHp:3000});
+ aimAt(0,12);api.startThrow();playerSteps(2);
+ const h=api.throwFlight;assert.ok(h?.grounded);const bbox=new THREE.Box3().setFromObject(h.mesh);
+ assert.ok(bbox.max.x<car.x-car.w/2||bbox.min.x>car.x+car.w/2||bbox.max.z<car.z-car.d/2||bbox.min.z>car.z+car.d/2);
+ assert.ok(combatTools.restSpotClear(h,h.restFootprint,[car],core.BOUNDS));
+ const edge=combatTools.nearestPickupPoint({x:h.x,z:h.z-5},h,h.restFootprint);
+ api.player.x=edge.x;api.player.z=edge.z-.6;api.updatePlayer(1/120);
+ assert.equal(api.throwFlight,null);assert.equal(api.hero.userData.weaponHeld,true);
+});
+test('a car moved onto a grounded log triggers safe repositioning, not merged geometry',()=>{
+ unarmedArena();const h=api.throwFlight,car=placeObject('car',h.x,h.z,{w:2,d:3,h:1.5,hp:3000,maxHp:3000});
+ api.updateThrownHammer(.12);assert.ok(h.grounded);assert.ok(combatTools.restSpotClear(h,h.restFootprint,[car],core.BOUNDS));
+ const box=new THREE.Box3().setFromObject(h.mesh);assert.ok(box.max.x<car.x-car.w/2||box.min.x>car.x+car.w/2||box.max.z<car.z-car.d/2||box.min.z>car.z+car.d/2);
+});
+test('auto targeting is enabled initially, toggles persist and manual throws keep their chosen direction',()=>{
+ arena(1,{test:false});assert.equal(api.settings.throwAutoLock,true);
+ const enemy=resilientEnemy('zombie',2,7);aimAt(0,12);assert.equal(api.chooseThrowLock(api.aim),enemy);
+ elements.get('throwAutoLockToggle').onchange({target:{checked:false}});
+ assert.equal(JSON.parse(storage.get('ironfall.settings')).throwAutoLock,false);
+ api.startThrow();assert.equal(api.throwWindup.target,null);close(api.throwWindup.dir.x,0,.01);
+ playerSteps(1);assert.equal(enemy.hp,1000);
+ elements.get('throwAutoLockToggle').onchange({target:{checked:true}});assert.equal(JSON.parse(storage.get('ironfall.settings')).throwAutoLock,true);
+});
+test('assisted wooden throw physically hits its selected off-axis enemy without homing back',()=>{
+ arena(1,{test:false});const enemy=resilientEnemy('zombie',2,7);aimAt(0,12);
+ api.startThrow();assert.equal(api.throwWindup.target,enemy);
+ playerSteps(1.5);assert.ok(enemy.hp<1000);assert.ok(api.throwFlight?.grounded);assert.equal(api.throwFlight.returning,false);
+});
+test('auto throw cannot select an enemy behind a parked car or a wall',()=>{
+ for(const type of ['car','wall']){
+  arena(1,{test:false});const enemy=resilientEnemy('zombie',0,7);
+  placeObject(type,0,3,{w:5,d:1,h:3,hp:3000,maxHp:3000});aimAt(0,12);
+  assert.equal(api.chooseThrowLock(api.aim),null);api.startThrow();assert.equal(api.throwWindup.target,null);
+  playerSteps(1.5);assert.equal(enemy.hp,1000);
+ }
+});
+test('turning off auto assist suppresses automatic target changes on ricochet',()=>{
+ arena();const a=resilientEnemy('zombie',0,5),b=resilientEnemy('zombie',4,5);
+ api.settings.throwAutoLock=false;aimAt(0,12);api.startThrow();playerSteps(2);
+ assert.ok(a.hp<1000);assert.equal(b.hp,1000);assert.equal(api.throwFlight,null);
+});
+test('permanent level bonuses update max HP, heal only the added capacity, and survive resume',()=>{
+ arena(1,{test:false});api.player.hp=70;const before=api.stats.power;
+ api.gainXP(characterProgression.xpForNextLevel(1));assert.equal(api.level,2);
+ assert.equal(api.stats.power,before+2);assert.equal(api.player.maxHp,128);assert.equal(api.player.hp,78);
+ const saved=JSON.parse(storage.get('ironfall.character'));assert.equal(saved.character.level,2);
+ api.startGame(1,{resume:true});assert.equal(api.player.maxHp,128);assert.equal(api.stats.power,before+2);
+ for(let i=0;i<4;i++)api.applyStats();assert.equal(api.player.maxHp,128);assert.equal(api.stats.power,before+2);
+ api.renderCharacterProgress();assert.match(elements.get('permanentStats').textContent,/\+2/);assert.match(elements.get('permanentStats').textContent,/\+8/);
+});
+test('kick opening rewards the next different attack only once, without boosting repeated kicks',()=>{
+ arena(1,{test:false});const enemy=resilientEnemy('zombie',.15,1);api.startKick();playerSteps(.22);
+ assert.ok(enemy.openUntil>api.elapsed);const before=enemy.hp;
+ api.hitEnemy(enemy,20,{x:0,z:1},1,0,null,{weapon:'wood'});assert.equal(enemy.hp,before-25);
+ api.hitEnemy(enemy,20,{x:0,z:1},1,0,null,{weapon:'wood'});assert.equal(enemy.hp,before-45);
+ enemy.openUntil=api.elapsed+1;api.hitEnemy(enemy,20,{x:0,z:1},1,0,null,{weapon:'foot'});assert.equal(enemy.hp,before-65);
+});
+test('dash primes one normal blow rather than buffing every spin revolution',()=>{
+ arena(1,{test:false});assert.ok(api.dodge());playerSteps(.25);api.primeSwing(0);api.beginSwing();
+ assert.ok(api.swing?.dashBoost);assert.equal(api.dashFollowup,0);
+ assert.equal(api.swing.damage,Math.round(Math.round(api.stats.power*1.25)*1.25));
 });

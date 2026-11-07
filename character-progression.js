@@ -92,9 +92,11 @@ export function getCharacterStats(state) {
   const equipped = CHARACTER_WEAPONS[weaponTier];
   return {
     ...equipped.stats,
-    power: equipped.stats.power * (1 + (valid.level - 1) * .018),
+    power: equipped.stats.power + (valid.level - 1) * 2,
+    levelDamageBonus: (valid.level - 1) * 2,
+    levelHealthBonus: (valid.level - 1) * 8,
     speed: 5.9,
-    maxHp: 120 + (valid.level - 1) * 3 + equipped.stats.armorTier * 6,
+    maxHp: 120 + (valid.level - 1) * 8 + equipped.stats.armorTier * 6,
     quake: Math.max(0, weaponTier - 2),
     weaponId: equipped.id,
     weaponName: equipped.name,
