@@ -49,6 +49,7 @@ try{
    await page.locator('#startButton').click();
    await page.waitForFunction(()=>document.querySelector('#performanceHud').textContent.includes('FPS · WebGPU · WASM'),null,{timeout:30000});
    const box=await page.locator('#performanceHud').boundingBox();assert.ok(box.x>size.width*.4&&box.y<35&&box.x+box.width<=size.width);
+   assert.ok(await page.locator('#performanceHud').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)>=12),'FPS labels must remain readable on phones');
    await assertRendering(page);await page.screenshot({path:resolve(out,size.name+'-fps.png')});
    const measured=[];
    for(const percent of [0,38,45]){

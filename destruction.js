@@ -1,4 +1,5 @@
 import * as THREE from './vendor/three.module.js';
+import {DebrisRenderer} from './debris-renderer.js?v=20261107-perf14-fix1';
 
 // Damage is monotonic and based on remaining health, not on damage per hit.
 // Randomness is stable per instance: identical buildings never share holes.
@@ -220,6 +221,7 @@ export class DestructionSystem {
     this.limit=quality==='low'?44:quality==='medium'?72:108;
     this.group=new THREE.Group();this.group.name='Detached architectural and vehicle parts';scene.add(this.group);
     this.material=new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true,flatShading:true});
+    this.renderer=new DebrisRenderer(this.group,this.material,this.limit);
     this.debris=[];this.alarms=new Map();this.time=0;this.disposed=false;
   }
   hit(object,point,listener) {
@@ -295,7 +297,8 @@ export class DestructionSystem {
       geometry.computeBoundingBox();const center=geometry.boundingBox.getCenter(new THREE.Vector3());
       const size=geometry.boundingBox.getSize(new THREE.Vector3());geometry.translate(-center.x,-center.y,-center.z);geometry.computeBoundingSphere();
       const mesh=new THREE.Mesh(geometry,this.material);mesh.position.copy(center);mesh.castShadow=true;mesh.receiveShadow=true;
-      this.group.add(mesh);
+      // This mesh remains the exact physical pose/geometry record. Its vertices
+      // render through one rigidly skinned batch instead of 108 separate draws.
       const id=group.parts[0].id,seed=object.destruction.seed;
       const direction=new THREE.Vector3(center.x-object.x,0,center.z-object.z);
       if(direction.lengthSq()<.01)direction.set(point.x-object.x,0,point.z-object.z);
@@ -312,7 +315,8 @@ export class DestructionSystem {
     part.mesh.removeFromParent();part.mesh.geometry.dispose();
   }
   update(dt,listener={x:0,z:0},{active=true}={}) {
-    if(this.disposed||!active||dt<=0)return;
+    if(this.disposed)return;
+    if(!active||dt<=0){this.renderer.sync(this.debris);return;}
     dt=Math.min(.1,dt);this.time+=dt;
     const audible=[];
     for(const [object,alarm] of this.alarms) {
@@ -366,12 +370,13 @@ export class DestructionSystem {
         part.mesh.rotation.x+=part.spin*step;part.mesh.rotation.z+=part.spin*.6*step;
       }
     }
+    this.renderer.sync(this.debris);
   }
   dispose() {
     if(this.disposed)return;this.disposed=true;
     for(const object of [...this.alarms.keys()])this.stopAlarm(object);
     while(this.debris.length)this.removeDebris(0);
-    this.group.removeFromParent();this.material.dispose();
+    this.renderer.dispose();this.group.removeFromParent();this.material.dispose();
     this.audio?.stopEnvironment?.();
   }
 }

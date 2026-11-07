@@ -140,6 +140,30 @@ test('fracture transforms follow a moved and rotated vehicle, not its spawn loca
   sys.dispose();free(o);
 });
 
+test('one debris batch preserves every rigid vertex, colour, normal and physical pose through motion and eviction',()=>{
+ const scene=new THREE.Scene(),sys=new DestructionSystem(scene,{quality:'low'}),objects=[];
+ const verify=()=>{
+  sys.update(.016,{x:0,z:0});scene.updateMatrixWorld(true);sys.renderer.mesh.skeleton.update();
+  const batch=sys.renderer.mesh,g=batch.geometry;let offset=0;
+  for(const part of sys.debris){
+   part.mesh.updateMatrixWorld(true);const a=part.mesh.geometry.attributes;
+   for(const name of ['position','normal','color'])for(let i=0;i<a[name].array.length;i++)assert.equal(g.attributes[name].array[offset*3+i],a[name].array[i]);
+   for(let i=0;i<a.position.count;i++){
+    const actual=batch.getVertexPosition(offset+i,new THREE.Vector3()).applyMatrix4(batch.matrixWorld);
+    const expected=new THREE.Vector3().fromBufferAttribute(a.position,i).applyMatrix4(part.mesh.matrixWorld);
+    assert.ok(actual.distanceTo(expected)<1e-5,'Rigid batching must not deform, move or replace a source piece');
+   }
+   offset+=a.position.count;
+  }
+  assert.equal(g.drawRange.count,offset);assert.equal(batch.material,sys.material);assert.equal(batch.castShadow,true);assert.equal(batch.receiveShadow,true);
+  let draws=0;sys.group.traverse(n=>{if(n.isMesh&&n.visible)draws++;});assert.equal(draws,1);
+ };
+ for(let i=0;i<3;i++){const o=object(i===1?'car':'townhall',i,i*4,0);objects.push(o);o.hp=0;sys.hit(o,{x:o.x+2,y:2,z:1},{x:0,z:0});verify();}
+ const part=sys.debris[0];part.mesh.rotation.set(.7,.3,.4);part.mesh.scale.setScalar(.4);part.mesh.position.set(2,6,-3);verify();
+ sys.removeDebris(0);verify();assert.ok(sys.debris.length<=sys.limit);
+ sys.dispose();assert.equal(sys.renderer.mesh.parent,null);objects.forEach(free);
+});
+
 test('rubble lands on neighboring solid roofs without falling through them',()=>{
   const scene=new THREE.Scene(),o=object('car'),roof={x:5,z:0,w:4,d:4,h:2,baseY:.065};
   const sys=new DestructionSystem(scene,{nearObjects:()=>[roof]});o.hp=0;sys.hit(o,{x:1,y:1,z:0});

@@ -12,7 +12,9 @@ const {chromium}=await import(process.env.SMASH_PLAYWRIGHT || 'playwright');
 const root=fileURLToPath(new URL('../',import.meta.url));
 const out=resolve(process.env.CODEX_TEST_OUTPUT || resolve(root,'browser-evidence'),'local');await mkdir(out,{recursive:true});
 const source=await readFile(resolve(root,'tests/browser-performance14.mjs'),'utf8');
-const legacy=process.env.SMASH_REF==='origin/main';
+const historicalRef=process.env.SMASH_REF||'';
+assert.ok(['','origin/main','origin/feature/performance14-webgpu'].includes(historicalRef),'Use a verified source ref');
+const legacy=historicalRef==='origin/main';
 const legacyShim=legacy?`const performanceMonitor={reset(){},history:[],last:null};const collisionWasmStatus=()=>({active:false,ready:false,note:'Published main has no WASM kernel'});let vehicleEffects=null;`:'';
 const qa=legacyShim+source.match(/const qa=`([\s\S]*?)`;/)[1]+`
 window.__local={get scene(){return scene},get camera(){return camera},get destruction(){return destruction},get enemies(){return enemies},get spin(){return spin},get swing(){return swing}};
@@ -20,6 +22,8 @@ window.__frameIntervals=[];let previousProbeFrame=null;const probeFrame=t=>{if(p
 window.__resetProbe=()=>{__frameIntervals.length=0;previousProbeFrame=null;performanceMonitor.reset();performanceMonitor.history.length=0;};
 window.__setWasm=async value=>(await import('./collision-wasm.js?v=20261107-perf14')).setCollisionWasmEnabled(value);
 window.__pendingQA={
+ stagedCars(){startGame(15,{test:true});const list=world.objects.filter(o=>isVehicle(o)&&!o.dead).slice(0,3);list.forEach((o,i)=>{world.relocateObject(o,0,5+i*6);if(i)hurtObject(o,o.maxHp*(i===1?.5:.8));});player.x=3;player.z=11;camera.zoom=1.2;camera.updateProjectionMatrix();announcementTimer=0;$('announcement').hidden=true;return list.map(o=>({type:o.type,hp:o.hp,maxHp:o.maxHp,x:o.x,z:o.z}));},
+ foregroundRubble(){const list=destruction.debris;for(let i=0;i<list.length;i++){const p=list[i];p.mesh.position.set(player.x+(i%12-5.5)*1.1,.08+p.halfY,player.z+(Math.floor(i/12)-4)*1.1);p.vx=p.vy=p.vz=0;p.settled=true;p.support=null;p.life=100;}destruction.update(.001,player);return {pieces:list.length,vertices:list.reduce((n,p)=>n+p.mesh.geometry.attributes.position.count,0)};},
  viewCars(){player.x=0;player.z=7;camera.zoom=1.4;camera.updateProjectionMatrix();announcementTimer=0;$('announcement').hidden=true;},
  pose(twoHanded,action){startGame(15,{test:true});levels.size=12;levels.range=14;applyStats();stance=stanceTarget=twoHanded?1:0;hero.userData.setStance(stance);poseHero(0);
   if(action==='strike'){pressAttack();releaseAttack();}else if(action==='spin'){pressAttack();}
@@ -27,7 +31,7 @@ window.__pendingQA={
   setPhase('paused');camera.zoom=3;camera.updateProjectionMatrix();cameraTarget.set(player.x,.6+player.y,player.z);camera.position.copy(cameraTarget).add(cameraOffset);camera.lookAt(cameraTarget);camera.updateMatrixWorld(true);renderer.render(scene,camera);
   const u=hero.userData,v=new THREE.Vector3(),w=new THREE.Vector3();return [u.leftArm,u.rightArm].map((a,i)=>({upper:a.userData.upper.scale.y,fore:a.userData.fore.scale.y,reach:a.getWorldPosition(v).distanceTo([u.leftGrip,u.rightGrip][i].getWorldPosition(w))}));
  },
- car(){startGame(15,{test:true});const car=world.objects.find(o=>o.type==='car'&&!o.dead);if(!car)throw Error('No car');world.relocateObject(car,0,2.25);Object.assign(player,{x:0,y:0,z:0,vx:0,vz:0});facing={x:0,z:1};aim={x:0,z:1};poseHero(0);startKick();return {x:car.x,z:car.z,hp:car.hp};},
+ car(){startGame(15,{test:true});const car=world.objects.find(o=>o.type==='car'&&!o.dead);if(!car)throw Error('No car');this.kickedCar=car;world.relocateObject(car,0,car.d/2+.85);Object.assign(player,{x:0,y:0,z:0,vx:0,vz:0});facing={x:0,z:1};Object.assign(aim,{x:0,z:1});poseHero(0);camera.zoom=1;camera.updateProjectionMatrix();startKick();return {x:car.x,z:car.z,hp:car.hp,w:car.w,d:car.d};},
  get cars(){return world.objects.filter(o=>isVehicle(o)&&!o.dead).map(o=>({x:o.x,z:o.z,hp:o.hp,crashCount:o.crashCount||0}));}
 };
 window.render_game_to_text=()=>JSON.stringify({phase,player:{x:player.x,y:player.y,z:player.z},spin:!!spin,destruction:destructionPercent(world.objects),wasm:collisionWasmStatus(),frame:performanceMonitor.last});
@@ -39,7 +43,7 @@ const server=createServer(async(req,res)=>{try{
  const path=decodeURIComponent(new URL(req.url,'http://localhost').pathname),f=resolve(root,'.'+(path==='/'?'/index.html':path));
  if(!f.startsWith(root.endsWith(sep)?root:root+sep))throw Error('path');
  let data;
- if(legacy){const rel=f.slice(root.length).replaceAll('\\','/');if(!historicalFiles.has(rel))historicalFiles.set(rel,execFileSync('git',['show','origin/main:'+rel],{cwd:root,maxBuffer:4*1024*1024,windowsHide:true}));data=historicalFiles.get(rel);}
+ if(historicalRef){const rel=f.slice(root.length).replaceAll('\\','/');if(!historicalFiles.has(rel))historicalFiles.set(rel,execFileSync('git',['show',historicalRef+':'+rel],{cwd:root,maxBuffer:4*1024*1024,windowsHide:true}));data=historicalFiles.get(rel);}
  else data=await readFile(f);
  if(f===resolve(root,'game.js'))data=Buffer.from(data.toString()+qa);
  res.writeHead(200,{'Content-Type':types[extname(f)]||'application/octet-stream','Cache-Control':'no-store'}).end(data);
@@ -84,7 +88,7 @@ try{
   results.push(await page.evaluate(()=>({phase:__perf14.phase,frame:__perf14.telemetry.last,errors:window.__gpuErrors,counts:window.__gpuCounts})));
   await page.screenshot({path:resolve(out,label+'-game.png')});
   for(const wasm of (process.env.SMASH_VISUALS_ONLY==='1'?[]:legacy?[false]:process.env.SMASH_CPU_RATE?[true]:[true,false]))for(const percent of (process.env.SMASH_CPU_RATE?[38]:[0,38,45])){
-   const fixture=await page.evaluate(async({percent,wasm,legacy})=>{if(!legacy)await __setWasm(wasm);const actual=__perf14.prepare(percent);__perf14.large();const target=__perf14.faceBuilding();return {actual,target};},{percent,wasm,legacy});
+   const fixture=await page.evaluate(async({percent,wasm,legacy,foreground})=>{if(!legacy)await __setWasm(wasm);const actual=__perf14.prepare(percent);__perf14.large();const target=__perf14.faceBuilding();const rubble=foreground?__pendingQA.foregroundRubble():null;return {actual,target,rubble};},{percent,wasm,legacy,foreground:process.env.SMASH_FOREGROUND_RUBBLE==='1'});
    await page.waitForTimeout(600);
    await page.evaluate(()=>{__resetProbe();__perf14.pressAttack();});
    await page.waitForTimeout(5000);
@@ -105,9 +109,12 @@ try{
     await writeFile(resolve(out,label+'-hands-'+(two?'two':'one')+'-'+action+'.png'),Buffer.from(png.split(',')[1],'base64'));results.push({two,action,arms});
    }
    if(!legacy){
-   await page.evaluate(()=>{__perf14.prepare(0);__perf14.vehicles();__pendingQA.viewCars();});await page.waitForTimeout(3500);
+   const stagedCars=await page.evaluate(()=>__pendingQA.stagedCars());await page.waitForTimeout(3500);results.push({stagedCars});
    const effects=await page.evaluate(()=>({smoke:__perf14.effects.smoke.count,fire:__perf14.effects.fire.count}));assert.ok(effects.smoke>0&&effects.fire>0);results.push({effects});
    await page.screenshot({path:resolve(out,label+'-car-fire.png')});
+   const kicked=await page.evaluate(()=>__pendingQA.car());await page.waitForTimeout(5000);
+   const landed=await page.evaluate(()=>({x:__pendingQA.kickedCar.x,z:__pendingQA.kickedCar.z,hp:__pendingQA.kickedCar.hp}));
+   console.log('native-kick',JSON.stringify({kicked,landed}));assert.ok(Math.hypot(landed.x-kicked.x,landed.z-kicked.z)>5,'A real native-browser kick must move the actual vehicle several metres: '+JSON.stringify({kicked,landed}));results.push({kicked,landed});
    }
   }
  }
