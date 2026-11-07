@@ -2,8 +2,16 @@
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 export const manualCombatQA=`
+let manualStrokeAtStart=null;
+const manualOriginalBeginSwing=beginSwing;
+beginSwing=function(...args){
+  const before=swing,result=manualOriginalBeginSwing(...args);
+  if(swing&&swing!==before)manualStrokeAtStart={direction:{x:swing.fx,z:swing.fz},aim:{...aim},pointer:pointer.active,moving:movementStrength()>0};
+  return result;
+};
 Object.assign(window.__ironfallQA,{
   prepareManualArena(){
+    manualStrokeAtStart=null;
     clearInput();for(const e of enemies)disposeInstance(e);enemies=[];
     world.objects.forEach((o,i)=>{o.x=500+i*10;o.z=500;o.mesh.position.set(o.x,o.baseY||0,o.z);});
     world.rebuildSpatialIndex();for(const h of world.hazards){h.x=500;h.z=500;}
@@ -14,7 +22,7 @@ Object.assign(window.__ironfallQA,{
     settings.throwAutoLock=false;settings.shake=false;poseHero(1);updateAimPreview(false);
   },
   manualState(){return {x:player.x,z:player.z,facing:{...facing},aim:{...aim},
-    swing:swing?{x:swing.fx,z:swing.fz}:null,spinning:!!spin,momentum:spin?.momentum||0,
+    swing:swing?{x:swing.fx,z:swing.fz}:null,strokeAtStart:manualStrokeAtStart,spinning:!!spin,momentum:spin?.momentum||0,
     turnOnly:touch.turnOnly,walking:movementStrength(),previews:aimDiagnostics.previews,
     throwPreviews:aimDiagnostics.throwPreviews,ribbons:arcs.length,
     throwTarget:throwWindup?.target?.type||null,hints:meleeHintTargets.length,
@@ -60,9 +68,14 @@ export async function verifyManualCombat(page,config,output){
   }else{
     const point=await page.evaluate(()=>window.__ironfallQA.aimScreenPoint());
     await page.mouse.move(point.x,point.y);await page.keyboard.down('a');await page.mouse.down();
+    // Deliberately allow movement: a committed stroke keeps its original
+    // azimuth while the live mouse ray changes as the player/camera moves.
+    await page.evaluate(()=>window.__ironfallQA.manualStep(.15));
     const manual=await page.evaluate(()=>window.__ironfallQA.manualState());
-    assert.ok(manual.swing,'A real mouse press starts a stroke');
-    assert.ok(manual.swing.x*manual.aim.x+manual.swing.z*manual.aim.z>.999,'Mouse direction owns the stroke while a movement key is held');
+    const stroke=manual.strokeAtStart;
+    assert.ok(stroke&&stroke.pointer&&stroke.moving,'A real mouse press starts a pointer-owned stroke while movement is held');
+    assert.ok(stroke.direction.x*stroke.aim.x+stroke.direction.z*stroke.aim.z>.999,'Mouse direction owns the stroke at initiation, independently of later movement');
+    if(manual.swing)assert.ok(manual.swing.x*stroke.direction.x+manual.swing.z*stroke.direction.z>.999,'Movement must not steer a stroke after its direction is committed');
     await page.mouse.up();await page.keyboard.up('a');
   }
   await page.evaluate(()=>window.__ironfallQA.prepareManualArena());

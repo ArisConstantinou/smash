@@ -25,8 +25,8 @@ const server=createServer(async(req,res)=>{
     res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);
   }catch{res.writeHead(404);res.end();}
 });
-await new Promise(resolve=>server.listen(8000,'127.0.0.1',resolve));
-const origin='http://127.0.0.1:'+server.address().port;
+if(!process.env.SMASH_EXISTING_SERVER)await new Promise(resolve=>server.listen(8000,'127.0.0.1',resolve));
+const origin='http://127.0.0.1:8000';
 let managed;
 const browser=process.env.SMASH_BROWSER_LIFECYCLE
  ?(managed=await (await import(process.env.SMASH_BROWSER_LIFECYCLE)).launchManagedBrowser(chromium,{headless:true,channel:'chrome',screenshotDir:output})).browser
@@ -53,6 +53,7 @@ try{
     const context=await browser.newContext({viewport:{width:config.width,height:config.height},hasTouch:config.mobile,isMobile:config.mobile,deviceScaleFactor:1});
     await context.addInitScript(saved=>{localStorage.setItem('ironfall.character',JSON.stringify(saved));},saved);
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+    if(process.env.SMASH_EXISTING_SERVER)await page.route('**/game.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+qa+manualCombatQA+throwIndicatorQA+barbedCombatQA});});
     try{
       await page.goto(origin+'?renderer=webgl',{waitUntil:'networkidle'});
       await page.waitForFunction(()=>window.__ironfallQA&&!document.querySelector('#startButton').disabled,null,{timeout:45000});
@@ -166,7 +167,7 @@ try{
     }finally{await context.close();}
   }
 }finally{
-  if(managed)await managed.cleanup();else await browser.close();await new Promise(resolve=>server.close(resolve));
+  if(managed)await managed.cleanup();else await browser.close();if(server.listening)await new Promise(resolve=>server.close(resolve));
   await writeFile(resolve(output,'results.json'),JSON.stringify(results,null,2));
   console.log(JSON.stringify(results,null,2));
 }
