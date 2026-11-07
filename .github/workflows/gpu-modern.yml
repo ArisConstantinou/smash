@@ -27,7 +27,6 @@ jobs:
             tar -xzf three-0.187.0.tgz -C /tmp/three-modern
             cp /tmp/three-modern/package/build/*.js vendor/three-r187/
             printf "export * from './three-r187/three.webgpu.js';\nexport {WebGLRenderer} from './three-r187/three.module.js';\n" > vendor/three.module.js
-            tar -czf gpu-diagnostic/three-r187-official.tar.gz -C /tmp/three-modern package
             npm view three@0.187.0 dist.integrity > gpu-diagnostic/integrity.txt
           fi
           python3 - <<'PY'
@@ -35,9 +34,10 @@ jobs:
           p=Path('renderer-policy.js')
           p.write_text(p.read_text().replace("if(typeof transparentPass==='function')", "if(THREE.REVISION==='170'&&typeof transparentPass==='function')"))
           p=Path('tests/browser-gpu-diagnostic.mjs')
-          s=p.read_text().replace("headless:true,args:","headless:true,channel:'chromium',args:")
+          s=p.read_text().replace("headless:true,args:","headless:false,channel:'chromium',args:")
           s=s.replace("'--use-angle=swiftshader'","'--use-angle=vulkan','--enable-gpu','--enable-features=Vulkan','--disable-vulkan-surface'")
-          s=s.replace("results.push({variant,state,messages});", "const data=await page.evaluate(()=>{const a=__gpuProbe;a.renderer.render(a.scene,a.camera);return a.renderer.domElement.toDataURL('image/png');});await writeFile(resolve(out,variant+'-raw.png'),Buffer.from(data.split(',')[1],'base64'));results.push({variant,state,messages});")
+          s=s.replace("const variants=['normal','no-shadows','no-points','no-menu-preview','no-precompile','no-effects'];", "const variants=['normal','no-effects'];")
+          s=s.replace("results.push({variant,state,messages});", "await page.screenshot({path:resolve(out,variant+'-presented.png')});const data=await page.evaluate(()=>{const a=__gpuProbe;a.renderer.render(a.scene,a.camera);return a.renderer.domElement.toDataURL('image/png');});await writeFile(resolve(out,variant+'-raw.png'),Buffer.from(data.split(',')[1],'base64'));results.push({variant,state,messages});")
           p.write_text(s)
           PY
       - run: |
@@ -49,6 +49,6 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gpu-renderer-${{ matrix.revision }}
+          name: gpu-headed-${{ matrix.revision }}
           path: gpu-diagnostic/
           retention-days: 7
