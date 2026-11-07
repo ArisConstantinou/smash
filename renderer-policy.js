@@ -24,5 +24,10 @@ export async function createGameRenderer({THREE,canvas,mode='webgpu',gpu=globalT
     await renderer.init();
     if(renderer.backend?.isWebGPUBackend!==true)throw new Error('WebGPU initialization did not select a WebGPU backend');
     renderer.userData={backend:'WebGPU'};return renderer;
-  }catch(error){renderer.dispose?.();throw error;}
+  }catch(error){
+    // r170 dispose() dereferences managers that do not exist when init() fails.
+    // Cleanup must never replace the adapter/device error players need to see.
+    try{renderer.dispose?.();}catch{}
+    throw error;
+  }
 }

@@ -27,6 +27,12 @@ test('vehicle smoke and fire have explicit damage stages; buildings cannot be em
  assert.equal(vehicleDamageStage({type:'townhouse',hp:0,maxHp:100}),0);
 });
 
+test('failed WebGPU initialization preserves the adapter error when partial cleanup also throws',async()=>{
+ const unavailable=new Error('WebGPUBackend: Unable to create WebGPU adapter.');
+ class PartialGPU{async init(){throw unavailable;}dispose(){throw new TypeError("Cannot read properties of null (reading 'dispose')");}}
+ await assert.rejects(createGameRenderer({THREE:{WebGPURenderer:PartialGPU},gpu:{}}),error=>error===unavailable);
+});
+
 test('pinned r170 transparent compilation receives scene and lights in their proper slots',async()=>{
  class GPU{async init(){this.backend={isWebGPUBackend:true};}_renderTransparents(...args){this.received=args;}}
  const renderer=await createGameRenderer({THREE:{WebGPURenderer:GPU},gpu:{}});

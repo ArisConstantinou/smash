@@ -1,5 +1,5 @@
 import {VehicleEffects} from './vehicle-effects.js?v=20261107-perf14';
-import {createGameRenderer} from './renderer-policy.js?v=20261107-perf14';
+import {createGameRenderer} from './renderer-policy.js?v=20261107-perf14-fix1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
@@ -13,7 +13,7 @@ import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,tr
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-aim13';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261107-cities10';
+import {createWorld} from './world.js?v=20261107-perf14-fix1';
 import {GameAudio} from './audio.js?v=20261107-aim13';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-perf14';

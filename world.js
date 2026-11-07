@@ -459,6 +459,15 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
     }
     emberGeo.attributes.position.needsUpdate=true;
   }
+  // Ground markings, facade pieces, parked-car panels and effect containers
+  // keep their authored local transforms. Rebuilding these matrices on every
+  // render AND swept-collision query wastes CPU during dense destruction.
+  // World matrices still follow parents normally. Keep every gameplay root
+  // and every animated crane joint live; geometry/instance-buffer animation
+  // (flags, rain, grass, flames) does not depend on local matrix recomposition.
+  const movingTransforms=new Set(objects.map(o=>o.mesh));
+  for(const o of cranes){const c=o.mesh.userData.crane;movingTransforms.add(c.pivot);movingTransforms.add(c.hook);movingTransforms.add(c.wire);}
+  group.traverse(node=>{if(!movingTransforms.has(node)){node.updateMatrix();node.matrixAutoUpdate=false;}});
   updateVisibility({x:0,z:0});
   update(0,0,{x:0,z:0},'rain');
   return {

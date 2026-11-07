@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "preview": "python -B -m http.server 8000 --bind 127.0.0.1",
     "test": "node --import ./tools/node-environment.mjs --experimental-vm-modules --test tests/*.test.mjs tests/game.integration.mjs",
     "build:wasm": "sh tools/build-wasm.sh"
   },

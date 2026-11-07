@@ -1,4 +1,6 @@
 // Diagnostic matrix only. Mutations apply to the local HTTP response, NEVER to production files.
+import assert from 'node:assert/strict';
+import {assertScenePixels} from './browser-scene-health.mjs';
 import {createServer} from 'node:http';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
@@ -14,7 +16,7 @@ if(variant==='no-points'||variant==='no-effects')s=s.replace('updateThrowIndicat
 s+='\nwindow.__gpuProbe={get ready(){return gameReady},get phase(){return phase},get renderer(){return renderer},get scene(){return scene},get camera(){return camera},startGame};';data=Buffer.from(s);}
 if(path===resolve(root,'menu.js')&&variant==='no-menu-preview')data=Buffer.from(data.toString().replace('if(previewAttempted||disposed)return;','return;\nif(previewAttempted||disposed)return;'));
 res.writeHead(200,{'Content-Type':types[extname(path)]||'application/octet-stream','Cache-Control':'no-store'}).end(data);
-}catch{res.writeHead(404).end();}});await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
+}catch{res.writeHead(404).end();}});await new Promise(r=>server.listen(8000,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
 const results=[];
 try{for(variant of variants){
  const browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-webgpu','--enable-unsafe-swiftshader','--use-angle=swiftshader','--use-vulkan=swiftshader','--use-webgpu-adapter=swiftshader']});
@@ -37,8 +39,11 @@ try{for(variant of variants){
   await page.waitForFunction(()=>window.__gpuProbe?.ready||!document.querySelector('#fatalError').hidden,null,{timeout:120000});
   await page.evaluate(()=>{if(__gpuProbe.ready)__gpuProbe.startGame();});await page.waitForTimeout(3000);
   const state=await page.evaluate(()=>({ready:__gpuProbe.ready,phase:__gpuProbe.phase,lost:__gpuProbe.renderer?._isDeviceLost,info:__gpuProbe.renderer?.info,events:__gpuLog,counts:__gpuCounts}));
+  if(state.ready)state.sampledColors=await assertScenePixels(page,'__gpuProbe');
   results.push({variant,state,messages});await page.screenshot({path:resolve(out,variant+'.png')});
  }catch(e){results.push({variant,error:String(e.stack),messages});}
  finally{await writeFile(resolve(out,'results.json'),JSON.stringify(results,null,2));await context.close();await browser.close();}
 }}finally{server.close();}
 console.log(JSON.stringify(results,null,2));
+
+assert.ok(results.length===variants.length&&results.every(r=>!r.error&&r.state?.ready&&!r.state.lost&&r.state.sampledColors>30&&!r.state.events.some(e=>e.event==='gpuerror'||e.event==='lost')), 'WebGPU diagnostic failed; see results.json');

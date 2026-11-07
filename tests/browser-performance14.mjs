@@ -1,19 +1,20 @@
 // Actual WebGPU rendering on a CI software Vulkan adapter. NOT a hardware FPS
 // benchmark. This catches WGSL/pipeline/material/buffer errors missed by Node.
 import assert from 'node:assert/strict';
+import {assertScenePixels} from './browser-scene-health.mjs';
 import {createServer} from 'node:http';
 import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve,extname,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium} from 'playwright';
-const root=fileURLToPath(new URL('../',import.meta.url)),out=resolve(root,'browser-evidence/perf14');await mkdir(out,{recursive:true});
+const {chromium}=await import(process.env.SMASH_PLAYWRIGHT||'playwright');
+const root=fileURLToPath(new URL('../',import.meta.url)),out=resolve(process.env.CODEX_TEST_OUTPUT||resolve(root,'browser-evidence'),'perf14');await mkdir(out,{recursive:true});
 const qa=`
 let perf14SpinSteps=0,perf14SpinContacts=0;
 const perf14OriginalUpdatePlayer=updatePlayer;
 updatePlayer=function(...args){const result=perf14OriginalUpdatePlayer(...args);if(spin)perf14SpinSteps++;return result;};
 const perf14OriginalHurtObject=hurtObject;
 hurtObject=function(...args){const hp=args[0]?.hp;const result=perf14OriginalHurtObject(...args);if(spin&&args[0]?.hp<hp)perf14SpinContacts++;return result;};
-window.__perf14={get spinEvidence(){return {steps:perf14SpinSteps,contacts:perf14SpinContacts,active:!!spin}},get ready(){return gameReady},get renderer(){return renderer},get phase(){return phase},get hero(){return hero},get player(){return player},get world(){return world},get stats(){return stats},get levels(){return levels},get effects(){return vehicleEffects},get telemetry(){return performanceMonitor},get wasm(){return collisionWasmStatus()},startGame,applyStats,poseHero,hurtObject,pressAttack,releaseAttack,startKick,startLeap,armAirSmash,updatePlayer,updateMovingVehicles,updateObjects,updateGame,
+window.__perf14={get spinEvidence(){return {steps:perf14SpinSteps,contacts:perf14SpinContacts,active:!!spin}},get ready(){return gameReady},get renderer(){return renderer},get phase(){return phase},get scene(){return scene},get camera(){return camera},get hero(){return hero},get player(){return player},get world(){return world},get stats(){return stats},get levels(){return levels},get effects(){return vehicleEffects},get telemetry(){return performanceMonitor},get wasm(){return collisionWasmStatus()},startGame,applyStats,poseHero,hurtObject,pressAttack,releaseAttack,startKick,startLeap,armAirSmash,updatePlayer,updateMovingVehicles,updateObjects,updateGame,
 prepare(percent){startGame(15,{test:true});perf14SpinSteps=perf14SpinContacts=0;player.invincible=1e9;const total=world.objects.reduce((n,o)=>n+o.weight,0);let done=0;for(const o of world.objects){if(Math.hypot(o.x,o.z)<25)continue;if(done/total*100>=percent)break;hurtObject(o,o.hp+1);done+=o.weight;}return destructionPercent(world.objects);},
 large(){levels.size=12;levels.range=14;applyStats();poseHero(0);},
 faceBuilding(){const o=world.buildingObjects.find(o=>!o.dead&&Math.hypot(o.x,o.z)<25);if(!o)throw new Error('No live building fixture');Object.assign(player,{x:o.x,z:o.z-o.d/2-1.2,y:0,vx:0,vz:0,vy:0});facing={x:0,z:1};Object.assign(aim,{x:0,z:1});pointer.active=false;poseHero(0);return {type:o.type,x:o.x,z:o.z,hp:o.hp};},
@@ -22,16 +23,17 @@ armLengths(){const u=hero.userData;return [u.leftArm,u.rightArm].map(a=>[a.userD
 `;
 const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.wasm':'application/wasm','.mp3':'audio/mpeg','.wav':'audio/wav'};
 const server=createServer(async(req,res)=>{try{const path=resolve(root,'.'+(new URL(req.url,'http://localhost').pathname||'/'));const f=path===root.replace(/\/$/,'')?resolve(root,'index.html'):path;if(!f.startsWith(root.endsWith(sep)?root:root+sep)){res.writeHead(403);res.end();return;}let data=await readFile(f);if(f===resolve(root,'game.js'))data=Buffer.from(data.toString()+qa);res.writeHead(200,{'Content-Type':types[extname(f)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);}catch{res.writeHead(404);res.end();}});
-await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
+await new Promise(r=>server.listen(8000,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
 // The compositor and Dawn must share Vulkan. A mixed GL/Vulkan SwiftShader
 // configuration fails at swapchain creation and produces deceptive black frames.
 // These switches are CI-only; ordinary players do not need browser flags.
-const browser=await chromium.launch({headless:true,channel:'chromium',args:['--no-sandbox','--enable-gpu','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--use-vulkan=swiftshader','--use-webgpu-adapter=swiftshader','--disable-vulkan-surface']});
+const browser=await chromium.launch({headless:false,channel:'chromium',args:['--no-sandbox','--enable-gpu','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--use-vulkan=swiftshader','--use-webgpu-adapter=swiftshader','--disable-vulkan-surface']});
 const results=[];
 async function assertRendering(page){
  const health=await page.evaluate(()=>({lost:!!__perf14.renderer._isDeviceLost,draws:__perf14.renderer.info.render.drawCalls,triangles:__perf14.renderer.info.render.triangles,frame:__perf14.renderer.info.frame}));
  assert.equal(health.lost,false,'WebGPU device was lost; requestAnimationFrame is NOT proof of rendering');
- assert.ok(health.draws>0&&health.triangles>1000,JSON.stringify(health));return health;
+ assert.ok(health.draws>0&&health.triangles>1000,JSON.stringify(health));
+ const pixels=await assertScenePixels(page);return {...health,sampledColors:pixels};
 }
 try{
  for(const size of [{name:'desktop',width:1440,height:900},{name:'phone',width:390,height:844}]){

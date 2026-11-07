@@ -1,10 +1,13 @@
 name: Verify performance14
 on:
   push:
-    branches: [feature/performance14-webgpu]
+    branches: [feature/performance14-webgpu, fix/performance14-local]
   workflow_dispatch:
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: performance14
   cancel-in-progress: true
