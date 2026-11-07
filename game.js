@@ -7,7 +7,7 @@ import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-forge9';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
 import {createWorld} from './world.js?v=20261107-forge9';
-import {GameAudio} from './audio.js?v=20261107-forge9';
+import {GameAudio} from './audio.js?v=20261107-forge9b';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-forge9';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
@@ -216,6 +216,7 @@ function setPhase(next){
   const menuContext=next==='menu'||next==='settings'&&previousPhase==='menu';
   $('menu').hidden=!menuContext;$('menu').inert=next==='settings';$('hud').hidden=menuContext;
   forgeMenu?.setVisible(next==='menu');
+  audio.setMode?.(menuContext?'menu':next==='playing'?'game':'paused');
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
   if(next!=='playing'){audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
@@ -2397,6 +2398,7 @@ function frame(now){
 }
 
 async function init(){
+  audio.setMode?.('menu');
   forgeMenu=createForgeMenu({THREE,makeWarrior,xpForNextLevel,getCharacterStats,maxLevel:MAX_CHARACTER_LEVEL,document,window,
     onSound:(name,details)=>{if(!settings.muted&&settings.volume>0)audio.unlock().then(()=>audio.play(name,.5,details));},
     onSettings:()=>{previousPhase='menu';setPhase('settings');}});

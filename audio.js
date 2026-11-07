@@ -19,6 +19,10 @@ export class GameAudio {
     this._environmentSources = new Map();
     this._cleanups = new Map();
     this._voices = new Set();
+    this._menuSources = new Set();
+    this.mode = 'game';
+    this._musicClock = 0;
+    this._musicStep = 0;
     this._recent = new Map();
     this._bindings = [];
     this._time = 0;
@@ -197,6 +201,7 @@ export class GameAudio {
       this._sources.delete(source);
       this._environmentSources.delete(source);
       this._voices.delete(source);
+      this._menuSources.delete(source);
       source.onended = null;
       for (const node of [source, ...nodes]) { try { node.disconnect(); } catch (_) {} }
       onEnded?.();
@@ -608,15 +613,38 @@ export class GameAudio {
     this._ambient = { wind: layer('lowpass', 230, .008, 1), rain: layer('highpass', 1800, .004, .77), nodes };
   }
 
+  setMode(mode='game') {
+    mode=['menu','game','paused'].includes(mode)?mode:'paused';
+    if(this.mode===mode)return;
+    this._stopMenuMusic();this.mode=mode;this._musicClock=0;this._musicStep=0;
+  }
+  _stopMenuMusic(){
+    for(const source of [...this._menuSources]){try{source.stop();}catch(_){}this._cleanups.get(source)?.();}
+    this._menuSources.clear();
+  }
+  _menuMusic(dt){
+    if(this.mode!=='menu'||this.muted||this.volume<=0)return;
+    this._musicClock-=dt;if(this._musicClock>0)return;
+    // Original 32-beat workshop motif: soft low strings, sparse struck-metal
+    // overtones and a wooden pulse. No network asset or autoplay dependency.
+    this._musicClock+=.42;const step=this._musicStep++%32,existing=new Set(this._sources);
+    const roots=[110,87.31,98,82.41],root=roots[Math.floor(step/8)];
+    if(step%4===0){this._tone('triangle',root,root,.035,1.55,0,.20);this._tone('sine',root/2,root/2,.045,1.6,0,.16);}
+    const motif=[0,7,12,null,10,7,null,3],interval=motif[step%8];
+    if(interval!==null){const note=root*2*Math.pow(2,interval/12);this._tone('sine',note,note,.035,.57,0,.012);this._tone('sine',note*2.756,note*2.756,.008,.24);}
+    if(step%4===2)this._noise(.022,.06,750,'bandpass',0,300);
+    for(const source of this._sources)if(!existing.has(source))this._menuSources.add(source);
+    for(const source of this._menuSources)if(!this._sources.has(source))this._menuSources.delete(source);
+  }
   update(dt, danger = 0, weather = 'rain') {
     if (!this.ready || !this._ambient || this._disposed || this._hidden || this.ctx?.state !== 'running') return;
-    this._time += clamp(dt, 0, .1);
+    const delta=clamp(dt,0,.1);this._time+=delta;this._menuMusic(delta);
     if (this._time - this._mixTime < .12) return;
     this._mixTime = this._time;
-    const t = this.ctx.currentTime, d = clamp(danger);
-    this._ambient.wind.volume.gain.setTargetAtTime(.006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003, t, .3);
+    const t = this.ctx.currentTime, d = clamp(danger),quiet=this.mode==='paused'?0:this.mode==='menu'?.55:1;
+    this._ambient.wind.volume.gain.setTargetAtTime(quiet*(.006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003), t, .3);
     this._ambient.wind.filter.frequency.setTargetAtTime(190 + Math.sin(this._time * .2) * 60 + d * 70, t, .3);
-    this._ambient.rain.volume.gain.setTargetAtTime(weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002, t, .4);
+    this._ambient.rain.volume.gain.setTargetAtTime(quiet*(weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002), t, .4);
   }
 
   _stopTransientSources() {
@@ -624,7 +652,7 @@ export class GameAudio {
       try { source.stop(); } catch (_) {}
       this._cleanups.get(source)?.();
     }
-    this._recent.clear();
+    this._recent.clear();this._menuSources.clear();this._musicClock=0;
   }
 
   _dropGraph() {

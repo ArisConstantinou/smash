@@ -259,3 +259,44 @@ test('alarm pulses differ by car and can stop individually without cancelling co
  audio.stopEnvironment();assert.equal(audio._environmentSources.size,0);assert.ok([...combat].every(s=>audio._sources.has(s)));
  audio.play('carAlarm',.4,{id:99});audio.toggle();assert.equal(audio._environmentSources.size,0);assert.equal(audio._sources.size,0);
 });
+
+
+test('forge music waits for a gesture and remains distinct from battle ambience',async t=>{
+  const {audio}=environment(t);audio.setMode('menu');audio.update(.1);
+  assert.equal(audio.ctx,null,'Selecting the menu cannot autoplay audio');
+  await audio.unlock();const ctx=audio.ctx;audio.update(.1);
+  assert.ok(audio._menuSources.size>=4,'Original harmony and metal overtones start after activation');
+  const music=[...audio._menuSources],sameContext=audio.ctx;audio.setMode('menu');
+  assert.equal(audio._menuSources.size,music.length,'Opening settings from the menu does not restart the motif');
+  audio.play('menuWood',.5);const effects=[...audio._sources].filter(n=>!audio._menuSources.has(n));
+  audio.setMode('game');assert.equal(audio._menuSources.size,0);
+  assert.ok(music.every(n=>n.disconnected),'No menu notes leak into battle');
+  assert.ok(effects.some(n=>!n.disconnected),'A mode change must not terminate unrelated effects');
+  const count=ctx.nodes.length;audio.update(.1);assert.equal(ctx.nodes.length,count);assert.equal(audio.ctx,sameContext);
+});
+
+test('forge music respects mute, zero volume, background and clean recovery',async t=>{
+  const {audio,document}=environment(t);audio.bindUnlock(document);audio.setMode('menu');await audio.unlock();
+  audio.update(.1);assert.ok(audio._menuSources.size);audio.toggle();
+  assert.equal(audio._menuSources.size,0);const mutedCount=audio.ctx.nodes.length;
+  for(let n=0;n<30;n++)audio.update(.1);assert.equal(audio.ctx.nodes.length,mutedCount);
+  audio.toggle();await flush();audio.update(.1);assert.ok(audio._menuSources.size);
+  audio.setVolume(0);assert.equal(audio._menuSources.size,0);audio.setVolume(.6);audio.update(.1);assert.ok(audio._menuSources.size);
+  document.hidden=true;document.emit('visibilitychange');await flush();assert.equal(audio._menuSources.size,0);
+  document.hidden=false;document.emit('visibilitychange');await flush();
+  for(let n=0;n<6;n++){audio.ctx.currentTime+=.1;audio.update(.1);}assert.ok(audio._menuSources.size);
+  const sources=[...audio._menuSources];audio.setMode('paused');
+  assert.equal(audio._menuSources.size,0);assert.ok(sources.every(n=>n.disconnected));
+});
+
+test('completed forge notes and repeated menu visits never retain stale audio nodes',async t=>{
+  const {audio}=environment(t);await audio.unlock();const ctx=audio.ctx;
+  for(const source of [...audio._sources])source.finish(); // Native silent primers end automatically.
+  for(let visit=0;visit<12;visit++){
+    audio.setMode('menu');
+    for(let n=0;n<80;n++){ctx.currentTime+=.1;audio.update(.1);assert.ok(audio._sources.size<=64);
+      for(const source of [...audio._menuSources])if(source.stopped<=ctx.currentTime)source.finish();}
+    audio.setMode('game');assert.equal(audio._menuSources.size,0);assert.equal(audio._sources.size,0);
+  }
+  audio.dispose();assert.equal(audio._cleanups.size,0);assert.ok(ctx.nodes.every(n=>n.disconnected));
+});
