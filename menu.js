@@ -106,13 +106,15 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
       const rim=new THREE.DirectionalLight(0x86dbd7,1.8);rim.position.set(3,2,-3);scene.add(rim);
       const hero=makeWarrior();scene.add(hero);hero.rotation.y=.35;
       preview={renderer,scene,camera,hero};
-      applyEquipment();el.menuHeroCanvas.hidden=false;if(el.menuHeroFallback)el.menuHeroFallback.hidden=true;
+      applyEquipment();el.menuHeroCanvas.hidden=false;el.menuHeroFallback?.setAttribute('hidden','');
       el.menuProgressHero.dataset.renderer='webgl';
     } catch {
       renderer?.dispose?.();
       // Navigation and progress remain usable on a browser with no GPU. The
       // game reports its own renderer problem, independently of this preview.
-      preview=null;el.menuHeroCanvas.hidden=true;if(el.menuHeroFallback)el.menuHeroFallback.hidden=false;
+      // SVGElement does not reflect the HTMLElement.hidden property. Remove
+      // the actual attribute so the shared [hidden] CSS rule stops hiding it.
+      preview=null;el.menuHeroCanvas.hidden=true;el.menuHeroFallback?.removeAttribute('hidden');
       el.menuProgressHero.dataset.renderer='fallback';
     }
   }

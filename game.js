@@ -1,5 +1,5 @@
 import {DestructionSystem} from './destruction.js?v=20261107-forge9';
-import {createForgeMenu} from './menu.js?v=20261107-forge9';
+import {createForgeMenu} from './menu.js?v=20261107-forge9a';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261107-forge9';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-forge9';

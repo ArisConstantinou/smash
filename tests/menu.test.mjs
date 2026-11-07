@@ -36,7 +36,7 @@ function fixture({gpu=true,reduced=false}={}){
   let now=0,renderCount=0,modelCount=0,renderDisposed=0;const events=[],elements=new Map();
   class Element {
     constructor(tag='div',id=''){this.tagName=tag.toUpperCase();this.id=id;this.hidden=false;this.disabled=false;this.inert=false;this.dataset={};this.classList=new Classes();this.children=[];this.attrs={};this.listeners=new Map();this.textContent='';this.style={setProperty(k,v){this[k]=v;}};}
-    setAttribute(k,v){this.attrs[k]=String(v);}getAttribute(k){return this.attrs[k];}
+    setAttribute(k,v){this.attrs[k]=String(v);}getAttribute(k){return this.attrs[k]??null;}removeAttribute(k){delete this.attrs[k];}
     addEventListener(k,fn){if(!this.listeners.has(k))this.listeners.set(k,[]);this.listeners.get(k).push(fn);}
     removeEventListener(k,fn){this.listeners.set(k,(this.listeners.get(k)||[]).filter(x=>x!==fn));}
     appendChild(child){this.children.push(child);return child;}remove(){this.removed=true;}
@@ -45,7 +45,7 @@ function fixture({gpu=true,reduced=false}={}){
     click(){if(!this.disabled)this.emit('click');}
   }
   for(const match of menuHtml.matchAll(/<([a-z][a-z0-9-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/gi)){
-    const e=new Element(match[1],match[3]);e.hidden=/\bhidden\b/.test(match[2]);e.disabled=/\bdisabled\b/.test(match[2]);elements.set(e.id,e);
+    const e=new Element(match[1],match[3]);e.hidden=/\bhidden\b/.test(match[2]);if(e.hidden)e.setAttribute('hidden','');e.disabled=/\bdisabled\b/.test(match[2]);elements.set(e.id,e);
   }
   const header=new Element(),footer=new Element(),consolePanel=new Element(),energy=Array.from({length:5},()=>new Element('i'));
   elements.get('menu').querySelector=s=>({'.forge-header':header,'.forge-footer':footer,'.forge-console':consolePanel})[s]||null;
@@ -73,6 +73,7 @@ test('menu readiness preserves rich buttons and leaves Continue visible but disa
 test('the real avatar walks to saved XP, idles there, and never renders while the menu is hidden',()=>{
   const f=fixture();const saved=createCharacterProgression(4);saved.xp=12;
   f.controller.updateProgress(saved);f.controller.setReady(true);
+  assert.equal(f.e('menuHeroFallback').getAttribute('hidden'),'');
   assert.equal(f.controller.progress.visualRatio,0);
   for(let n=0;n<80;n++)f.advance(.05);
   assert.equal(f.controller.progress.visualRatio,.5);assert.equal(f.e('menuProgressHero').style.left,'50.0000%');
@@ -96,7 +97,7 @@ test('round selection stays a separate dialog and returns focus without touching
 });
 test('no-WebGL menu still positions saved progress and supports repeated independent material sounds',()=>{
   const f=fixture({gpu:false});const saved=createCharacterProgression(4);saved.xp=18;f.controller.updateProgress(saved);
-  assert.equal(f.e('menuHeroCanvas').hidden,true);assert.equal(f.e('menuHeroFallback').hidden,false);
+  assert.equal(f.e('menuHeroCanvas').hidden,true);assert.equal(f.e('menuHeroFallback').getAttribute('hidden'),null,'The SVG attribute must be removed; assigning SVG.hidden does not reveal it');
   assert.equal(f.e('menuProgressHero').style.left,'75.0000%');assert.equal(f.e('startButton').disabled,true);
   f.e('menuMetalProp').click();f.advance(.25);f.e('menuWoodProp').click();
   assert.deepEqual(f.events.filter(e=>['menuMetal','menuWood'].includes(e.name)).map(e=>e.name),['menuMetal','menuWood']);
