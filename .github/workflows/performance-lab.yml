@@ -1,0 +1,29 @@
+name: Performance lab
+on:
+  push:
+    branches: [feature/webgpu-wasm-perf14]
+    paths: [.github/workflows/performance-lab.yml, tools/performance-lab.mjs, performance.patch]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download pinned engine and browser tools
+        run: |
+          mkdir -p /tmp/ironfall-deps
+          cd /tmp/ironfall-deps
+          npm init -y
+          npm install --save-exact three@0.186.0 playwright@1.56.1
+          tar -czf "$GITHUB_WORKSPACE/webgpu-dependencies.tar.gz" node_modules package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webgpu-dependencies
+          path: webgpu-dependencies.tar.gz
+          retention-days: 3
