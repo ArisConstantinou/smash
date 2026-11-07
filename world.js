@@ -1,8 +1,10 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js?v=20261107-damage8';
+import { makeProp } from './models.js?v=20261107-forge9';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
-import { createCityNavigation } from './city-navigation.js';
+import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
+import {moveCircle,circleOverlaps} from './core.js?v=20261107-forge9';
+import {installArchitecture,objectCollisionParts,findSupport,findCeiling,actorSections,supportingSlopes,clearRestingFootprint,restingSupport,sweepArchitecture,SURFACE_EPSILON} from './architecture.js?v=20261107-forge9';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
@@ -146,6 +148,76 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     }
     return found;
   }
+  function supportAt(x,z,radius=.44,ceiling=Infinity){return findSupport(nearObjects(x,z,radius),x,z,radius,ceiling);}
+  function supportHeight(x,z,radius=.44,ceiling=Infinity){return supportAt(x,z,radius,ceiling).height;}
+  function ceilingHeight(x,z,radius,headY,ceiling=Infinity){return findCeiling(nearObjects(x,z,radius),x,z,radius,headY,ceiling);}
+  function actorColliders(x,z,radius,feetY,bodyHeight=2.05,options={}){
+    return actorSections(nearObjects(x,z,radius),x,z,radius,feetY,bodyHeight,options);
+  }
+  function moveActor(entity,dx,dz,{height=2.05,feetY=entity.y||0,allowStep=false,stepHeight=.48}={}){
+    const radius=entity.radius||.44,distance=Math.hypot(dx,dz),start=supportAt(entity.x,entity.z,radius,feetY+SURFACE_EPSILON);
+    const grounded=Math.abs(start.height-feetY)<.012&&(entity.vy||0)<=.01;
+    let trialY=feetY,target=null;
+    if(allowStep&&grounded){
+      target=supportAt(entity.x+dx,entity.z+dz,radius,feetY+stepHeight);
+      const headroom=Math.min(ceilingHeight(entity.x,entity.z,radius,feetY+height),ceilingHeight(entity.x+dx,entity.z+dz,radius,feetY+height));
+      if(target.height>feetY&&target.height+height<=headroom+SURFACE_EPSILON)trialY=target.height;
+    }
+    const ignore=grounded?supportingSlopes(nearObjects(entity.x,entity.z,radius),entity.x,entity.z,radius,feetY):new Set();
+    // A cylinder's flat base would catch the uphill half of its supporting
+    // slope. Follow that same visible plane instead; other walls still block.
+    if(start.surface?.slope>.01&&Math.abs(start.height-feetY)<.012)ignore.add(start.part);
+    if(target?.surface?.slope>.01&&target.height<=trialY+SURFACE_EPSILON)for(const part of supportingSlopes(nearObjects(entity.x+dx,entity.z+dz,radius),entity.x+dx,entity.z+dz,radius,trialY))ignore.add(part);
+    let colliders=actorColliders(entity.x+dx/2,entity.z+dz/2,radius+distance/2+.08,trialY,height,{ignore});
+    if(trialY>feetY&&colliders.some(o=>circleOverlaps(entity.x,entity.z,radius-1e-5,o))){
+      trialY=feetY;ignore.clear();if(grounded)for(const part of supportingSlopes(nearObjects(entity.x,entity.z,radius),entity.x,entity.z,radius,feetY))ignore.add(part);
+      colliders=actorColliders(entity.x+dx/2,entity.z+dz/2,radius+distance/2+.08,trialY,height,{ignore});
+    }
+    const moved=moveCircle(entity,dx,dz,colliders,radius);
+    if(allowStep&&grounded){
+      const actual=supportAt(entity.x,entity.z,radius,trialY+SURFACE_EPSILON);
+      if(actual.height>feetY&&actual.height<=trialY+SURFACE_EPSILON)entity.y=actual.height;
+      else if(actual.height<feetY&&feetY-actual.height<=stepHeight&&distance>.0001)entity.y=actual.height;
+    }
+    return moved;
+  }
+  function weaponSupportAt(x,z,footprint,ceiling=Infinity){
+    const radius=Math.max(Math.abs(footprint.minX),Math.abs(footprint.maxX),Math.abs(footprint.minZ),Math.abs(footprint.maxZ))*Math.SQRT2+.1;
+    return restingSupport(nearObjects(x,z,radius),x,z,footprint,ceiling);
+  }
+  function weaponRestClear(point,footprint,bounds=CITY_BOUNDS){
+    const radius=Math.max(Math.abs(footprint.minX),Math.abs(footprint.maxX),Math.abs(footprint.minZ),Math.abs(footprint.maxZ))*Math.SQRT2+.2;
+    return clearRestingFootprint(nearObjects(point.x,point.z,radius),point,footprint,bounds);
+  }
+  function findWeaponRest(origin,footprint,{bounds=CITY_BOUNDS,breadcrumbs=[],ceiling=Infinity}={}){
+    const radius=Math.max(Math.abs(footprint.minX),Math.abs(footprint.maxX),Math.abs(footprint.minZ),Math.abs(footprint.maxZ))*Math.SQRT2;
+    const objects=nearObjects(origin.x,origin.z,radius+6),parts=objects.flatMap(objectCollisionParts),candidates=[{x:origin.x,z:origin.z}];
+    const add=(x,z)=>candidates.push({x,z});
+    for(const part of parts){
+      if(part.minY>ceiling+(footprint.height||.5))continue;
+      const a=part.minX-footprint.maxX-.10,b=part.maxX-footprint.minX+.10;
+      const c=part.minZ-footprint.maxZ-.10,d=part.maxZ-footprint.minZ+.10;
+      add(a,origin.z);add(b,origin.z);add(origin.x,c);add(origin.x,d);
+    }
+    for(let r=.45;r<=4.5;r+=.45)for(let n=0;n<16;n++)add(origin.x+Math.cos(n*Math.PI/8)*r,origin.z+Math.sin(n*Math.PI/8)*r);
+    candidates.sort((a,b)=>Math.hypot(a.x-origin.x,a.z-origin.z)-Math.hypot(b.x-origin.x,b.z-origin.z));
+    const seen=new Set();
+    for(const candidate of candidates){
+      const key=`${Math.round(candidate.x*1e3)},${Math.round(candidate.z*1e3)}`;if(seen.has(key))continue;seen.add(key);
+      const support=weaponSupportAt(candidate.x,candidate.z,footprint,ceiling);if(!support)continue;
+      const point={...candidate,groundY:support.height};if(!weaponRestClear(point,footprint,bounds))continue;
+      const y=point.groundY+.2,probe=p=>({x:p.x,y,z:p.z});
+      const anchor=[origin,...[...breadcrumbs].reverse()].find(p=>!sweepArchitecture(probe(p),probe(p),parts,.04));
+      if(anchor&&!sweepArchitecture(probe(anchor),probe(point),parts,.04))return point;
+    }
+    // Backtracking stays on the actual approach side instead of teleporting a
+    // long log through a wall to a slightly closer empty patch behind it.
+    for(const candidate of [...breadcrumbs].reverse()){
+      const support=weaponSupportAt(candidate.x,candidate.z,footprint,ceiling);if(!support)continue;
+      const point={x:candidate.x,z:candidate.z,groundY:support.height};if(weaponRestClear(point,footprint,bounds))return point;
+    }
+    return null;
+  }
   function canPlace(x,z,w,d,margin=.24){
     if(Math.abs(x)+w/2>CITY_BOUNDS-1||Math.abs(z)+d/2>CITY_BOUNDS-1)return false;
     return !nearObjects(x,z,Math.hypot(w,d)/2+margin).some(o=>Math.abs(o.x-x)<(o.w+w)/2+margin&&Math.abs(o.z-z)<(o.d+d)/2+margin);
@@ -156,6 +228,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     const u=mesh.userData,dim=fallbackDimensions[type]||[12,12,8],swap=Math.abs(Math.sin(rotation))>.5;
     const width=u.width||dim[0],depth=u.depth||dim[1],h=u.height||dim[2],hp=stats[type][0]*(1+(round-1)*.08);
     const o={mesh,type,x,z,w:swap?depth:width,d:swap?width:depth,h,hp,maxHp:hp,weight:stats[type][1],color:u.color||0x6b9b9a,dead:false,seed:random()*999,isBuilding:!!plot,buildingKind:plot?.kind,districtId:plot?.districtId||regionAt(x,z).id,plotId:plot?.id,label:plot?.label};
+    installArchitecture(o);
     mesh.userData.worldObjectIndex=objects.length;objects.push(o);group.add(mesh);indexObject(o);
     if(type==='tree')trees.push(o);
     if(u.crane)cranes.push(o);
@@ -456,6 +529,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   update(0,0,{x:0,z:0},'rain');
   return {
     group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
+    supportAt,supportHeight,ceilingHeight,actorColliders,moveActor,weaponSupportAt,weaponRestClear,findWeaponRest,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,
     buildingCount:buildingObjects.length,buildingObjects,
     getChaseDirection:navigation.getChaseDirection,

@@ -1,6 +1,7 @@
 // Geometry and animation helpers shared by melee, directional defence and throws.
-// No rendering dependency. Ground-plane coordinates are X/Z and segment times
+// No DOM or renderer required. Ground-plane coordinates are X/Z and segment times
 // are fractions in [0, 1], so a fast hammer cannot tunnel between rendered frames.
+import {sweepArchitecture} from './architecture.js?v=20261107-forge9';
 
 const TIME_EPSILON = 1e-10;
 const finite = Number.isFinite;
@@ -132,6 +133,17 @@ export function firstHammerHit(start, end, targets, radius = 0.45) {
   let nearest = null;
   for (const target of targets || []) {
     if (!target || target.dead) continue;
+    // Architectural lots are broad-phase bounds only. Use the same remaining
+    // authored solids as movement, so an empty porch or broken facade neither
+    // blocks target acquisition nor intercepts a physical thrown hammer.
+    const parts=target.getCollisionParts?.();
+    if(parts){
+      const contact=sweepArchitecture(start,end,parts,radius);
+      if(contact&&(!nearest||contact.t<nearest.t-TIME_EPSILON)){
+        const {part,...point}=contact;nearest={target,...point};
+      }
+      continue;
+    }
     let planar;
     if (finite(target.w) && finite(target.d)) {
       planar = boxInterval(start.x, start.z, end.x, end.z, target, radius);

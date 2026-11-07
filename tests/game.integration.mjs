@@ -187,6 +187,8 @@ const imports = new Map([
   ['./kick-physics.js', synthetic(kickPhysics, 'real-kick-physics')],
   ['./combat-tools.js', synthetic(combatTools, 'real-combat-tools')],
   ['./destruction.js', synthetic(destructionModule, 'real-destruction')],
+  // Menu pixels, browser focus and real audio are covered in browser-smoke.mjs.
+  ['./forge-menu.js', synthetic({createForgeMenu:()=>({setActive(){},setProgress(){},update(){},closeDialog(){return false;}})}, 'menu-browser-surface')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
@@ -236,6 +238,10 @@ await game.link(specifier => {
 await game.evaluate();
 await Promise.resolve();
 const api = game.namespace.__integration;
+const initialThrowMode = api.settings.throwMode;
+test('a fresh installation defaults to two deliberate taps for throwing', () => {
+  assert.equal(initialThrowMode, 'tap');
+});
 function emit(name, props = {}) {
   const event = { repeat: false, preventDefault() {}, ...props };
   for (const fn of listeners.get(name) || []) fn(event);
@@ -303,7 +309,9 @@ function advance(seconds, step = 1 / 60) {
   }
 }
 function reset(startLevel = 15, options = {test: true}) {
-  heldMousePoint = null;api.settings.throwAutoLock=true;
+  heldMousePoint = null;api.settings.throwAutoLock=true;api.settings.throwMode='hold';
+  // Historical physics fixtures perform press/release throws. Keep these in
+  // explicit hold mode; default tap/confirm behavior is covered separately.
   // Existing combat regressions exercise the complete hammer kit. Ordinary
   // character progression is covered explicitly with reset(1, {test:false}).
   api.clearInput(); api.startGame(startLevel, options); advance(.1);
@@ -1782,7 +1790,7 @@ test('RMB, Space, R and Z cancel a held spin and carry out their own actions wit
     assert.equal(api.spin, null, `${action} must cancel the old spin`);
     if (action === 'RMB') assert.equal(api.guarding, true);
     if (action === 'Space') { assert.ok(api.leap); assert.equal(api.leap.slam, false, 'A spin held before take-off must not arm the jump impact'); }
-    if (action === 'KeyR') assert.ok(api.throwWindup || api.throwFlight);
+    if (action === 'KeyR') assert.ok(api.touchThrowAim, 'Holding R prepares the throw without releasing it');
     if (action === 'KeyZ') assert.equal(api.stanceTarget, 1);
     if (action === 'RMB') chordButtons(1, { button: 2 });
     else key(action, false);
@@ -3345,4 +3353,124 @@ test('actual low-damage car hits activate one alarm before any panel comes off; 
  assert.equal(car.destruction,undefined);assert.equal(api.destruction.alarms.size,1);
  api.destruction.update(.1,{x:car.x,z:car.z});assert.ok(audioEvents.some(e=>e.name==='carAlarm'));
  const old=api.destruction;reset(1,{test:false});assert.equal(old.disposed,true);assert.equal(old.alarms.size,0);assert.equal(old.debris.length,0);
+});
+
+test('keyboard tap mode shows a live lock and waits for a second completed press', () => {
+  arena();api.settings.throwMode='tap';
+  const enemy=resilientEnemy('zombie',2,7);aimAt(0,12);
+  assert.equal(api.throwLock,null,'No throw lock is shown before aiming');
+  key('KeyR',true);assert.equal(api.throwLock,enemy);
+  key('KeyR',false);playerSteps(.4);
+  assert.ok(api.touchThrowAim);assert.equal(api.touchThrowAim.pointerId,null);
+  assert.equal(api.throwWindup,null);assert.equal(api.throwFlight,null);
+  emit('keydown',{code:'KeyR',repeat:true});assert.equal(api.throwWindup,null);
+  key('KeyR',true);assert.equal(api.throwWindup,null,'A canceled confirming press must not launch');
+  key('KeyR',false);assert.equal(api.touchThrowAim,null);
+  assert.equal(api.throwWindup.target,enemy);assert.equal(api.throwLock,null);
+  playerSteps(.31);assert.ok(api.throwFlight);
+});
+
+test('mobile tap aiming survives the first release and capture loss, then confirms once', () => {
+  touchArena(()=>{
+    api.settings.throwMode='tap';
+    const enemy=resilientEnemy('zombie',0,7);api.setFacing(0,1);
+    throwTouch('pointerdown');throwTouch('pointerup');
+    pointerEvent('throwButton','lostpointercapture',{pointerId:202});
+    playerSteps(.2);assert.ok(api.touchThrowAim);assert.equal(api.throwLock,enemy);
+    assert.equal(api.throwFlight,null);assert.equal(api.throwWindup,null);
+    throwTouch('pointerdown');throwTouch('pointerup');
+    const pending=api.throwWindup;assert.ok(pending);assert.equal(pending.target,enemy);
+    emit('pointerup',{pointerId:202,pointerType:'touch'});
+    assert.equal(api.throwWindup,pending,'Bubbling release cannot launch twice');
+  });
+});
+
+test('hold mode keeps keyboard and mouse-button throws uncommitted until release', () => {
+  for(const source of ['keyboard','mouse']){
+    arena();api.settings.throwMode='hold';aimAt(0,12);
+    const press=()=>source==='keyboard'?key('KeyR',true):pointerEvent('throwButton','pointerdown',{pointerType:'mouse',pointerId:56});
+    const release=()=>source==='keyboard'?key('KeyR',false):pointerEvent('throwButton','pointerup',{pointerType:'mouse',pointerId:56});
+    press();playerSteps(.15);assert.ok(api.touchThrowAim);
+    assert.equal(api.throwWindup,null);assert.equal(api.throwFlight,null);
+    release();assert.ok(api.throwWindup);assert.equal(api.touchThrowAim,null);
+  }
+});
+
+test('pending tap aim cancels on Escape, guard, pause, blur and canceled confirmation', () => {
+  for(const interruption of ['Escape','guard','pause','blur','pointercancel']){
+    arena();api.settings.throwMode='tap';aimAt(0,12);
+    throwTouch('pointerdown');throwTouch('pointerup');playerSteps(.05);
+    assert.ok(api.touchThrowAim);
+    if(interruption==='Escape')key('Escape',true);
+    if(interruption==='guard')pointerEvent('guardButton','pointerdown',{pointerId:67});
+    if(interruption==='pause')api.setPhase('paused');
+    if(interruption==='blur')emit('blur');
+    if(interruption==='pointercancel'){throwTouch('pointerdown');throwTouch('pointercancel');}
+    assert.equal(api.touchThrowAim,null,interruption);assert.equal(api.throwLock,null);
+    throwTouch('pointerup');key('KeyR',false);playerSteps(.35);
+    assert.equal(api.throwFlight,null);assert.equal(api.throwWindup,null);
+    if(interruption==='Escape')assert.equal(api.phase,'playing','Escape first cancels aim without opening pause');
+  }
+});
+
+test('manual tap aiming preserves the dragged direction while walking on mobile', () => {
+  touchArena(()=>{
+    api.settings.throwMode='tap';api.settings.throwAutoLock=false;
+    throwTouch('pointerdown');throwTouch('pointermove',60,-30);throwTouch('pointerup',60,-30);
+    playerSteps(.1);const direction={...api.aim};
+    moveStick('pointerdown',-1,0);playerSteps(.15);moveStick('pointerup');
+    assert.ok(api.touchThrowAim);assert.equal(api.throwLock,null);
+    close(api.aim.x,direction.x,.002);close(api.aim.z,direction.z,.002);
+    throwTouch('pointerdown');throwTouch('pointerup');
+    close(api.throwWindup.dir.x,direction.x,.002);close(api.throwWindup.dir.z,direction.z,.002);
+    assert.equal(api.throwWindup.target,null);
+  });
+});
+
+test('throw-mode settings persist and switching mode abandons an old prepared throw', () => {
+  arena();api.settings.throwMode='tap';key('KeyR',true);key('KeyR',false);
+  const select=elements.get('throwModeSetting');assert.ok(select);
+  select.onchange({target:{value:'hold'}});
+  assert.equal(api.touchThrowAim,null);assert.equal(api.settings.throwMode,'hold');
+  assert.equal(JSON.parse(storage.get('ironfall.settings')).throwMode,'hold');
+  select.onchange({target:{value:'tap'}});
+  assert.equal(JSON.parse(storage.get('ironfall.settings')).throwMode,'tap');
+});
+
+test('touching the scene in tap aim captures a direction that survives the joystick', () => {
+  touchArena(()=>{
+    api.settings.throwMode='tap';api.settings.throwAutoLock=false;
+    throwTouch('pointerdown');throwTouch('pointerup');
+    const point=api.screenPoint(8,1.2,-6);
+    pointerEvent('gameCanvas','pointerdown',{pointerId:303,clientX:point.x,clientY:point.y});
+    pointerEvent('gameCanvas','pointerup',{pointerId:303,clientX:point.x,clientY:point.y});
+    const direction={...api.aim};assert.ok(api.touchThrowAim.manualDirection);
+    moveStick('pointerdown',-1,0);playerSteps(.2);moveStick('pointerup');
+    close(api.aim.x,direction.x,.002);close(api.aim.z,direction.z,.002);
+    throwTouch('pointerdown');throwTouch('pointerup');
+    close(api.throwWindup.dir.x,direction.x,.002);close(api.throwWindup.dir.z,direction.z,.002);
+  });
+});
+
+test('game animation retains the natural hip, foot and arm spacing after movement and kick', () => {
+  arena(1,{test:true});
+  const check=(u,arms=false)=>{
+    for(const leg of [u.leftLeg,u.rightLeg])if(leg){
+      close(leg.position.x,leg.userData.restX);close(leg.position.y,leg.userData.restY);
+      close(leg.position.z,leg.userData.restZ);close(leg.rotation.z,leg.userData.restRoll);
+      close(leg.rotation.y,leg.userData.restYaw);
+    }
+    if(arms)for(const arm of [u.leftArm,u.rightArm])if(arm)close(arm.rotation.z,arm.userData.restRoll);
+  };
+  api.player.walk=.8;
+  for(const moving of [false,true,false]){api.poseHero(1/60,moving);check(api.hero.userData);}
+  api.startKick();playerSteps(.8);api.poseHero(0);check(api.hero.userData);
+  for(const [index,type] of ['zombie','robot','brute','mutant','mech','siegeMech'].entries()){
+    const enemy=stationaryEnemy(type,30+index*3,30);enemy.state='walk';enemy.timer=100;enemy.walk=.8;
+    for(const limb of [enemy.mesh.userData.leftArm,enemy.mesh.userData.rightArm,enemy.mesh.userData.leftLeg,enemy.mesh.userData.rightLeg])if(limb)limb.rotation.z=0;
+  }
+  api.updateEnemies(1/60);
+  for(const enemy of api.enemies)check(enemy.mesh.userData,true);
+  api.spawnBoss();Object.assign(api.boss,{x:40,z:40,state:'walk',timer:100});
+  api.updateBoss(1/60);check(api.boss.mesh.userData,true);
 });

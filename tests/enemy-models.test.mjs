@@ -101,3 +101,29 @@ test('extra legs and weapons animate continuously without touching combat state 
     if(type==='mech')assert.ok(model.userData.barrel.rotation.z>1);
   }
 });
+
+test('humanoid enemies have separated feet and relaxed lower arms outside their shoulder line',()=>{
+  for(const type of ['zombie','brute','robot','mutant','mech','titan','siegeMech','boss']){
+    const model=type==='boss'?makeBoss():['zombie','brute','robot'].includes(type)?makeEnemy(type):makeCityEnemy(type),u=model.userData;
+    model.updateMatrixWorld(true);
+    const bounds=new THREE.Box3().setFromObject(model),height=bounds.max.y;
+    const left=new THREE.Box3().setFromObject(u.leftLeg),right=new THREE.Box3().setFromObject(u.rightLeg);
+    assert.ok(right.min.x-left.max.x>height*.07,`${type} feet are squeezed together`);
+    assert.ok(bounds.min.y>=-.001,`${type} planted stance penetrates the floor`);
+    for(const [side,arm]of [[-1,u.leftArm],[1,u.rightArm]]){
+      const shoulder=arm.getWorldPosition(new THREE.Vector3()),armBounds=new THREE.Box3().setFromObject(arm);
+      const low=shoulder.y-(shoulder.y-armBounds.min.y)*.65,point=new THREE.Vector3();
+      let offset=0,count=0;
+      arm.traverse(mesh=>{
+        if(!mesh.isMesh)return;
+        const position=mesh.geometry.getAttribute('position');
+        for(let i=0;i<position.count;i++){
+          point.fromBufferAttribute(position,i).applyMatrix4(mesh.matrixWorld);
+          if(point.y<low){offset+=side*(point.x-shoulder.x);count++;}
+        }
+      });
+      assert.ok(count>0&&offset/count>height*.025,`${type} lower arm rests against the torso`);
+      assert.ok(Math.abs(arm.rotation.z-arm.userData.restRoll)<1e-8,'The game must be able to restore this bind pose after recoil');
+    }
+  }
+});

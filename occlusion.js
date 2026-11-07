@@ -1,4 +1,4 @@
-import {firstHammerHit} from './combat.js';
+import {firstHammerHit} from './combat.js?v=20261107-forge9';
 import {Raycaster,Vector3} from './vendor/three.module.js';
 
 // Broad collision bounds include empty courtyards, pavements and roof aprons.

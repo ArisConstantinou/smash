@@ -5,7 +5,7 @@ const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
 const MAX_SOURCES = 64;
 const METAL_VOICES = new Set(['robot', 'mech', 'siegeMech', 'boss']);
 const ENVIRONMENT = new Set(['carAlarm','carTear','carWreck','buildingFracture','buildingCollapse','debrisLand']);
-const SPACING = { carAlarm:.10, carTear:.15, carWreck:.22, buildingFracture:.16, buildingCollapse:.35, debrisLand:.095, hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
+const SPACING = { menuSelect:.06, menuStrike:.35, carAlarm:.10, carTear:.15, carWreck:.22, buildingFracture:.16, buildingCollapse:.35, debrisLand:.095, hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
 
 export class GameAudio {
   constructor() {
@@ -31,6 +31,10 @@ export class GameAudio {
     this.onStatusChange = null;
     this._preview = 0;
     this._previewTimers = new Set();
+    this._menuActive = false;
+    this._menuSources = new Set();
+    this._menuNextBeat = 0;
+    this._menuStep = 0;
   }
 
   preload() { return this.samples.preload(); }
@@ -196,6 +200,7 @@ export class GameAudio {
       this._cleanups.delete(source);
       this._sources.delete(source);
       this._environmentSources.delete(source);
+      this._menuSources.delete(source);
       this._voices.delete(source);
       source.onended = null;
       for (const node of [source, ...nodes]) { try { node.disconnect(); } catch (_) {} }
@@ -221,6 +226,7 @@ export class GameAudio {
     oscillator.connect(envelope); envelope.connect(this.master);
     this._register(oscillator, [envelope]);
     oscillator.start(t); oscillator.stop(t + duration + .015);
+    return oscillator;
   }
 
   _noise(volume, duration, frequency, type = 'lowpass', delay = 0, endFrequency = frequency, attack = .003) {
@@ -372,6 +378,18 @@ export class GameAudio {
     if (!this._allow(key, SPACING[name] ?? .04)) return false;
     const existing = ENVIRONMENT.has(name) ? new Set(this._sources) : null;
     switch (name) {
+      case 'menuSelect':
+        this._tone('triangle', 740, 550, .045, .075);
+        this._tone('sine', 1110, 1100, .022, .12, .025);
+        break;
+      case 'menuStrike':
+        // A close, dry wooden knock, followed by the body of the log and
+        // falling chips. Its timing is owned by the visible hammer impact.
+        this._impact('wood', p, 'metal');
+        this._tone('sine', 126, 74, .16, .22);
+        this._noise(.055, .12, 1700, 'bandpass', .065, 700);
+        this._tone('triangle', 510, 320, .026, .07, .12);
+        break;
       case 'carAlarm': {
         // Three recognizable automotive alarm patterns, not a generic hit beep.
         // Finite pulses: the world owns lifetime, distance and emitter limits.
@@ -546,6 +564,48 @@ export class GameAudio {
     }
   }
 
+  setMenuActive(active) {
+    const next = !!active;
+    if (next === this._menuActive) return;
+    this._menuActive = next;
+    this._menuNextBeat = 0;
+    this._menuStep = 0;
+    if (!next) {
+      // Stop only the menu score. A game's start cue may already be playing.
+      for (const source of [...this._menuSources]) {
+        try { source.stop(); } catch (_) {}
+        this._cleanups.get(source)?.();
+      }
+    }
+  }
+
+  _updateMenuMusic(now) {
+    if (!this._menuActive || this.muted || this.volume <= 0) return;
+    if (!this._menuNextBeat || this._menuNextBeat < now - .3) this._menuNextBeat = now + .04;
+    // An original, quiet D-minor workshop motif: plucked strings, a soft
+    // sustained fifth, and alternating bass. No network or autoplay needed.
+    const melody = [146.83,0,220,293.66,261.63,0,220,196,146.83,0,174.61,220,196,0,164.81,146.83];
+    const note = (wave, frequency, volume, length, delay, attack) => {
+      const source = this._tone(wave, frequency, frequency * .999, volume, length, delay, attack);
+      if (source) this._menuSources.add(source);
+    };
+    while (this._menuNextBeat < now + .19) {
+      const step = this._menuStep++ % melody.length;
+      const delay = Math.max(0, this._menuNextBeat - now);
+      const pitch = melody[step];
+      if (pitch) {
+        note('triangle', pitch, .034, .73, delay, .006);
+        note('sine', pitch * 2, .009, .45, delay + .009, .006);
+      }
+      if (step % 4 === 0) {
+        const bass = step < 8 ? 73.415 : step < 12 ? 87.305 : 98;
+        note('sine', bass, .047, 1.5, delay, .035);
+        note('sine', bass * 3, .012, 1.35, delay, .09);
+      }
+      this._menuNextBeat += .42;
+    }
+  }
+
   _makeAmbience() {
     const ctx = this.ctx, nodes = [];
     const layer = (type, frequency, gain, rate) => {
@@ -561,14 +621,15 @@ export class GameAudio {
   }
 
   update(dt, danger = 0, weather = 'rain') {
-    if (!this.ready || !this._ambient || this._disposed || this._hidden || this.ctx?.state !== 'running') return;
+    if (!this.ready || !this._ambient || this._disposed || this._hidden || this.muted || this.volume <= 0 || this.ctx?.state !== 'running') return;
     this._time += clamp(dt, 0, .1);
     if (this._time - this._mixTime < .12) return;
     this._mixTime = this._time;
     const t = this.ctx.currentTime, d = clamp(danger);
-    this._ambient.wind.volume.gain.setTargetAtTime(.006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003, t, .3);
-    this._ambient.wind.filter.frequency.setTargetAtTime(190 + Math.sin(this._time * .2) * 60 + d * 70, t, .3);
-    this._ambient.rain.volume.gain.setTargetAtTime(weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002, t, .4);
+    this._updateMenuMusic(t);
+    this._ambient.wind.volume.gain.setTargetAtTime(this._menuActive ? .004 : .006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003, t, .3);
+    this._ambient.wind.filter.frequency.setTargetAtTime(this._menuActive ? 150 : 190 + Math.sin(this._time * .2) * 60 + d * 70, t, .3);
+    this._ambient.rain.volume.gain.setTargetAtTime(this._menuActive ? .0003 : weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002, t, .4);
   }
 
   _stopTransientSources() {

@@ -4,6 +4,25 @@ import {
   segmentCircleHit, segmentBoxHit, firstHammerHit,
   facingCoverage, jumpY, swingCurve,
 } from '../combat.js';
+import {plainBoxPart} from '../architecture.js';
+
+test('architectural openings and detached pieces do not intercept a swept hammer', () => {
+  const building={x:0,z:4,w:8,d:8,h:6};
+  let parts=[
+    plainBoxPart({x:-3,z:4,w:1,d:8,h:6}),
+    plainBoxPart({x:3,z:4,w:1,d:8,h:6}),
+    plainBoxPart({x:0,z:4,w:8,d:8,minY:5.5,maxY:6}),
+  ];
+  building.getCollisionParts=()=>parts;
+  const from={x:0,y:1.2,z:-2},to={x:0,y:1.2,z:10};
+  assert.equal(firstHammerHit(from,to,[building],.2),null,'The visible open center is traversable');
+  const hit=firstHammerHit({x:3,y:1.2,z:-2},{x:3,y:1.2,z:10},[building],.2);
+  assert.equal(hit.target,building,'Damage retains the real building as its owner');
+  assert.ok(hit.t>0&&hit.t<.3);
+  assert.equal(firstHammerHit({x:0,y:7,z:4},{x:0,y:4,z:4},[building],.2).target,building);
+  parts=[];
+  assert.equal(firstHammerHit(from,to,[building],.2),null,'A detached last piece leaves no invisible lot collider');
+});
 
 const close = (actual, expected, tolerance = 1e-8) => assert.ok(
   actual !== null && Math.abs(actual - expected) <= tolerance,

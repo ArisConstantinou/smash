@@ -1,4 +1,6 @@
-// Pure combat / movement rules. X/Z are world coordinates; Y is height.
+import {polygonContact,sweepCirclePolygon} from './architecture.js?v=20261107-forge9';
+
+// Combat / movement rules. X/Z are world coordinates; Y is height.
 export const GOAL = 60;
 export const BOUNDS = 117;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -13,10 +15,12 @@ export function screenMovement(horizontal, vertical) {
   return {x: v.x * 0.810679 + v.z * 0.585491, z: -v.x * 0.585491 + v.z * 0.810679};
 }
 export function nearestPoint(x, z, object) {
+  if (object.polygon) {const contact=polygonContact(x,z,object.polygon);return contact.inside?{x,z}:contact.point;}
   return {x: clamp(x, object.x - object.w / 2, object.x + object.w / 2), z: clamp(z, object.z - object.d / 2, object.z + object.d / 2)};
 }
 export function circleOverlaps(x, z, radius, object) {
   if (object.dead) return false;
+  if (object.polygon) {const contact=polygonContact(x,z,object.polygon);return contact.inside||contact.distance<radius;}
   const p = nearestPoint(x, z, object);
   return (p.x - x) ** 2 + (p.z - z) ** 2 < radius ** 2;
 }
@@ -31,6 +35,12 @@ export function moveCircle(entity, dx, dz, objects, radius = entity.radius || 0.
     for (let pass = 0; pass < 4; pass++) {
       let corrected = false;
       for (const o of solids) {
+        if(o.polygon){
+          const contact=polygonContact(entity.x,entity.z,o.polygon);
+          if(!contact.inside&&contact.distance>=radius-slop)continue;
+          const depth=contact.inside?radius+contact.distance+slop:radius-contact.distance+slop;
+          entity.x+=contact.nx*depth;entity.z+=contact.nz*depth;corrected=true;continue;
+        }
         const p = nearestPoint(entity.x, entity.z, o);
         const ox = entity.x - p.x, oz = entity.z - p.z, distance = Math.hypot(ox, oz);
         if (distance >= radius - slop) continue;
@@ -60,6 +70,11 @@ export function moveCircle(entity, dx, dz, objects, radius = entity.radius || 0.
     const start = entity[axis];
     let end = clamp(start + amount, -BOUNDS + radius, BOUNDS - radius);
     for (const o of solids) {
+      if(o.polygon){
+        const t=sweepCirclePolygon(entity.x,entity.z,axis==='x'?end:entity.x,axis==='z'?end:entity.z,o.polygon,radius);
+        if(t!==null)end=start+(end-start)*t;
+        continue;
+      }
       const gap = Math.max(0, Math.abs(entity[other] - o[other]) - o[otherSize] / 2);
       if (gap >= radius - slop) continue;
       const reach = Math.sqrt(Math.max(0, radius ** 2 - gap ** 2));

@@ -189,7 +189,7 @@ test('shoulders follow torso rotation and retain complete arm chains during a bo
     u.body.rotation.set(.12, yaw, -.03); u.body.position.y = .02;
     u.setStance(yaw > 0 ? 1 : 0); u.updateGrip(); hero.updateMatrixWorld(true);
     for (const [side, arm] of [[-1, u.leftArm], [1, u.rightArm]]) {
-      const expected = new THREE.Vector3(side * .49, 1.28, .015).applyMatrix4(u.body.matrix).applyMatrix4(hero.matrixWorld);
+      const expected = new THREE.Vector3(side * .51, 1.28, .015).applyMatrix4(u.body.matrix).applyMatrix4(hero.matrixWorld);
       close(worldPosition(arm).distanceTo(expected), 0);
     }
     armsConnected(hero);
@@ -531,5 +531,22 @@ test('equipment swaps preserve the real foot contact marker and independent knee
   u.setEquipment(tier);assert.equal(u.rightLeg.userData.foot,foot);assert.equal(foot.parent,u.rightLeg.userData.shin);
   assert.ok(u.rightLeg.userData.thigh.children.length>0);assert.ok(u.rightLeg.userData.shin.children.length>1);
   assert.equal(u.leftLeg.userData.shin.rotation.x,0);
+ }
+});
+
+test('every equipment tier keeps a readable foot gap and elbows outside the ribs in both carries',()=>{
+ const hero=makeWarrior(),u=hero.userData;
+ for(const tier of [0,1,2,3,4])for(const stance of [0,1]){
+  u.setEquipment(tier);restingPose(hero,stance);hero.updateMatrixWorld(true);
+  const left=new THREE.Box3().setFromObject(u.leftLeg),right=new THREE.Box3().setFromObject(u.rightLeg);
+  const gap=right.min.x-left.max.x;
+  assert.ok(gap>.18&&gap<.30,`Tier ${tier}: feet need a planted stance, not touching or an exaggerated split`);
+  assert.ok(Math.min(left.min.y,right.min.y)>=0,'Opening the stance must not put the soles under the floor');
+  for(const [side,arm]of [[-1,u.leftArm],[1,u.rightArm]]){
+   const elbow=arm.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0));
+   assert.ok(side*elbow.x>.43,`Tier ${tier}, stance ${stance}: elbow is pinned against the ribs`);
+  }
+  contact(u.rightGrip,u.rightGripAnchor);if(stance)contact(u.leftGrip,u.leftGripAnchor);
+  armsConnected(hero);
  }
 });

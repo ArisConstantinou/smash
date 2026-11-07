@@ -121,6 +121,25 @@ function limb(root, name, x, y, z, upper, lower, boot, scale = 1) {
   return compact(g);
 }
 
+// Animation is expressed relative to a relaxed, weight-bearing stance. Keep
+// the bind offsets as plain numbers so idle/walk/impact poses can reset each
+// frame without squeezing the arms and legs against the torso again.
+function limbRest(limb, roll = 0, yaw = 0) {
+  Object.assign(limb.userData, {
+    restX: limb.position.x, restY: limb.position.y, restZ: limb.position.z,
+    restRoll: roll, restYaw: yaw,
+  });
+  limb.rotation.z = roll; limb.rotation.y = yaw;
+}
+
+function humanoidStance(root, armRoll = .16, legRoll = .025, toeOut = .07) {
+  const u = root.userData;
+  for (const [side, arm, leg] of [[-1, u.leftArm, u.leftLeg], [1, u.rightArm, u.rightLeg]]) {
+    limbRest(arm, side * armRoll);
+    limbRest(leg, side * legRoll, side * toeOut);
+  }
+}
+
 // Beveled edges keep small equipment silhouettes readable in the overhead
 // camera. These are real facets, so highlights still move with the weapon.
 function beveledBox(g, color, x, y, z, width, height, depth, bevel = .035) {
@@ -245,8 +264,9 @@ export function makeWarrior() {
   box(body, P.gold, 0, 1.96, -.025, .06, .12, .29);
   compact(body);
 
-  const leftLeg = limb(root, 'leftLeg', -.205, .62, 0, P.blueDark, P.steel, P.ink);
-  const rightLeg = limb(root, 'rightLeg', .205, .62, 0, P.blueDark, P.steel, P.ink);
+  const leftLeg = limb(root, 'leftLeg', -.255, .62, 0, P.blueDark, P.steel, P.ink);
+  const rightLeg = limb(root, 'rightLeg', .255, .62, 0, P.blueDark, P.steel, P.ink);
+  limbRest(leftLeg, -.04, -.07); limbRest(rightLeg, .04, .07);
   // Preserve the leg roots used by walking, but give kicks an actual knee.
   for(const leg of [leftLeg,rightLeg]){
     // Existing storm-tier geometry remains the reference for normal walking;
@@ -258,7 +278,7 @@ export function makeWarrior() {
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .49, 1.28, .015);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .51, 1.28, .015);
     const pauldron = group(arm, 'pauldron');
     box(pauldron, P.steel, side * .025, -.015, 0, .36, .23, .44, 0, 0, side * .13);
     box(pauldron, P.pale, side * .03, .095, .025, .29, .065, .35, 0, 0, side * .13);
@@ -272,8 +292,9 @@ export function makeWarrior() {
     box(fore, P.timberDark, 0, 0, 0, .205, 1, .225);
     box(fore, P.steel, 0, .22, .015, .26, .49, .27);
     compact(fore);
-    const elbowPole = new THREE.Vector3(side * .85, -1, .20).normalize();
+    const elbowPole = new THREE.Vector3(side * 1.35, -.85, .28).normalize();
     arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone() };
+    limbRest(arm);
     return arm;
   }
   const leftArm = grippingArm(-1);
@@ -380,7 +401,7 @@ export function makeWarrior() {
   const shieldBackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.07, Math.PI, .04));
   const leftJoinControl = new THREE.Vector3(-.75, 1.43, .16);
   const emptyRight = new THREE.Vector3(.61, 1.22, .66);
-  const emptyLeft = new THREE.Vector3(-.37, 1.01, .4);
+  const emptyLeft = new THREE.Vector3(-.48, 1.01, .4);
   const emptyRightQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.8, -.1, -.3));
   const emptyLeftQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.3, 0, .2));
   const shieldContact = new THREE.Vector3(), hammerContact = new THREE.Vector3();
@@ -526,13 +547,16 @@ export function makeWarrior() {
     weaponRest.x = .22 + (.55 - .22) * stance;
     weaponRest.y = 0;
     weaponRest.z = -.24 + (-.72 + .24) * stance;
-    weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
+    // Center the space between the two handle anchors in front of the chest.
+    // Centering the pivot itself dragged the lower hand across the torso and
+    // trapped its elbow against the ribs, especially under heavy armor.
+    weaponRestPosition.set(.53 - .67 * stance, .98 + .06 * stance, .23 + .15 * stance);
     if (equipmentTier < 2) {
       // Carry the heavy wood forward with bent elbows, rather than balancing
       // it upright on one wrist. Both anchor points stay on the real handle.
       weaponRest.x = .30 + .56 * stance;
       weaponRest.z = -.23 - .05 * stance;
-      weaponRestPosition.set(.48 - .60 * stance, .93 - .03 * stance, .25 + .05 * stance);
+      weaponRestPosition.set(.48 - .55 * stance, .93 - .03 * stance, .25 + .05 * stance);
     }
     root.userData.stance = stance;
     root.userData.shieldStored = shieldEquipped && (!weaponHeld || stance >= .65);
@@ -818,6 +842,9 @@ export function makeWarrior() {
       beveledBox(g, skin, .155, 1.17, .195, .29, .19, .085, .022);
       box(g, skinShadow, 0, .94, .19, .03, .19, .018);
       cylinder(g, skin, 0, 1.37, .025, .12, .145, .19, 7);
+      // The clavicle/deltoid bridge meets the wider shoulder pivots. The arm
+      // opens away from the waist without leaving a gap at its attachment.
+      for (const side of [-1, 1]) beveledBox(g, skin, side * .40, 1.28, .015, .23, .14, .23, .035);
       box(g, cloth, 0, .72, .005, .60, .18, .42);
       box(g, tier ? P.timberDark : 0x8c7659, 0, .79, .008, .61, .055, .44);
       box(g, tier ? 0xa9956c : 0xbda078, 0, .785, .238, .10, .07, .025);
@@ -1040,8 +1067,8 @@ function robot() {
   crystal(body, P.hot, .242, 2.04, -.06, .055, .055, .055, 0, .7);
   box(body, P.shadow, 0, 1.01, -.3, .42, .4, .2);
   compact(body);
-  const leftLeg = limb(root, 'leftLeg', -.22, .64, 0, P.shadow, P.steel, P.ink);
-  const rightLeg = limb(root, 'rightLeg', .22, .64, 0, P.shadow, P.steel, P.ink);
+  const leftLeg = limb(root, 'leftLeg', -.275, .64, 0, P.shadow, P.steel, P.ink);
+  const rightLeg = limb(root, 'rightLeg', .275, .64, 0, P.shadow, P.steel, P.ink);
   const arms = [];
   for (const side of [-1, 1]) {
     const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .52, 1.27, 0);
@@ -1053,6 +1080,7 @@ function robot() {
     compact(arm); arms.push(arm);
   }
   root.userData = { body, leftLeg, rightLeg, leftArm: arms[0], rightArm: arms[1], width: 1.05, depth: .7, height: 2.08, color: P.steel, fragments: [P.steel, P.blueDark, P.hot] };
+  humanoidStance(root, .14, .03, .055);
   return root;
 }
 
@@ -1085,8 +1113,8 @@ function zombie(brute = false) {
     box(body, 0xbbb79a, -.29, 1.68, -.02, .13, .16, .39, 0, 0, -.22);
   }
   compact(body);
-  const leftLeg = limb(root, 'leftLeg', -.19, .6, 0, pants, darkSkin, 0x302f30);
-  const rightLeg = limb(root, 'rightLeg', .19, .6, 0, pants, pants, 0x302f30);
+  const leftLeg = limb(root, 'leftLeg', -.245, .6, 0, pants, darkSkin, 0x302f30);
+  const rightLeg = limb(root, 'rightLeg', .245, .6, 0, pants, pants, 0x302f30);
   const arms = [];
   for (const side of [-1, 1]) {
     const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .45, 1.22, .015);
@@ -1100,6 +1128,7 @@ function zombie(brute = false) {
   }
   if (brute) root.scale.set(1.45, 1.32, 1.35);
   root.userData = { body, leftLeg, rightLeg, leftArm: arms[0], rightArm: arms[1], width: brute ? 1.5 : .95, depth: .7, height: brute ? 2.5 : 1.84, color: skin, fragments: [skin, pants, shirt, darkSkin] };
+  humanoidStance(root, brute ? .19 : .16, .025, .075);
   return root;
 }
 
@@ -1146,7 +1175,7 @@ export function makeBoss() {
   compact(body);
   const legs = [];
   for (const side of [-1, 1]) {
-    const leg = group(root, side < 0 ? 'leftLeg' : 'rightLeg', side * .68, 2.21, 0);
+    const leg = group(root, side < 0 ? 'leftLeg' : 'rightLeg', side * .84, 2.21, 0);
     box(leg, dark, 0, -.49, 0, .72, .98, .79);
     box(leg, iron, 0, -.59, .32, .85, .9, .25);
     cylinder(leg, edge, 0, -1.02, .1, .31, .31, .9, 8, 0, 0, Math.PI / 2);
@@ -1180,6 +1209,7 @@ export function makeBoss() {
     width: 4.3, depth: 2.2, height: 5.5, color: iron,
     fragments: [iron, edge, dark, orange], exhaust: [new THREE.Vector3(-.88, 5.25, -.8), new THREE.Vector3(.88, 5.25, -.8)],
   };
+  humanoidStance(root, .14, .04, .035);
   return root;
 }
 

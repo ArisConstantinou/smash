@@ -97,7 +97,7 @@ function mutant(){
     leg.ico(shadow,0,-.19,0,.21,.34,.24);leg.ico(skin,0,-.4,.07,.24,.25,.23);
     leg.ico(shadow,0,-.58,.19,.24,.13,.35);
     for(const x of [-.13,0,.13])claw(leg,x,-.55,.36,.3,side);
-    leg.finish(root,side*.27,.70,-.02);
+    leg.finish(root,side*.34,.70,-.02);
     const arm=new Part(side<0?'leftArm':'rightArm'),big=side<0?1.23:1;
     arm.ico(shadow,side*.02,-.02,0,.37*big,.35*big,.36*big);
     arm.ico(skin,side*.06,-.33,.03,.27*big,.46,.27*big);
@@ -139,7 +139,7 @@ function mech(){
     leg.box(P.steel,0,-.73,.02,.40,.40,.48);leg.box(P.dark,0,-.97,.15,.49,.22,.78);
     leg.box(armor,0,-.77,.30,.30,.30,.10);
     leg.box(edge,0,-.94,.55,.47,.12,.11);
-    leg.finish(root,side*.32,1.09,0);
+    leg.finish(root,side*.40,1.09,0);
     const arm=new Part(side<0?'leftArm':'rightArm');
     arm.cyl(P.steel,0,0,0,.23,.43,8,0,0,Math.PI/2);
     arm.box(armor,side*.03,.08,.01,.64,.36,.77,0,0,side*.06);
@@ -194,7 +194,7 @@ function titan(){
     leg.ico(shadow,0,-.26,0,.43,.61,.43);leg.ico(skin,side*.03,-.62,.08,.45,.45,.44);
     leg.ico(rock,0,-.91,.28,.48,.24,.63);
     for(const x of [-.25,0,.25])claw(leg,x,-.92,.61,.6,side);
-    leg.finish(root,side*.54,1.18,0);
+    leg.finish(root,side*.65,1.18,0);
     const arm=new Part(side<0?'leftArm':'rightArm');
     arm.ico(rock,side*.06,0,-.03,.59,.57,.60,side*.17);
     arm.ico(skin,side*.09,-.57,.06,.45,.69,.44);
@@ -239,7 +239,7 @@ function siegeMech(){
     for(const x of [-.31,.31])leg.cyl(edge,x,-1.06,.10,.075,.61,6);
     leg.box(P.dark,0,-1.45,.33,.91,.32,1.31);leg.box(edge,0,-1.35,.94,.87,.15,.18);
     for(const x of [-.26,0,.26])leg.box(armor,x,-1.49,1.04,.16,.22,.11);
-    leg.finish(root,side*.67,1.62,-.03);
+    leg.finish(root,side*.80,1.62,-.03);
     const arm=new Part(side<0?'leftArm':'rightArm');
     arm.cyl(P.dark,0,-.03,0,.34,.67,8,0,0,Math.PI/2);
     arm.box(armor,side*.08,.10,.03,.93,.49,1.02);
@@ -264,6 +264,20 @@ function siegeMech(){
 }
 
 const makers={crawler,mutant,mech,titan,siegeMech};
+
+function relaxedStance(root,type){
+  // The six-legged crawler already has its own spread leg chain. Humanoids
+  // need a gap at the knees and elbows that survives the shared walk reset.
+  if(type==='crawler')return;
+  const [armRoll,legRoll,toeOut]={mutant:[.17,.025,.09],mech:[.13,.025,.055],
+    titan:[.16,.035,.07],siegeMech:[.13,.02,.045]}[type];
+  for(const [name,side] of [['left',-1],['right',1]])for(const kind of ['Arm','Leg']){
+    const limb=root.getObjectByName(name+kind),leg=kind==='Leg';
+    Object.assign(limb.userData,{restX:limb.position.x,restY:limb.position.y,restZ:limb.position.z,
+      restRoll:side*(leg?legRoll:armRoll),restYaw:leg?side*toeOut:0});
+    limb.rotation.z=limb.userData.restRoll;limb.rotation.y=limb.userData.restYaw;
+  }
+}
 
 // The original low-draw-count meshes bake the face into the torso. Separate
 // whole connected primitives once at construction time, keeping every triangle
@@ -351,7 +365,7 @@ export function installEnemyHead(root,type='zombie',bind=true){
 
 function prototype(type){
   if(PROTOTYPES.has(type))return PROTOTYPES.get(type);
-  const root=makers[type]();installEnemyHead(root,type,false);root.updateMatrixWorld(true);
+  const root=makers[type]();relaxedStance(root,type);installEnemyHead(root,type,false);root.updateMatrixWorld(true);
   const initial=new THREE.Box3().setFromObject(root),target=root.userData.heightTarget;
   root.scale.setScalar(target/initial.max.y);root.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(root),size=bounds.getSize(new THREE.Vector3());
