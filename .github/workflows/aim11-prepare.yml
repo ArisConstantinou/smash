@@ -1,0 +1,95 @@
+name: Validate manual aim and contact spin
+on:
+  push:
+    branches: [prepare-aim11-20261107]
+    paths: ['.aim11-transfer/**', '.github/workflows/aim11-prepare.yml']
+permissions:
+  contents: write
+concurrency:
+  group: aim11-validation
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reconstruct checksummed source changes
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,pathlib,subprocess
+          root=pathlib.Path.cwd()
+          raw=lzma.decompress(base64.b64decode((root/'.aim11-transfer/payload.b64').read_text(),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='8bc7e78fb9fc89722d1d9a2f0878219eb35e3ea42fe79f6600675707b5792969'
+          payload=json.loads(raw)
+          assert payload['base']=='8eb76bc589288cb11974e369ad65a815343b89f8'
+          def blob(data):
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          assert len(payload['files'])==9
+          paths=[]
+          for entry in payload['files']:
+              relative=pathlib.PurePosixPath(entry['path'])
+              assert not relative.is_absolute() and '..' not in relative.parts
+              assert relative.parts[0] not in ('.git','.github','.aim11-transfer')
+              path=root/relative
+              assert path.resolve().is_relative_to(root)
+              if entry['base'] is None:
+                  result=entry['text'].encode('utf-8')
+              else:
+                  original=subprocess.check_output(['git','show',payload['base']+':'+str(relative)])
+                  assert blob(original)==entry['base'],str(relative)
+                  lines=original.decode('utf-8').splitlines(keepends=True)
+                  for start,end,replacement in reversed(entry['edits']):
+                      assert 0<=start<=end<=len(lines)
+                      lines[start:end]=replacement.splitlines(keepends=True)
+                  result=''.join(lines).encode('utf-8')
+              assert blob(result)==entry['sha'],str(relative)
+              path.parent.mkdir(parents=True,exist_ok=True)
+              path.write_bytes(result);paths.append(str(relative))
+              print('Verified',relative,entry['sha'])
+          pathlib.Path('/tmp/aim11-files.txt').write_text('\n'.join(paths)+'\n')
+          PY
+      - name: Run all regression tests
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee /tmp/aim11-tests.log
+      - name: Install isolated browser dependency
+        run: npm install --no-save --package-lock=false playwright@1.62.1
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify actual desktop and mobile input and rendering
+        run: node tests/browser-smoke.mjs
+      - name: Commit validated changes only on preparation branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          mapfile -t files < /tmp/aim11-files.txt
+          git add -- "${files[@]}"
+          git diff --cached --check
+          python3 - <<'PY'
+          import json,pathlib,subprocess
+          paths=pathlib.Path('/tmp/aim11-files.txt').read_text().splitlines()
+          manifest=[{'path':p,'mode':'100644','type':'blob','sha':subprocess.check_output(['git','rev-parse',':'+p],text=True).strip()} for p in paths]
+          pathlib.Path('/tmp/aim11-manifest.json').write_text(json.dumps(manifest,indent=2))
+          print(json.dumps(manifest,indent=2))
+          PY
+          git commit -m 'Validate manual aiming and impact-earned spin with desktop and phone input'
+          git push origin HEAD:refs/heads/prepare-aim11-20261107
+          echo "Validated commit: $(git rev-parse HEAD)"
+      - name: Keep browser images and test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aim11-evidence
+          path: |
+            browser-evidence/
+            /tmp/aim11-manifest.json
+            /tmp/aim11-tests.log
+          if-no-files-found: warn
+          retention-days: 7
