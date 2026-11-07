@@ -1,0 +1,81 @@
+name: Validate menu9 source
+on:
+  push:
+    branches: [prepare-menu9-20261107]
+    paths:
+      - '.menu9-transfer/**'
+      - '.github/workflows/menu9-prepare.yml'
+permissions:
+  contents: write
+concurrency:
+  group: menu9-source-preparation
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply verified source delta
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          encoded = ''.join((root / f'.menu9-transfer/payload-{i}.b64').read_text() for i in range(4))
+          raw = lzma.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(raw).hexdigest() == '094c7aa6083d44c360cf3e951727dd102b51f993dfe57ab05b6df255c9a9fad3', 'Payload checksum mismatch'
+          payload = json.loads(raw)
+          assert payload['base'] == 'e72bbd4158d19994379cb1368258b787fab1c346'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD^'], text=True).strip() == payload['base'], 'Preparation parent changed'
+          def blob(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          assert len(payload['files']) == 15
+          paths = []
+          for entry in payload['files']:
+              relative = pathlib.PurePosixPath(entry['path'])
+              assert not relative.is_absolute() and '..' not in relative.parts
+              assert relative.parts[0] not in ('.git', '.github', '.menu9-transfer')
+              path = root / relative
+              assert path.resolve().is_relative_to(root)
+              if entry['base'] is None:
+                  assert not path.exists(), f'New file exists: {relative}'
+                  result = entry['text'].encode('utf-8')
+              else:
+                  original = path.read_bytes()
+                  assert blob(original) == entry['base'], f'Base mismatch: {relative}'
+                  lines = original.decode('utf-8').splitlines(keepends=True)
+                  for start, end, replacement in reversed(entry['edits']):
+                      assert 0 <= start <= end <= len(lines)
+                      lines[start:end] = replacement.splitlines(keepends=True)
+                  result = ''.join(lines).encode('utf-8')
+              assert blob(result) == entry['sha'], f'Result mismatch: {relative}'
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(result)
+              paths.append(str(relative))
+              print(f'Verified {relative} {entry["sha"]}')
+          pathlib.Path('/tmp/menu9-files.txt').write_text('\n'.join(paths) + '\n')
+          PY
+      - name: Run every regression test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee /tmp/menu9-tests.log
+      - name: Commit validated source to preparation branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          mapfile -t files < /tmp/menu9-files.txt
+          git add -- "${files[@]}"
+          git diff --cached --check
+          git commit -m 'Prepare validated menu9 source: forge menu, throw modes, anatomy and mesh traversal'
+          git push origin HEAD:refs/heads/prepare-menu9-20261107
+          echo "Validated commit: $(git rev-parse HEAD)"
+          echo "Validated tree: $(git rev-parse HEAD^{tree})"
