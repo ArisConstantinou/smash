@@ -351,7 +351,7 @@ test('each projectile contains only its equipped weapon and has exact centered b
     projectile.traverse(node => {
       if (!node.isMesh) return;
       assert.equal(node.userData.equipmentTier, tier);
-      assert.ok(['hammerHandle', 'hammerShaft', 'hammerCollar', 'hammerHead'].includes(node.userData.equipmentSlot));
+      assert.ok(['hammerHandle', 'hammerShaft', 'hammerCollar', 'hammerHandGuard', 'hammerBarbedWrap', 'hammerHead'].includes(node.userData.equipmentSlot));
     });
     assert.equal(projectile.getObjectByName('leftGripAnchor'), undefined);
   }
@@ -553,4 +553,130 @@ test('every outfit leaves a visible gap between the legs with attached shoulder 
   contact(u.rightGrip,u.rightGripAnchor);
   if(stance)contact(u.leftGrip,u.leftGripAnchor);
  }
+});
+
+function wireVertices(mesh, visit) {
+  const matrix = new THREE.Matrix4(), point = new THREE.Vector3();
+  const positions = mesh.geometry.getAttribute('position');
+  for (let instance = 0; instance < mesh.count; instance++) {
+    mesh.getMatrixAt(instance, matrix);
+    matrix.premultiply(mesh.matrixWorld);
+    for (let i = 0; i < positions.count; i++) visit(point.fromBufferAttribute(positions, i).applyMatrix4(matrix));
+  }
+}
+
+test('only metal hammers have sharp wire beyond a fixed guard and a safe two-hand grip', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  const start = new THREE.Vector3(), end = new THREE.Vector3();
+  for (const tier of [0, 1, 2, 3, 4, 0]) {
+    u.setEquipment(tier); u.hammerHead.scale.setScalar(1.15); u.setReach(3.5);
+    restingPose(hero, 1);
+    assert.equal(u.getBarbedContactSegment(start, end), tier >= 2);
+    assert.equal(u.barbedWrap.visible, tier >= 2);
+    assert.equal(u.handGuard.visible, tier >= 2);
+    if (tier < 2) {
+      assert.equal(u.getBarbedContactRadius(), 0);
+      assert.equal(u.barbedWrap.children.length, 0, 'Earlier wood weapons must not carry hidden sharp geometry');
+      continue;
+    }
+    const localStart = u.hammerPivot.worldToLocal(start.clone()), radius = u.getBarbedContactRadius();
+    assert.ok(localStart.y - radius > u.rightGripAnchor.position.y + .19,
+      'Even the contact capsule must begin beyond the forward hand');
+    const inverse = u.hammerPivot.matrixWorld.clone().invert();
+    let lowestWire = Infinity;
+    wireVertices(u.barbedWrap.children[0], point => { lowestWire = Math.min(lowestWire, point.clone().applyMatrix4(inverse).y); });
+    assert.ok(lowestWire > .73, 'No wire or barbs may enter the handle or guard');
+    contact(u.leftGrip, u.leftGripAnchor); contact(u.rightGrip, u.rightGripAnchor); armsConnected(hero);
+    assert.equal(hero.getObjectsByProperty('name', 'hammerHead').length, 1, 'The weapon still has exactly one hammer head');
+    u.setWeaponVisible(false);
+    assert.equal(u.getBarbedContactSegment(start, end), false);
+    assert.equal(u.getBarbedContactRadius(), 0);
+    u.setWeaponVisible(true);
+  }
+});
+
+test('barbed contact capsules follow the real wire through rotated and scaled world poses', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  const start = new THREE.Vector3(), end = new THREE.Vector3(), closest = new THREE.Vector3();
+  const line = new THREE.Line3(start, end);
+  hero.position.set(7, 1.4, -9); hero.rotation.set(.12, 1.7, -.08); hero.scale.setScalar(1.3);
+  for (const tier of [2, 3, 4]) for (const reach of [1, 2.4, 9.8]) {
+    u.setEquipment(tier); u.hammerHead.scale.setScalar(1); u.setReach(reach);
+    u.weaponRig.rotation.set(-.7, .25, 1.1); u.hammerPivot.scale.set(1.2, .95, 1.1);
+    assert.equal(u.getBarbedContactSegment(start, end), true);
+    const radius = u.getBarbedContactRadius(); hero.updateMatrixWorld(true);
+    let vertices = 0;
+    wireVertices(u.barbedWrap.children[0], point => {
+      if (start.distanceToSquared(end) < 1e-12) closest.copy(start);
+      else line.closestPointToPoint(point, true, closest);
+      assert.ok(point.distanceTo(closest) <= radius + epsilon, 'A visible barb escaped its moving damage capsule');
+      vertices++;
+    });
+    assert.ok(vertices > 100);
+  }
+});
+
+test('reach adds unchanged compact wire coils without stretching tips or updating unchanged buffers', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  u.setEquipment(2); u.hammerHead.scale.setScalar(1); u.setReach(1.5);
+  const mesh = u.barbedWrap.children[0], geometry = mesh.geometry, firstCount = mesh.count;
+  const firstMatrix = new THREE.Matrix4(); mesh.getMatrixAt(0, firstMatrix);
+  const initialVersion = mesh.instanceMatrix.version;
+  for (let frame = 0; frame < 100; frame++) u.setReach(1.5);
+  assert.equal(mesh.instanceMatrix.version, initialVersion, 'Normal animation must not rewrite the instance buffer every frame');
+  u.setReach(12.5);
+  assert.equal(u.barbedWrap.children.length, 1, 'The entire wrapping uses one mesh/draw call');
+  assert.equal(u.barbedWrap.children[0], mesh); assert.equal(mesh.geometry, geometry);
+  assert.ok(mesh.count > firstCount * 8);
+  const position = new THREE.Vector3(), rotation = new THREE.Quaternion(), scale = new THREE.Vector3();
+  const matrix = new THREE.Matrix4();
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, matrix); matrix.decompose(position, rotation, scale);
+    close(scale.x, 1); close(scale.y, 1); close(scale.z, 1);
+  }
+  mesh.getMatrixAt(0, matrix); assert.deepEqual(matrix.toArray(), firstMatrix.toArray());
+  const left = u.leftGripAnchor.position.clone(), right = u.rightGripAnchor.position.clone();
+  u.setReach(.35);
+  assert.equal(u.barbedWrap.visible, false, 'Compact orbit must retract wire instead of putting it through the hand');
+  close(u.leftGripAnchor.position.distanceTo(left), 0); close(u.rightGripAnchor.position.distanceTo(right), 0);
+  u.setReach(12.5);
+  assert.equal(u.barbedWrap.visible, true); assert.equal(mesh.geometry, geometry);
+});
+
+test('thrown upgraded hammers retain every wire instance and independently disposable resources', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  for (const tier of [2, 3, 4]) {
+    u.setEquipment(tier); u.setReach(5.3); u.hammerHead.scale.setScalar(1.8);
+    // The direct throw path must synchronize the wrap after a size-only
+    // change, even when no aim-preview/bounds query happened beforehand.
+    const thrown = u.createThrownHammer(); thrown.updateMatrixWorld(true);
+    const source = u.barbedWrap.children[0], mesh = thrown.getObjectByName('hammerBarbedWrap').children[0];
+    assert.equal(mesh.isInstancedMesh, true); assert.equal(mesh.count, source.count);
+    assert.notEqual(mesh.instanceMatrix, source.instanceMatrix);
+    assert.notEqual(mesh.geometry, source.geometry); assert.notEqual(mesh.material, source.material);
+    assert.equal(thrown.getObjectsByProperty('name', 'hammerHead').length, 1);
+    wireVertices(mesh, point => assert.ok(point.length() <= thrown.userData.radius + epsilon,
+      'A rotating wire tip escaped the projectile collider'));
+    close(new THREE.Box3().setFromObject(thrown).getCenter(new THREE.Vector3()).length(), 0);
+    close(new THREE.Box3().setFromObject(thrown).getBoundingSphere(new THREE.Sphere()).radius, thrown.userData.radius);
+    const actualVersion = source.instanceMatrix.version, count = source.count;
+    mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(100, 100, 100));
+    assert.equal(source.instanceMatrix.version, actualVersion); assert.equal(source.count, count);
+    let sourceDisposed = false; source.geometry.addEventListener('dispose', () => { sourceDisposed = true; });
+    mesh.geometry.dispose(); mesh.material.dispose();
+    assert.equal(sourceDisposed, false);
+  }
+});
+
+test('release prediction accounts for long wire without changing compact held instances', () => {
+  const hero = makeWarrior(), u = hero.userData;
+  u.setEquipment(2); u.hammerHead.scale.setScalar(1.3); u.setReach(.35);
+  const mesh = u.barbedWrap.children[0], version = mesh.instanceMatrix.version;
+  const metrics = u.getThrowMetrics(8.9);
+  assert.equal(mesh.instanceMatrix.version, version); assert.equal(mesh.count, 0);
+  assert.equal(u.barbedWrap.visible, false); close(u.reachScale, .35);
+  u.setReach(8.9);
+  const thrown = u.createThrownHammer();
+  close(thrown.userData.radius, metrics.radius);
+  close(thrown.userData.balance.x, metrics.x); close(thrown.userData.balance.y, metrics.y); close(thrown.userData.balance.z, metrics.z);
 });

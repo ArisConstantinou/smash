@@ -20,11 +20,17 @@ function noise(seed, n) {
   v = Math.imul(v, 0x846ca68b); v ^= v >>> 16;
   return (v >>> 0) / 4294967296;
 }
-const vehicle = o => ['car','policecar','ambulance'].includes(o.type);
+const vehicle = o => o.type==='car'||o.type==='policecar'||o.type==='ambulance';
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const CUBE = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
 const FRACTION = [0, 0, .10, .27, .46, .66, 1];
 const v3 = new THREE.Vector3(), normal = new THREE.Vector3();
+
+function insideExpandedBounds(bounds, point, margin) {
+  return point.x>=bounds.min.x-margin&&point.x<=bounds.max.x+margin&&
+    point.y>=bounds.min.y-margin&&point.y<=bounds.max.y+margin&&
+    point.z>=bounds.min.z-margin&&point.z<=bounds.max.z+margin;
+}
 
 // Fracture only a struck object, and only on its first stage transition.
 // Preserve baked batches/draw calls. Each removable piece has closed faces;
@@ -115,15 +121,15 @@ function fractureBatch(mesh, root, cellSize, seed) {
 }
 function prepare(object) {
   const root=object.mesh; root.updateWorldMatrix(true,true);
-  const batches=[];
+  const batches=[],seed=damageSeed(object),isVehicle=vehicle(object);
   root.traverse(mesh=>{
     if(!mesh.isMesh)return;
-    const batch=fractureBatch(mesh,root,vehicle(object)?.95:2.45,damageSeed(object));
+    const batch=fractureBatch(mesh,root,isVehicle?.95:2.45,seed);
     if(batch)batches.push(batch);
   });
   const parts=batches.flatMap(b=>b.parts);
-  parts.forEach((part,id)=>{part.id=id;});
-  if(vehicle(object))for(const p of parts){
+  parts.forEach((part,id)=>{part.id=id;part.rankVariation=.75+noise(seed,id)*.55;part.damageRank=0;});
+  if(isVehicle)for(const p of parts){
     const size=p.bounds.getSize(new THREE.Vector3()),dims=[size.x,size.y,size.z].sort((a,b)=>b-a);
     p.weight=Math.max(.06,Math.sqrt(dims[0]*dims[1]));
   }
@@ -135,7 +141,7 @@ function prepare(object) {
   }
   const structural=parts.filter(p=>p.structural&&!p.foundation);
   const eligible=structural.length?structural:parts.filter(p=>!p.foundation);
-  return object.destruction={stage:1,seed:damageSeed(object),batches,parts,eligible,
+  return object.destruction={stage:1,seed,batches,parts,eligible,
     totalWeight:eligible.reduce((sum,p)=>sum+p.weight,0),removedIds:[],revision:0};
 }
 function rewriteBatches(state) {
@@ -160,7 +166,7 @@ export function fractureObject(object, point) {
   const state=object.destruction||prepare(object), root=object.mesh;
   root.updateWorldMatrix(true,true);
   const contact=root.worldToLocal(new THREE.Vector3(point.x,point.y??1,point.z));
-  const removed=[];
+  const removed=[],isVehicle=vehicle(object),attachmentMargin=isVehicle?.12:.28;
   for(let stage=state.stage+1;stage<=targetStage;stage++) {
     const variation=.90+noise(state.seed,stage+170)*.20;
     const target=state.totalWeight*Math.min(1,FRACTION[stage]*variation);
@@ -171,9 +177,11 @@ export function fractureObject(object, point) {
     anchor.y=clamp(contact.y+(stage-2)*object.h*(.12+noise(state.seed,stage)*.10),.7,object.h*.85);
     anchor.x+=(noise(state.seed,stage+50)-.5)*object.w*.50;
     anchor.z+=(noise(state.seed,stage+90)-.5)*object.d*.50;
-    const ranked=state.eligible.filter(p=>!p.removed).sort((a,b)=>
-      (a.center.distanceToSquared(anchor)*( .75+noise(state.seed,a.id)*.55)+(vehicle(object)&&stage<4&&a.center.y<.45?20:0))-
-      (b.center.distanceToSquared(anchor)*( .75+noise(state.seed,b.id)*.55)+(vehicle(object)&&stage<4&&b.center.y<.45?20:0)));
+    const ranked=state.eligible.filter(p=>!p.removed);
+    // Evaluate each crack-path score once, not again on every sort comparison.
+    for(const part of ranked)part.damageRank=part.center.distanceToSquared(anchor)*part.rankVariation+
+      (isVehicle&&stage<4&&part.center.y<.45?20:0);
+    ranked.sort((a,b)=>a.damageRank-b.damageRank);
     const fresh=[];
     for(const part of ranked) {
       if(gone>=target&&stage<6)break;
@@ -183,7 +191,9 @@ export function fractureObject(object, point) {
     // with it. This avoids floating window grids over a missing facade.
     for(const part of state.parts) {
       if(part.removed||part.foundation)continue;
-      if(stage===6 || part.support?.removed || fresh.some(hole=>hole.bounds.clone().expandByScalar(vehicle(object)?.12:.28).containsPoint(part.center))) {
+      // Test the same expanded bounds directly: cloning a Box3 for every
+      // decoration/hole pair generated tens of thousands of objects per hit.
+      if(stage===6 || part.support?.removed || fresh.some(hole=>insideExpandedBounds(hole.bounds,part.center,attachmentMargin))) {
         part.removed=true;removed.push(part);
       }
     }
@@ -243,43 +253,49 @@ export class DestructionSystem {
     this.alarms.delete(object);
   }
   release(object,parts,point,stage) {
-    const groups=new Map(),cell=vehicle(object)?1.2:2.8;
+    const groups=new Map(),transforms=new Map(),isVehicle=vehicle(object),cell=isVehicle?1.2:2.8;
     object.mesh.updateWorldMatrix(true,true);
     for(const part of parts) {
       const k=[part.center.x,part.center.y,part.center.z].map(x=>Math.floor(x/cell)).join(',');
-      if(!groups.has(k))groups.set(k,[]);groups.get(k).push(part);
+      let group=groups.get(k);
+      if(!group){group={parts:[],weight:0,count:0};groups.set(k,group);}
+      group.parts.push(part);group.weight+=part.weight;group.count+=part.count;
     }
     // Evict old rubble first. A huge collapse has a deterministic piece cap.
-    const groupsToShow=[...groups.values()].sort((a,b)=>
-      b.reduce((s,p)=>s+p.weight,0)-a.reduce((s,p)=>s+p.weight,0)).slice(0,stage===6?32:14);
+    const groupsToShow=[...groups.values()].sort((a,b)=>b.weight-a.weight).slice(0,stage===6?32:14);
     for(const group of groupsToShow) {
-      const positions=[],normals=[],colors=[];
-      for(const part of group) {
+      // The vertex count is already known. Write the final float buffers once
+      // instead of growing/copying three temporary JavaScript number arrays.
+      const positions=new Float32Array(group.count*3),normals=new Float32Array(group.count*3),colors=new Float32Array(group.count*3);
+      let offset=0;
+      for(const part of group.parts) {
         const g=part.mesh.geometry,p=g.attributes.position,n=g.attributes.normal,c=g.attributes.color;
-        const matrix=part.mesh.matrixWorld,nm=new THREE.Matrix3().getNormalMatrix(matrix);
+        let transform=transforms.get(part.mesh);
+        if(!transform){const matrix=part.mesh.matrixWorld;transform={matrix,nm:new THREE.Matrix3().getNormalMatrix(matrix)};transforms.set(part.mesh,transform);}
+        const {matrix,nm}=transform;
         for(let i=part.start;i<part.start+part.count;i++) {
-          v3.fromBufferAttribute(p,i).applyMatrix4(matrix);positions.push(v3.x,v3.y,v3.z);
-          normal.fromBufferAttribute(n,i).applyMatrix3(nm).normalize();normals.push(normal.x,normal.y,normal.z);
-          colors.push(c.getX(i),c.getY(i),c.getZ(i));
+          v3.fromBufferAttribute(p,i).applyMatrix4(matrix);positions[offset]=v3.x;positions[offset+1]=v3.y;positions[offset+2]=v3.z;
+          normal.fromBufferAttribute(n,i).applyMatrix3(nm).normalize();normals[offset]=normal.x;normals[offset+1]=normal.y;normals[offset+2]=normal.z;
+          colors[offset]=c.getX(i);colors[offset+1]=c.getY(i);colors[offset+2]=c.getZ(i);offset+=3;
         }
       }
       if(!positions.length)continue;
       const geometry=new THREE.BufferGeometry();
-      geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-      geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
-      geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+      geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
+      geometry.setAttribute('normal',new THREE.BufferAttribute(normals,3));
+      geometry.setAttribute('color',new THREE.BufferAttribute(colors,3));
       geometry.computeBoundingBox();const center=geometry.boundingBox.getCenter(new THREE.Vector3());
       const size=geometry.boundingBox.getSize(new THREE.Vector3());geometry.translate(-center.x,-center.y,-center.z);geometry.computeBoundingSphere();
       const mesh=new THREE.Mesh(geometry,this.material);mesh.position.copy(center);mesh.castShadow=true;mesh.receiveShadow=true;
       this.group.add(mesh);
-      const id=group[0].id,seed=object.destruction.seed;
+      const id=group.parts[0].id,seed=object.destruction.seed;
       const direction=new THREE.Vector3(center.x-object.x,0,center.z-object.z);
       if(direction.lengthSq()<.01)direction.set(point.x-object.x,0,point.z-object.z);
       if(direction.lengthSq()<.01)direction.set(1,0,0);direction.normalize();
-      const speed=(vehicle(object)?2.1:1.4)+noise(seed,id+260)*3.0;
+      const speed=(isVehicle?2.1:1.4)+noise(seed,id+260)*3.0;
       this.debris.push({mesh,source:object,vx:direction.x*speed,vz:direction.z*speed,vy:1+noise(seed,id+310)*3,
         spin:(noise(seed,id+380)-.5)*3.4,radius:clamp(Math.min(size.x,size.z)*.35,.09,.95),
-        halfY:Math.max(.06,size.y*.40),life:12+noise(seed,id+460)*7,settled:false,sounded:false,metal:vehicle(object)});
+        halfY:Math.max(.06,size.y*.40),life:12+noise(seed,id+460)*7,settled:false,sounded:false,metal:isVehicle});
       while(this.debris.length>this.limit)this.removeDebris(0);
     }
   }

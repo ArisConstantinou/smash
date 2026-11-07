@@ -333,6 +333,11 @@ export class GameAudio {
   _impact(material, power, weapon = 'metal') {
     const p = clamp(power), v = .85 + p * .35, pitch = .95 + Math.random() * .1;
     const surface = material === 'stone' || material === 'ground' ? 'masonry' : material;
+    if (weapon === 'barbed') {
+      // Brief catch-and-scrape over the physical hit; no looping tether sound.
+      this._noise(.12 * v, .085, surface === 'metal' ? 3400 : 2400, 'bandpass', .012, 850);
+      this._tone('triangle', 740 * pitch, 260, .055 * v, .095, .015);
+    }
     if (this._sample(surface, .8 + p * .2, pitch)) {
       // Small physical body layer; the recorded transient remains dominant.
       this._tone('sine', 155, 65, .09 + p * .04, .12);

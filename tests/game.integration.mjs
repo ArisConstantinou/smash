@@ -26,6 +26,8 @@ import * as menuModule from '../menu.js';
 import * as cityLevels from '../city-levels.js';
 import * as manualCombat from '../manual-combat.js';
 import * as weaponRest from '../weapon-rest.js';
+import * as throwIndicatorModule from '../throw-indicator.js';
+import * as barbedContact from '../barbed-contact.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -197,12 +199,15 @@ const imports = new Map([
   ['./menu.js', synthetic(menuModule, 'real-menu')],
   ['./city-levels.js', synthetic(cityLevels, 'real-city-levels')],
   ['./manual-combat.js', synthetic(manualCombat, 'real-manual-combat')],
+  ['./throw-indicator.js', synthetic(throwIndicatorModule, 'real-throw-indicator')],
+  ['./barbed-contact.js', synthetic(barbedContact, 'real-barbed-contact')],
   ['./weapon-rest.js', synthetic(weaponRest, 'real-weapon-rest')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
   get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
@@ -462,7 +467,7 @@ test('the visible control deck maps Space to jump and exposes the illustrated no
   assert.match(html, /id="upgradePanel" class="upgrade-drawer"/);
 });
 
-test('right mouse holds defense; Q stays unbound and E kicks without triggering defense', () => {
+test('right mouse holds defense; Q opens upgrades and E kicks without triggering defense', () => {
   arena();
   mouseGuard(true);
   playerSteps(.3);
@@ -471,12 +476,37 @@ test('right mouse holds defense; Q stays unbound and E kicks without triggering 
   mouseGuard(false); playerSteps(.03);
   assert.equal(api.guarding, false);
   key('KeyQ', true); playerSteps(.1); key('KeyQ', false);
+  assert.equal(api.upgradePanelOpen,true);assert.equal(api.phase,'playing');
   assert.equal(api.kick, null); assert.equal(api.guarding, false);
+  key('KeyQ',true);key('KeyQ',false);assert.equal(api.upgradePanelOpen,false);
   key('KeyE', true); playerSteps(.1); key('KeyE', false);
   assert.ok(api.kick); assert.equal(api.guarding, false);
   assert.equal(api.swing, null); assert.equal(api.spin, null); assert.equal(api.leap, null);
   key('Space', true); key('Space', false);
   assert.ok(api.leap); assert.equal(api.leap.slam, false, 'Space alone starts a normal leap without arming the mouse attack');
+});
+
+test('Q toggles only the upgrade drawer, ignores key repeat and editable focus, and Escape closes without pausing',()=>{
+  arena(6);
+  const weapon=api.character.weaponId,tier=api.characterStats.weaponTier,stance=api.stance;
+  key('KeyQ',true);
+  assert.equal(api.upgradePanelOpen,true);assert.equal(elements.get('upgradePanel').hidden,false);
+  emit('keydown',{code:'KeyQ',repeat:true});
+  assert.equal(api.upgradePanelOpen,true,'Holding Q must not flicker the drawer');key('KeyQ',false);
+  key('KeyQ',true);key('KeyQ',false);assert.equal(api.upgradePanelOpen,false);
+  key('KeyQ',true);key('KeyQ',false);key('Escape',true);key('Escape',false);
+  assert.equal(api.upgradePanelOpen,false);assert.equal(api.phase,'playing');
+  const editable=document.createElement('div');editable.isContentEditable=true;
+  try{
+    for(const target of [document.createElement('input'),document.createElement('textarea'),document.createElement('select'),editable]){
+      document.activeElement=target;key('KeyQ',true);key('KeyQ',false);
+      assert.equal(api.upgradePanelOpen,false,'Typing Q in a form must not open game UI');
+    }
+  }finally{document.activeElement=document.body;}
+  key('KeyU',true);key('KeyU',false);assert.equal(api.upgradePanelOpen,true,'U remains a compatible alias');
+  key('Escape',true);key('Escape',false);
+  assert.equal(api.character.weaponId,weapon);assert.equal(api.characterStats.weaponTier,tier);assert.equal(api.stance,stance);
+  assert.equal(api.swing,null);assert.equal(api.spin,null);assert.equal(api.kick,null);
 });
 
 test('wave one gives breathing room and enemies survive a single hit even from the test hammer', () => {
@@ -688,7 +718,7 @@ test('weighted swings move the torso and hammer vertically while every held grip
   }
 });
 
-test('normal swings with either stock or upgraded hammer size reach nearby targets without striking behind', () => {
+test('normal head and wire swings with either stock or upgraded size reach nearby targets without striking behind', () => {
   for (const sizeLevel of [0, 2]) for (const distance of [.9, 1.1, 2.3]) {
     arena(); api.levels.size = sizeLevel; api.applyStats(); api.poseHero(1);
     const front = stationaryEnemy('brute', 0, distance), rear = stationaryEnemy('brute', 0, -1.1);
@@ -696,7 +726,9 @@ test('normal swings with either stock or upgraded hammer size reach nearby targe
     api.primeSwing(0); api.beginSwing();
     const strike = api.swing;
     playerSteps(.55, 1 / 240);
-    assert.equal(front.hp, hp - strike.damage, `Hammer size level ${sizeLevel} missed a target ${distance} metres in front`);
+    assert.ok(['blunt','slash'].includes(front.impact?.reaction),'Nearby damage requires an actual weapon contact');
+    const contactDamage=Math.round(strike.damage*(front.impact.reaction==='slash'?.55:1));
+    assert.equal(front.hp, hp - contactDamage, `Hammer size level ${sizeLevel} missed a target ${distance} metres in front`);
     assert.equal(rear.hp, rear.maxHp, 'A normal forward swing must not become a circular attack');
   }
 });
@@ -713,9 +745,9 @@ test('the wider near-body sweep still stops at a surviving wall before the enemy
   assert.equal(strike.blocked, true);
 });
 
-test('each hand mode keeps an independent six-move bag and a new run resets the opener', () => {
+test('each continuous hand-mode chain covers six strokes; switching stance resets its horizontal opener', () => {
   arena();const names=[[],[]];
-  for(let i=0;i<6;i++)for(const mode of [0,1]){
+  for(const mode of [0,1])for(let i=0;i<6;i++){
     if(api.stance!==mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
     mouseAttack(true);mouseAttack(false);assert.ok(api.swing);names[mode].push(api.swing.variant);
     assert.equal(api.swing.twoHanded,!!mode);playerSteps(api.swing.duration+.04);assert.equal(api.swing,null);
@@ -776,7 +808,9 @@ test('every combo stroke hits close and forward enemies promptly once without da
       }
       const label = `${variant}, size ${sizeLevel}, range ${distance}`;
       assert.equal(api.swing, null, label); assert.equal(changes, 1, `${label}: the stroke must connect exactly once`);
-      assert.equal(front.hp, before - strike.damage, label);
+      assert.ok(['blunt','slash'].includes(front.impact?.reaction),label+': contact reaction');
+      const contactDamage=Math.round(strike.damage*(front.impact.reaction==='slash'?.55:1));
+      assert.equal(front.hp, before - contactDamage, label);
       assert.equal(rear.hp, rear.maxHp, `${label}: a normal stroke must not become a full-circle attack`);
       assert.ok(contactTime <= durations[variant] * .4 + 1 / 120, `${label}: contact took ${contactTime} seconds`);
       close(duration, durations[variant], 1 / 240 + 1e-6);
@@ -1263,28 +1297,22 @@ test('a tap throw reads the movement thumb immediately without waiting for a ren
   });
 });
 
-test('dragging the throw tile aims independently while walking and releases into a real enemy hit', () => {
+test('the throw tile never becomes a second joystick; left-stick facing owns its release', () => {
   touchArena(() => {
-    const walking = core.screenMovement(1, 0), throwing = core.screenMovement(-1, 0);
-    const enemy = stationaryEnemy('brute', throwing.x * 5, throwing.z * 5), hp = enemy.hp;
-    moveStick('pointerdown', 1, 0, 101); playerSteps(.05);
-    pointerEvent('throwButton', 'pointerdown', { pointerId: 202, clientX: 320, clientY: 740 });
-    pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 260, clientY: 740 });
-    playerSteps(.2);
-    assert.ok(api.touchThrowAim); assert.equal(api.throwWindup, null);
-    assert.ok(api.aim.x * throwing.x + api.aim.z * throwing.z > .99);
-    close(api.facing.x, walking.x); close(api.facing.z, walking.z);
-    const beforeReturn = { ...api.aim };
-    pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 320, clientY: 740 });
-    playerSteps(.03);
-    assert.ok(Number.isFinite(api.aim.x) && Number.isFinite(api.aim.z));
-    assert.ok(api.aim.x * beforeReturn.x + api.aim.z * beforeReturn.z > .99, 'Returning to the drag origin must retain the last useful aim');
-    emit('pointerup', { pointerId: 202, pointerType: 'touch', clientX: 320, clientY: 740, target: document.body });
-    assert.ok(api.throwWindup); assert.equal(api.touchThrowAim, null);
-    assert.ok(api.throwWindup.dir.x * throwing.x + api.throwWindup.dir.z * throwing.z > .99);
+    api.settings.throwAutoLock=false;
+    const direction=core.screenMovement(-1,0);
+    moveStick('pointerdown',-.28,0,101);
+    const enemy=stationaryEnemy('brute',direction.x*5,direction.z*5),hp=enemy.hp;
+    throwTouch('pointerdown');throwTouch('pointermove',90,65);playerSteps(.2);
+    assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);
+    close(api.aim.x,direction.x);close(api.aim.z,direction.z);
+    close(api.player.x,0);close(api.player.z,0);
+    assert.equal(api.pointer.active,false,'No dragged target cursor');
+    throwTouch('pointerup',90,65);
+    close(api.throwWindup.dir.x,direction.x);close(api.throwWindup.dir.z,direction.z);
     playerSteps(.75);
-    assert.equal(enemy.hp, hp - Math.round(api.stats.power * 2.2), 'The actual swept flying hammer must hit exactly once');
-    assert.ok(api.touch.x > .99); close(api.facing.x, walking.x); close(api.facing.z, walking.z);
+    assert.equal(enemy.hp,hp-Math.round(api.stats.power*2.2));
+    assert.ok(api.touch.turnOnly,'Releasing throw does not release the movement thumb');
   });
 });
 
@@ -1315,21 +1343,26 @@ test('mobile throws in vertical and diagonal screen directions hit once, return,
     [0, -60, 'still'], [0, 60, 'guard'], [-60, 0, 'moving'],
     [60, 0, 'spin'], [-50, -50, 'moving'], [50, 50, 'still'],
   ]) touchArena(() => {
+    api.settings.throwAutoLock=false;
     if (mode === 'moving') { moveStick('pointerdown', 1, 0); playerSteps(.05); }
     if (mode === 'spin') spinFuel(true);
     const priorAction = mode === 'guard' ? 'guardButton' : mode === 'spin' ? 'attackButton' : null;
     if (priorAction) { pointerEvent(priorAction, 'pointerdown', { pointerId: 303 }); playerSteps(.4); }
-    throwTouch('pointerdown'); throwTouch('pointermove', dx, dy);
+    throwTouch('pointerdown');
+    // Turn with the only stick; the action thumb can wobble without steering.
+    const length=Math.hypot(dx,dy);moveStick('pointerdown',dx/length*.28,dy/length*.28,101);moveStick('pointermove',dx/length*.28,dy/length*.28,101);
+    throwTouch('pointermove', -dx, -dy);
     assert.ok(api.touchThrowAim);
     assert.equal(api.spin, null); assert.equal(api.guarding, false);
     if (priorAction) pointerEvent(priorAction, 'pointerup', { pointerId: 303 });
+    // The fuel targets are only for entering spin; manual throws must not
+    // rely on auto-ricochet routing through this ring to hit the new target.
+    if(mode==='spin')for(const e of api.enemies){e.x+=100;e.z+=100;e.mesh.position.set(e.x,0,e.z);}
     playerSteps(.08);
     const direction = { ...api.aim };
-    const projectedOrigin = api.screenPoint(api.player.x, api.player.y + 1.2, api.player.z);
-    const projectedTarget = api.screenPoint(api.player.x + direction.x * 6, api.player.y + 1.2, api.player.z + direction.z * 6);
-    const screenDX = projectedTarget.x - projectedOrigin.x, screenDY = projectedTarget.y - projectedOrigin.y;
-    assert.ok((screenDX * dx + screenDY * dy) / (Math.hypot(screenDX, screenDY) * Math.hypot(dx, dy)) > .999,
-      'An off-center action thumb must aim along its drag, including vertical screen travel');
+    const intended=core.screenMovement(dx,dy);
+    assert.ok(direction.x*intended.x+direction.z*intended.z>.999,
+      'The left stick, not the action thumb, must own throw direction');
     const enemy = stationaryEnemy('brute', api.player.x + direction.x * 6.5, api.player.z + direction.z * 6.5), hp = enemy.hp;
     throwTouch('pointerup', dx, dy);
     throwTouch('lostpointercapture', dx, dy); // Native release also relinquishes pointer capture.
@@ -1350,7 +1383,7 @@ test('mobile throws in vertical and diagonal screen directions hit once, return,
     assert.equal(projectile.mesh.parent, null);
     assert.equal(api.hero.userData.weaponHeld, true); assert.equal(api.hero.userData.hammerPivot.visible, true);
     assert.equal(api.hero.userData.leftGrip.visible, true); assert.equal(api.hero.userData.rightGrip.visible, true);
-    if (mode === 'moving') assert.ok(api.touch.x > .99, 'Catching the hammer must not release the movement thumb');
+    assert.ok(api.touch.turnOnly, 'Catching the hammer must not release the turning thumb');
     throwTouch('pointerdown'); throwTouch('pointerup');
     assert.ok(api.throwWindup, 'The caught hammer must be available for another deliberate throw');
   });
@@ -2352,7 +2385,7 @@ test('a relic queues three illustrated choices without pausing or opening the ar
   assert.equal(api.upgradeQueue.length, 1, 'Number keys must not spend a hidden upgrade');
   choices[0].click();
   assert.equal(api.relics, 0, 'A hidden or stale choice cannot be applied through its click handler');
-  key('KeyU', true); key('KeyU', false);
+  key('KeyQ', true); key('KeyQ', false);
   assert.equal(api.upgradePanelOpen, true); assert.equal(elements.get('upgradePanel').hidden, false);
   const before = { x: api.player.x, z: api.player.z, elapsed: api.elapsed };
   key('KeyD', true); advance(.2); key('KeyD', false);
@@ -3387,23 +3420,22 @@ test('touch confirmation preserves walking and aim between two separate taps',()
   });
 });
 
-test('manual canvas throw aim survives starting the joystick before confirmation',()=>{
+test('manual confirm throw follows the single left stick without a canvas reticle',()=>{
   touchArena(()=>{
     api.settings.throwMode='confirm';api.settings.throwAutoLock=false;
     throwTouch('pointerdown');throwTouch('pointerup');
-    const point=api.screenPoint(-10,api.player.y+1.2,0);
+    const point=api.screenPoint(-12,api.player.y+1.2,0);
     const canvasTouch={pointerId:303,pointerType:'touch',clientX:point.x,clientY:point.y};
     pointerEvent('gameCanvas','pointerdown',canvasTouch);pointerEvent('gameCanvas','pointerup',canvasTouch);
-    api.updateAim();const chosen={...api.aim},before={x:api.player.x,z:api.player.z};
-    assert.ok(chosen.x<-.99,'The canvas touch must choose the intended manual direction');
-    moveStick('pointerdown',1,0);playerSteps(.20);
-    assert.ok(Math.hypot(api.player.x-before.x,api.player.z-before.z)>.2,'The movement thumb must still move the warrior');
-    assert.ok(chosen.x*api.aim.x+chosen.z*api.aim.z>.999,'Walking must preserve the chosen direction instead of replacing it with facing');
+    assert.equal(api.pointer.active,false,'Touching the world during throw does not spawn a movable cursor');
+    moveStick('pointerdown',.28,0);playerSteps(.20);
+    const chosen={...api.aim},expected=core.screenMovement(1,0);
+    close(chosen.x,expected.x);close(chosen.z,expected.z);
+    moveStick('pointerup',.28,0);playerSteps(.1);
+    close(api.aim.x,chosen.x);close(api.aim.z,chosen.z);
     throwTouch('pointerdown');throwTouch('pointerup');
     assert.ok(api.throwWindup);assert.equal(api.throwWindup.target,null);
-    assert.ok(chosen.x*api.throwWindup.dir.x+chosen.z*api.throwWindup.dir.z>.999);
-    assert.ok(api.touch.x>.99,'Confirming the throw must not release the movement thumb');
-    moveStick('pointerup',1,0);
+    close(api.throwWindup.dir.x,chosen.x);close(api.throwWindup.dir.z,chosen.z);
   });
 });
 
@@ -3610,4 +3642,234 @@ test('aim11: sustained contact at low rendering frequency has a bounded effect l
   arena();spinFuel(true);mouseAttack(true);playerSteps(4);
   assert.ok(api.spin);assert.ok(api.arcs.length<=48,'Weapon ribbons cannot grow between rendered frames');
   mouseAttack(false);api.updateEffects(1);assert.equal(api.arcs.length,0);
+});
+
+
+test('aim12: pause after recovery always resets to the horizontal opener in both stances',()=>{
+  for(const mode of [0,1]){
+    arena();if(mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    const opener=mode?'two-broadside':'one-forehand';
+    for(let chain=0;chain<4;chain++){
+      mouseAttack(true);mouseAttack(false);assert.equal(api.swing.variant,opener);
+      playerSteps(api.swing.duration+.04);
+      mouseAttack(true);mouseAttack(false);assert.notEqual(api.swing.variant,opener);
+      playerSteps(api.swing.duration+.8);
+    }
+  }
+});
+test('aim12: interrupts, stance changes and thrown-weapon recovery reset the opening stroke',()=>{
+  for(const reason of ['guard','kick','jump','dash','hurt','throw','pause','stance']){
+    arena();api.settings.throwAutoLock=false;
+    for(let i=0;i<2;i++){mouseAttack(true);mouseAttack(false);playerSteps(api.swing.duration+.02);}
+    if(reason==='guard'){mouseGuard(true);mouseGuard(false);}
+    if(reason==='kick'){api.startKick();playerSteps(.5);}
+    if(reason==='jump'){api.startLeap();playerSteps(2);}
+    if(reason==='dash'){api.dodge();playerSteps(.3);}
+    if(reason==='hurt')api.hurtPlayer(1,1,0,false);
+    if(reason==='throw'){api.startThrow({x:0,z:1});playerSteps(3);}
+    if(reason==='pause'){api.pauseGame();api.pauseGame();}
+    if(reason==='stance'){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    mouseAttack(true);mouseAttack(false);
+    assert.equal(api.swing?.variant,reason==='stance'?'two-broadside':'one-forehand',reason);
+  }
+});
+test('aim13: both throw modes keep an arc and place the illustrated arrow across its front until release',()=>{
+  for(const mode of ['confirm','hold'])touchArena(()=>{
+    api.settings.throwAutoLock=false;api.settings.throwMode=mode;
+    api.setFacing(0,1);throwTouch('pointerdown');
+    if(mode==='confirm')throwTouch('pointerup');
+    playerSteps(.15);api.updateAimPreview();api.updateThrowIndicator();
+    const arrow=api.throwIndicator.mesh;assert.equal(arrow.visible,true);
+    assert.ok(api.meleeHint);assert.equal(arrow.material.depthTest,true);
+    assert.equal(arrow.material.map.image,elements.get('throwArrowImage'));
+    assert.ok(arrow.userData.layout.start<api.stats.range);
+    assert.ok(arrow.userData.layout.start+arrow.userData.layout.length>api.stats.range);
+    assert.ok(arrow.userData.layout.width>=1.25,'A broad graphic, not a line');
+    close(arrow.userData.layout.dx,api.aim.x);close(arrow.userData.layout.dz,api.aim.z);
+    const initial={x:api.player.x,z:api.player.z};moveStick('pointerdown',-.28,0);playerSteps(.15);
+    api.updateThrowIndicator();close(api.player.x,initial.x);close(api.player.z,initial.z);
+    const shown={dx:arrow.userData.layout.dx,dz:arrow.userData.layout.dz};
+    if(mode==='confirm')throwTouch('pointerdown');throwTouch('pointerup');
+    api.updateThrowIndicator();assert.equal(arrow.visible,true,'Windup retains the arrow');
+    close(api.throwWindup.dir.x,shown.dx);close(api.throwWindup.dir.z,shown.dz);
+    playerSteps(.30);api.updateThrowIndicator();assert.equal(arrow.visible,false,'No ghost arrow after launch');
+  });
+});
+test('aim12: cancel/pause hides the throw picture and never leaves a reticle in the FX draw code',()=>{
+  arena();api.settings.throwMode='confirm';key('KeyR',true);key('KeyR',false);
+  api.updateThrowIndicator();assert.equal(api.throwIndicator.mesh.visible,true);
+  api.pauseGame();assert.equal(api.throwIndicator.mesh.visible,false);
+  api.pauseGame();api.updateThrowIndicator();assert.equal(api.throwIndicator.mesh.visible,false);
+  const draw=original.slice(original.indexOf('function drawAim(){'),original.indexOf('function drawFX(){'));
+  assert.doesNotMatch(draw,/c\.arc\(p\.x,p\.y,7|const x=pointer\.x,y=pointer\.y/);
+  assert.match(draw,/throwing\?throwGuidanceDirection/,'The close-range arc also follows the shown throw heading');
+});
+
+// Keep collision fixtures on the rendered weapon. These calls freeze a real
+// input-created stroke at its active pose; they do not replace contact logic.
+function barbedStrikeFixture(level=15){
+  arena(level);api.levels.range=5;api.applyStats();api.poseHero(1);
+  mouseAttack(true);mouseAttack(false);
+  const strike=api.swing;assert.ok(strike);strike.time=strike.duration*.36;api.poseHero(0);
+  const u=api.hero.userData,start=new THREE.Vector3(),end=new THREE.Vector3();
+  assert.equal(u.getBarbedContactSegment(start,end),true);
+  const radius=u.getBarbedContactRadius(),head=worldPosition(u.hammerHead),grip=worldPosition(u.hammerPivot);
+  assert.ok(radius>0&&start.distanceTo(end)>1);
+  strike.barbedPrevious={start:start.clone(),end:end.clone(),active:true};
+  return {strike,u,start,end,radius,head,grip};
+}
+function contactProbe(point,radius=.025){
+  const e=stationaryEnemy('brute',point.x,point.z);
+  // A small collision probe distinguishes the safe hand area from the wire;
+  // ordinary-sized enemies are exercised in the full-animation tests below.
+  Object.assign(e,{radius,height:radius*2,y:point.y-radius,hp:10000,maxHp:10000});
+  e.mesh.position.set(e.x,e.y,e.z);e.mesh.updateMatrixWorld(true);return e;
+}
+
+test('aim13: long metal shafts slash close enemies with reduced damage, a grounded inward tug and immediate impact',()=>{
+  for(const level of [6,10,15])for(const twoHanded of [false,true]){
+    arena(level);api.levels.range=5;api.applyStats();
+    if(twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    api.poseHero(1);
+    const enemy=stationaryEnemy('brute',0,1.7),hp=enemy.hp,rotation=enemy.mesh.quaternion.clone();
+    mouseAttack(true);mouseAttack(false);const strike=api.swing;
+    let contact=false;
+    playerSteps(.5,1/240,()=>{
+      if(contact||enemy.hp===hp)return;
+      contact=true;
+      assert.equal(enemy.hp,hp-Math.round(strike.damage*.55),`Tier ${api.characterStats.weaponTier}, two hands ${twoHanded}`);
+      assert.equal(enemy.impact?.reaction,'slash');assert.ok(enemy.flash>0&&enemy.stagger>=.23);
+      assert.ok(enemy.mesh.quaternion.angleTo(rotation)>.05,'Impact is visible on the damage frame');
+      assert.ok((api.player.x-enemy.x)*enemy.vx+(api.player.z-enemy.z)*enemy.vz>0,'The impulse pulls inward');
+      assert.ok(Math.hypot(enemy.vx,enemy.vz)>0&&Math.hypot(enemy.vx,enemy.vz)<4,'The tug is finite');
+      assert.equal(enemy.vy,0,'The wire does not launch the enemy');
+    });
+    assert.equal(contact,true,'The visible close shaft must connect even when the head is far away');
+    assert.equal(enemy.hp,hp-Math.round(strike.damage*.55),'One target receives one cut during the stroke');
+    const initialSpeed=Math.hypot(enemy.vx,enemy.vz),initialDistance=Math.hypot(enemy.x-api.player.x,enemy.z-api.player.z);
+    for(let i=0;i<60;i++)api.updateEnemies(1/120);
+    assert.ok(Math.hypot(enemy.vx,enemy.vz)<initialSpeed*.1,'The impulse decays instead of attaching the enemy');
+    assert.ok(initialDistance-Math.hypot(enemy.x-api.player.x,enemy.z-api.player.z)<.7,'A single cut only shifts the body a short distance');
+  }
+});
+
+test('aim13: safe grip, side clearance and height clearance cannot deal phantom wire damage',()=>{
+  const {u,start,end,radius,head}=barbedStrikeFixture();
+  const middle=start.clone().lerp(end,.4),side=new THREE.Vector3().subVectors(end,start).cross(new THREE.Vector3(0,1,0)).normalize();
+  const hand=worldPosition(u.rightGripAnchor);
+  const safe=contactProbe(hand),outside=contactProbe(middle.clone().addScaledVector(side,radius+.10));
+  const overhead=contactProbe(middle.clone().add(new THREE.Vector3(0,radius+.15,0)));
+  for(const enemy of [safe,outside,overhead]){
+    assert.equal(combat.firstHammerHit(start,end,[enemy],radius),null,'The probe is outside the rendered wire collider');
+    assert.equal(combat.firstHammerHit(head,head,[enemy],u.getHeadContactRadius()),null);
+  }
+  api.impact(head,head);
+  for(const enemy of [safe,outside,overhead])assert.equal(enemy.hp,enemy.maxHp,'No body-wide or whole-handle melee fallback');
+});
+
+test('aim13: a distant enemy takes the full heavy head hit from a real long-shaft mouse swing',()=>{
+  arena(6);api.levels.range=5;api.applyStats();api.poseHero(1);
+  const enemy=stationaryEnemy('brute',0,api.stats.range+.2),hp=enemy.hp;
+  mouseAttack(true);mouseAttack(false);const strike=api.swing;playerSteps(.4,1/240);
+  assert.equal(enemy.hp,hp-strike.damage);assert.equal(enemy.impact?.reaction,'blunt');assert.ok(enemy.vy>0);
+  assert.ok(enemy.vz>0,'The head keeps its outward push at the end of the long shaft');
+});
+
+test('aim13: wire and head share one target hit per stroke; the next true head contact keeps full outward knockback',()=>{
+  const {strike,u,start,end,head}=barbedStrikeFixture();
+  const enemy=contactProbe(start.clone().lerp(end,.4));
+  api.impact(head,head);
+  const cutHP=enemy.maxHp-Math.round(strike.damage*.55);
+  assert.equal(enemy.hp,cutHP);assert.equal(enemy.impact.reaction,'slash');assert.ok(strike.hits.has(enemy));
+  Object.assign(enemy,{x:head.x,z:head.z,y:head.y-enemy.height/2});enemy.mesh.position.set(enemy.x,enemy.y,enemy.z);
+  assert.ok(combat.firstHammerHit(head,head,[enemy],u.getHeadContactRadius()));
+  api.impact(head,head);assert.equal(enemy.hp,cutHP,'The head cannot add a second damage event to the same cut');
+  api.primeSwing(0);api.beginSwing();const next=api.swing;next.time=next.duration*.36;api.poseHero(0);
+  const nextHead=worldPosition(u.hammerHead);
+  Object.assign(enemy,{x:nextHead.x,z:nextHead.z,y:nextHead.y-enemy.height/2});enemy.mesh.position.set(enemy.x,enemy.y,enemy.z);
+  api.impact(nextHead,nextHead);
+  assert.equal(enemy.hp,cutHP-next.damage);assert.equal(enemy.impact.reaction,'blunt');assert.ok(enemy.vy>0);
+  assert.ok((enemy.x-api.player.x)*enemy.vx+(enemy.z-api.player.z)*enemy.vz>0,'The heavy head pushes away');
+});
+
+test('aim13: a surviving wall occludes a long wire cut before the close enemy',()=>{
+  arena(6);api.levels.range=5;api.applyStats();api.poseHero(1);
+  const wall=placeObject('wall',0,1.2,{w:8,d:.08,h:4,hp:10000,maxHp:10000});
+  const enemy=stationaryEnemy('brute',0,2.3),hp=enemy.hp;
+  mouseAttack(true);mouseAttack(false);const strike=api.swing;playerSteps(.5,1/240);
+  assert.equal(enemy.hp,hp);assert.equal(wall.hp,wall.maxHp-strike.damage);assert.equal(strike.blocked,true);
+});
+
+test('aim13: wire width cannot reach an enemy through a wall that the thin shaft clearance misses',()=>{
+  for(const mode of ['stroke','spin']){
+    const fixture=barbedStrikeFixture(6);
+    let state=fixture.strike;
+    if(mode==='spin'){
+      // Earn the spin with actual input and a target before isolating the
+      // boundary contact. The occlusion check still runs production combat.
+      arena(6);api.levels.range=5;api.applyStats();api.poseHero(1);
+      spinFuel();mouseAttack(true);playerSteps(.4);state=api.spin;assert.ok(state);
+      for(const e of api.enemies){e.x=50;e.z=50;e.mesh.position.set(50,e.y,50);}
+    }
+    const model=api.hero.userData;
+    api.hero.rotation.y=0;model.weaponRig.position.set(0,1.2,0);
+    model.weaponRig.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(0,0,1));
+    api.hero.updateMatrixWorld(true);
+    const start=new THREE.Vector3(),end=new THREE.Vector3();
+    assert.equal(model.getBarbedContactSegment(start,end),true);
+    state.barbedPrevious={start:start.clone(),end:end.clone(),active:true};
+    const radius=model.getBarbedContactRadius(),head=worldPosition(model.hammerHead),grip=worldPosition(model.hammerPivot);
+    const enemy=stationaryEnemy('brute',0,1.86);enemy.radius=.3;
+    const hp=enemy.hp,wall=placeObject('wall',0,1.5,{w:5,d:.1,h:3,hp:10000,maxHp:10000});
+    const contact=barbedContact.sweptBarbedContact({start,end},{start,end},enemy,radius);
+    assert.ok(contact,'The barbs expand contact before the bare shaft reaches the enemy');
+    assert.equal(combat.firstHammerHit(grip,contact,[wall],model.getShaftContactRadius()),null,'The old narrow occlusion check would miss this wall');
+    assert.equal(combat.firstHammerHit(grip,contact,[wall],radius)?.target,wall,'The full wire width is obstructed');
+    if(mode==='spin')api.spinImpact(head,head);else api.impact(head,head);
+    assert.equal(enemy.hp,hp,`${mode}: wire contact cannot cross the wall's front face`);
+    if(mode==='spin')mouseAttack(false);
+  }
+});
+
+test('aim13: separated wire contacts earn and sustain spin, and leaving all targets drains it',()=>{
+  arena(6);api.levels.range=5;api.applyStats();api.poseHero(1);
+  const targets=[[0,1.8],[1.8,0],[0,-1.8],[-1.8,0]].map(([x,z])=>{
+    const e=stationaryEnemy('brute',x,z);e.hp=e.maxHp=10000;return e;
+  });
+  mouseAttack(true);playerSteps(.4);assert.ok(api.spin,'Actual wire contact earns rotation');
+  const active=api.spin,damage=Math.round(active.damage*.55),before=targets.map(e=>e.hp),counts=targets.map(()=>0);
+  playerSteps(1.8,1/240,()=>{
+    targets.forEach((e,i)=>{if(e.hp!==before[i]){assert.equal(before[i]-e.hp,damage);assert.equal(e.impact.reaction,'slash');counts[i]++;before[i]=e.hp;}});
+  });
+  assert.equal(api.spin,active);assert.ok(counts.every(n=>n>=2&&n<=4),'Only separated full turns earn fresh cuts');
+  for(const e of targets){e.x+=50;e.z+=50;e.mesh.position.set(e.x,e.y,e.z);}
+  playerSteps(1.1);assert.equal(api.spin,null,'Holding the button alone cannot renew momentum');
+  mouseAttack(false);
+});
+
+test('aim13: continuous overlap with the same wire segment cannot refill spin on a timer',()=>{
+  arena(6);api.levels.range=5;api.applyStats();api.poseHero(1);
+  spinFuel();mouseAttack(true);playerSteps(.4);const active=api.spin;assert.ok(active);
+  for(const e of api.enemies){e.x=50;e.z=50;e.mesh.position.set(50,e.y,50);}
+  const u=api.hero.userData,start=new THREE.Vector3(),end=new THREE.Vector3(),head=worldPosition(u.hammerHead);
+  assert.equal(u.getBarbedContactSegment(start,end),true);
+  active.barbedPrevious={start:start.clone(),end:end.clone(),active:true};
+  const enemy=contactProbe(start.clone().lerp(end,.4));
+  api.spinImpact(head,head);const hp=enemy.hp;
+  assert.ok(hp<enemy.maxHp);assert.equal(enemy.impact.reaction,'slash');
+  for(let i=0;i<240;i++){
+    active.rotation+=.1;active.time+=1/120;manualCombat.advanceSpinMomentum(active,1/120);api.spinImpact(head,head);
+  }
+  assert.equal(enemy.hp,hp,'Elapsed revolutions without geometric separation are still the same contact');
+  assert.equal(active.momentum,0);mouseAttack(false);
+});
+
+test('aim13: early wood equipment keeps its blunt close contact without wire',()=>{
+  for(const level of [1,3]){
+    arena(level);const start=new THREE.Vector3(),end=new THREE.Vector3();
+    assert.equal(api.hero.userData.getBarbedContactSegment(start,end),false);
+    const enemy=stationaryEnemy('brute',0,1.3),hp=enemy.hp;
+    mouseAttack(true);mouseAttack(false);const strike=api.swing;playerSteps(.4,1/240);
+    assert.equal(enemy.hp,hp-strike.damage);assert.equal(enemy.impact.reaction,'blunt');assert.ok(enemy.vz>0&&enemy.vy>0);
+  }
 });

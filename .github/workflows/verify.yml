@@ -2,7 +2,7 @@ name: Verify Ironfall
 
 on:
   push:
-    branches: [main, feature/forge-menu-platforms]
+    branches: [main, feature/forge-menu-platforms, feature/barbed-wire-aim13]
   pull_request:
   workflow_dispatch:
 

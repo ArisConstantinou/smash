@@ -88,6 +88,21 @@ test('large hits crossing multiple stages detach cumulative damage in one event'
   assert.ok(event.removed.length>40);free(o);
 });
 
+test('successive structural hits keep temporary bounds allocation proportional to model size',()=>{
+  const o=object('skyscraper');strike(o,80);
+  const totalParts=o.destruction.parts.length,previous=indices(o);
+  let clones=0;
+  const originalClone=THREE.Box3.prototype.clone;
+  THREE.Box3.prototype.clone=function(){clones++;return originalClone.call(this);};
+  try {
+    const event=strike(o,10);
+    assert.equal(event.stage,5);assert.ok(event.removed.length>20);
+    assert.ok(indices(o)<previous,'the allocation budget must not skip real destruction');
+    assert.ok(clones<totalParts*2,`bounds work must not allocate per decoration/hole pair (${clones} clones for ${totalParts} pieces)`);
+    assert.equal(strike(o,10),null,'sustained contacts within one health stage remain idempotent');
+  } finally {THREE.Box3.prototype.clone=originalClone;free(o);}
+});
+
 test('car alarms renew one emitter, attenuate with distance, pause, time out and stop on wreck',()=>{
   const events=[],stops=[],scene=new THREE.Scene(),o=object('car');
   const sys=new DestructionSystem(scene,{audio:{play:(...args)=>events.push(args),stopEnvironment:id=>stops.push(id)}});

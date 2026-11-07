@@ -1,21 +1,23 @@
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
-import {DestructionSystem} from './destruction.js?v=20261107-forge9';
+import {DestructionSystem} from './destruction.js?v=20261107-aim13';
 import {createForgeMenu} from './menu.js?v=20261107-cities10';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261107-forge9';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-forge9';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-forge9';
+import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-aim13';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
 import {createWorld} from './world.js?v=20261107-cities10';
-import {GameAudio} from './audio.js?v=20261107-forge9b';
+import {GameAudio} from './audio.js?v=20261107-aim13';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-forge9';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
-import {createSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-kick6';
+import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
+import {createThrowIndicator} from './throw-indicator.js?v=20261107-aim13';
+import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
 import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261107-combat7';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
@@ -44,9 +46,10 @@ audio.preload?.();
 for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
 let destruction=null;
 let forgeMenu=null,gameReady=false,menuBackdropReady=false;
-let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
+let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker,throwIndicator;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
+const freeWeaponTrails=[],weaponTrailRecords=new WeakMap(),trailSide=new THREE.Vector3(),trailCamera=new THREE.Vector3();
 let boss=null,bossSpawned=false,spawnCounter=0,lootCounter=0,announcementTimer=0;
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeTab='powers',upgradeFeedback='';
 let activeCity=null;
@@ -58,6 +61,7 @@ let comboXpCarry=0,comicState=null,lastComicAt=-10,occlusionTimer=0,heroOccluded
 let battleOccluders=new Set(),silhouetteParts=[];
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
 const swingSequences=[createSwingSequence(),createSwingSequence()];
+function resetAttackChain(){for(const sequence of swingSequences)resetSwingSequence(sequence);}
 let attackBuffer=null,spin=null,spinRecovery=null,holdElapsed=0,spinCharge=null;
 let aimPreviewTimer=0,meleeHint=null,meleeHintTargets=[];
 const aimDiagnostics={previews:0,throwPreviews:0};
@@ -187,7 +191,9 @@ function rebuildHeroSilhouette(){
   const root=new THREE.Group();root.name='Player visibility silhouette';root.visible=false;
   const material=new THREE.MeshBasicMaterial({color:0xffdf9d,transparent:true,opacity:.16,depthTest:false,depthWrite:false,toneMapped:false,fog:false});
   root.material=material;silhouetteParts=[];
-  hero.traverse(source=>{if(!source.isMesh)return;const proxy=new THREE.Mesh(source.geometry,material);proxy.matrixAutoUpdate=false;proxy.frustumCulled=false;proxy.renderOrder=45;root.add(proxy);silhouetteParts.push({source,proxy});});
+  // The shaft supplies the wire's silhouette. An instanced coil needs its
+  // instance transforms; drawing its unit geometry as one Mesh is a ghost.
+  hero.traverse(source=>{if(!source.isMesh||source.isInstancedMesh)return;const proxy=new THREE.Mesh(source.geometry,material);proxy.matrixAutoUpdate=false;proxy.frustumCulled=false;proxy.renderOrder=45;root.add(proxy);silhouetteParts.push({source,proxy});});
   scene.add(root);heroSilhouette=root;
 }
 function updateBattleVisibility(dt){
@@ -227,7 +233,7 @@ function setPhase(next){
   audio.setMenuActive?.(next==='menu');menuBackdropReady=false;
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
-  if(next!=='playing'){audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
+  if(next!=='playing'){if(throwIndicator)throwIndicator.mesh.visible=false;audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
   syncTouchControls();
 }
@@ -286,20 +292,42 @@ function makeTelegraph(x,z,radius,tint=0xff665b){
   const mesh=new THREE.Mesh(new THREE.RingGeometry(.88,1,48),new THREE.MeshBasicMaterial({color:tint,transparent:true,opacity:.5,side:THREE.DoubleSide,depthWrite:false}));
   mesh.rotation.x=-Math.PI/2;mesh.position.set(x,.09,z);mesh.scale.setScalar(radius);scene.add(mesh);return mesh;
 }
-function removeEffect(mesh){scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();}
+function removeEffect(mesh){
+  const trail=weaponTrailRecords.get(mesh);
+  if(trail){
+    if(trail.active){trail.active=false;mesh.visible=false;freeWeaponTrails.push(trail);}
+    return;
+  }
+  scene.remove(mesh);mesh.geometry.dispose();mesh.material.dispose();
+}
 function weaponTrail(a,b,width=.3,tint=0xffc473,physical=characterStats.weaponTier<2){
   if(a.distanceToSquared(b)<.00001)return;
   const trailLimit=settings.quality==='low'?24:48;
   while(arcs.length>=trailLimit)removeEffect(arcs.shift().mesh);
+  // Reuse the same bounded GPU buffers/materials across hits and world resets.
+  // A crowded spin must not allocate and dispose a ribbon on every contact.
+  let trail=freeWeaponTrails.pop();
+  if(!trail){
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(18),3).setUsage(THREE.DynamicDrawUsage));
+    const material=new THREE.MeshBasicMaterial({transparent:true,side:THREE.DoubleSide,depthWrite:false});
+    const mesh=new THREE.Mesh(geometry,material);mesh.frustumCulled=false;
+    trail={mesh,active:false,life:0,max:0,opacity:0};weaponTrailRecords.set(mesh,trail);scene.add(mesh);
+  }
   // A camera-facing ribbon has width even on a vertical overhead stroke.
   // Offsetting only along world Y collapses that stroke into a zero-area line.
-  const side=new THREE.Vector3().subVectors(b,a).cross(new THREE.Vector3().subVectors(camera.position,a));
+  const side=trailSide.subVectors(b,a).cross(trailCamera.subVectors(camera.position,a));
   if(side.lengthSq()<1e-8)side.set(1,0,0);side.normalize().multiplyScalar(width);
-  const positions=[a.x-side.x,a.y-side.y,a.z-side.z,a.x+side.x,a.y+side.y,a.z+side.z,b.x+side.x,b.y+side.y,b.z+side.z,
-    a.x-side.x,a.y-side.y,a.z-side.z,b.x+side.x,b.y+side.y,b.z+side.z,b.x-side.x,b.y-side.y,b.z-side.z];
-  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:tint,transparent:true,opacity:physical?.28:.7,side:THREE.DoubleSide,depthWrite:false,blending:physical?THREE.NormalBlending:THREE.AdditiveBlending}));
-  scene.add(mesh);arcs.push({mesh,life:physical?.13:.16,max:physical?.13:.16,opacity:physical?.28:.7});
+  const {mesh}=trail,positions=mesh.geometry.attributes.position;
+  positions.setXYZ(0,a.x-side.x,a.y-side.y,a.z-side.z);
+  positions.setXYZ(1,a.x+side.x,a.y+side.y,a.z+side.z);
+  positions.setXYZ(2,b.x+side.x,b.y+side.y,b.z+side.z);
+  positions.setXYZ(3,a.x-side.x,a.y-side.y,a.z-side.z);
+  positions.setXYZ(4,b.x+side.x,b.y+side.y,b.z+side.z);
+  positions.setXYZ(5,b.x-side.x,b.y-side.y,b.z-side.z);positions.needsUpdate=true;
+  trail.active=true;trail.life=trail.max=physical?.13:.16;trail.opacity=physical?.28:.7;
+  mesh.material.color.setHex(tint);mesh.material.opacity=trail.opacity;
+  mesh.material.blending=physical?THREE.NormalBlending:THREE.AdditiveBlending;mesh.visible=true;arcs.push(trail);
 }
 function createHammerAura(){
   // Keep visual energy outside the hammer hierarchy: it must never enlarge
@@ -454,7 +482,7 @@ function renderCharacterProgress(){
 function forgeWeapon(){
   if(phase!=='playing'||weaponBusy()||swing||spin)return;
   const result=forgeNextWeapon(character);if(!result.ok)return;
-  forgeReadyAnnounced=false;applyStats();persistCharacter();renderUpgradePanel();
+  resetAttackChain();forgeReadyAnnounced=false;applyStats();persistCharacter();renderUpgradePanel();
   pulse(player.x,player.z,3,0xa3e8cc,.5);audio.play('pickup');toast('ΝΕΟΣ ΕΞΟΠΛΙΣΜΟΣ',characterStats.weaponName+' · '+(characterStats.canReturn?'Το όπλο επιστρέφει στο χέρι σου.':characterStats.canAirSmash?'Ξεκλείδωσες την εναέρια συντριβή.':'Το όπλο και ο χαρακτήρας σου δυνάμωσαν.'));
 }
 
@@ -475,7 +503,7 @@ function syncUpgradePanel(){
   $('upgradesToggle').classList.toggle('has-pending',upgradeQueue.length>0);
   $('pendingUpgradeCount').textContent=String(upgradeQueue.length);
   $('pendingUpgradeCount').hidden=upgradeQueue.length===0;
-  $('upgradesToggle').setAttribute('aria-label','Αναβαθμίσεις · '+upgradeQueue.length+' διαθέσιμες επιλογές');
+  $('upgradesToggle').setAttribute('aria-label','Αναβαθμίσεις'+(touchLayout?'':' · Q')+' · '+upgradeQueue.length+' διαθέσιμες επιλογές');
   for(const [tab,id,view] of [['powers','upgradePowerTab','upgradePowerView'],['gear','upgradeGearTab','upgradeGearView']]){
     if($(id)){$(id).setAttribute('aria-selected',String(upgradeTab===tab));$(id).tabIndex=upgradeTab===tab?0:-1;}
     if($(view))$(view).hidden=upgradeTab!==tab;
@@ -539,7 +567,7 @@ function beginSwing(){
   if(dashFollowup>0){swing.damage=Math.round(swing.damage*1.25);swing.dashBoost=true;dashFollowup=0;}
   swing.fromBody=hero.userData.body.rotation.clone();swing.fromBodyY=hero.userData.body.position.y;
   chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q,{variant,duration:swing.duration,weapon:characterStats.weaponTier<2?'wood':'metal',exert:true});
-  hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);
+  hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);rememberBarbedSegment(swing);
 }
 function beginPunch(){
   if(phase!=='playing'||!throwFlight||punch||kick||throwWindup||attackCooldown>0||guardHeld||dashTime>0)return false;
@@ -574,16 +602,49 @@ function startSpin(previousHits=null){
     damage:Math.round(stats.power*SPIN_DAMAGE_SCALE*stancePower()),knockback:4.6,lift:1.1,
     fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromBody:hero.userData.body.rotation.clone(),fromBodyY:hero.userData.body.position.y};
   spinCharge=null;spinRecovery=null;chargeStarted=false;charge=0;attackBuffer=null;attackCooldown=0;guarding=false;
-  hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);audio.play('swing',.3,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});return true;
+  hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);rememberBarbedSegment(spin);audio.play('swing',.3,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});return true;
 }
 function stopSpin(exhausted=false){
   if(!spin)return;
+  resetAttackChain();
   const rig=hero.userData.weaponRig;
   spinRecovery={time:0,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone()};
   facing=pointer.active?{...aim}:touch.aimX||touch.aimY?screenMovement(touch.aimX,touch.aimY):{...spin.attackDir};
   spinCharge=null;if(exhausted)attackCooldown=Math.max(attackCooldown,.14);
   hero.rotation.y=Math.atan2(facing.x,facing.z);spin=null;
   if(chargeRing)chargeRing.visible=false;
+}
+function readBarbedSegment(state){
+  const segment=state.barbedCurrent??={start:new THREE.Vector3(),end:new THREE.Vector3(),active:false,radius:0};
+  segment.active=!!hero.userData.getBarbedContactSegment?.(segment.start,segment.end);
+  segment.radius=segment.active?(hero.userData.getBarbedContactRadius?.()||0):0;
+  return segment;
+}
+function rememberBarbedSegment(state){
+  if(!state)return;
+  const current=readBarbedSegment(state);
+  const previous=state.barbedPrevious??={start:new THREE.Vector3(),end:new THREE.Vector3(),active:false};
+  previous.start.copy(current.start);previous.end.copy(current.end);previous.active=current.active;
+}
+function wireContact(state,current,target){
+  if(!current.active||!current.radius)return null;
+  return sweptBarbedContact(state.barbedPrevious?.active?state.barbedPrevious:current,current,target,current.radius);
+}
+function hitBarbedTarget(target,source,contact){
+  const dir=barbedPullDirection(player,target,contact.motion);
+  const damage=Math.max(1,Math.round(source.damage*BARBED_DAMAGE_SCALE));
+  const response={weapon:'barbed',reaction:'slash',grounded:true,stagger:.24,maxImpulse:barbedPullLimit(player,target,dir)};
+  if(target===boss)hitBoss(damage,dir,BARBED_PULL_FORCE,response);
+  else hitEnemy(target,damage,dir,BARBED_PULL_FORCE,0,contact,response);
+  // Two short steel-colored cuts mark the true contact, including a lethal
+  // strike. They use the existing bounded trail pool, not an attached tether.
+  const motion=contact.motion&&(contact.motion.x||contact.motion.z)?normalize(contact.motion.x,contact.motion.z):dir;
+  const y=contact.y??((target.y||0)+Math.min(1.1,target.height||1));
+  for(const offset of [-.09,.09]){
+    const a=new THREE.Vector3(contact.x-motion.x*.3,y+offset-.08,contact.z-motion.z*.3);
+    const b=new THREE.Vector3(contact.x+motion.x*.3,y+offset+.08,contact.z+motion.z*.3);
+    weaponTrail(a,b,.045,0xd7eee0,false);
+  }
 }
 function spinImpact(from,to){
   const s=spin;if(!s)return;
@@ -594,6 +655,7 @@ function spinImpact(from,to){
   const objects=nearbyObjects(player.x,player.z,stats.range+stats.size+2);
   const headWall=firstHammerHit(from,to,objects,radius),shaftWall=firstHammerHit(grip,to,objects,shaftRadius);
   const wall=shaftWall||headWall;
+  const barbed=readBarbedSegment(s);
   // Contact exit AND an actual full revolution are required. A large wall
   // containing the shaft cannot generate energy just because time passed.
   const touching=new Set();
@@ -601,15 +663,18 @@ function spinImpact(from,to){
   let hits=0,breaks=0;
   for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
     if(e.dead||Math.hypot(e.x-player.x,e.z-player.z)>stats.range+stats.size+(e.radius||1)+2)continue;
-    const headContact=firstHammerHit(from,to,[e],radius),shaftContact=firstHammerHit(grip,to,[e],shaftRadius);
+    let headContact=firstHammerHit(from,to,[e],radius);
+    const shaftContact=characterStats.weaponTier>=2?wireContact(s,barbed,e):firstHammerHit(grip,to,[e],shaftRadius);
+    if(headWall&&headContact&&headContact.t>headWall.t)headContact=null;
     if(!headContact&&!shaftContact)continue;
-    if(headWall&&headContact&&headContact.t>headWall.t&&!shaftContact)continue;
-    const lineOfContact=firstHammerHit(grip,{x:e.x,y:grip.y,z:e.z},[...objects,e],shaftRadius);
-    if(lineOfContact&&lineOfContact.target!==e)continue;
+    const contact=headContact||shaftContact;
+    const contactRadius=!headContact&&characterStats.weaponTier>=2?barbed.radius:shaftRadius;
+    if(firstHammerHit(grip,contact,objects,contactRadius))continue;
     if(!contactTarget(e))continue;
     renewSpinMomentum(s,e);hits++;
     const dir=normalize(e.x-player.x,e.z-player.z);
-    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,headContact||shaftContact);
+    if(!headContact&&characterStats.weaponTier>=2)hitBarbedTarget(e,s,contact);
+    else if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,contact);
   }
   if(wall&&contactTarget(wall.target)){
     renewSpinMomentum(s,wall.target);hits++;
@@ -640,11 +705,12 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   let direction=normalize(dir?.x||0,dir?.z||0);
   if(!direction.x&&!direction.z)direction=normalize(e.x-player.x,e.z-player.z);
   if(!direction.x&&!direction.z)direction={x:0,z:1};
-  const duration=.40+Math.min(force/18,1)*.08,impulse=Math.min(force*1.05,6.4)/mass**.75;
+  const duration=.40+Math.min(force/18,1)*.08;
+  const impulse=Math.min(Math.min(force*1.05,6.4)/mass**.75,Number.isFinite(response.maxImpulse)?Math.max(0,response.maxImpulse):Infinity);
   e.facingYaw??=e.mesh.rotation.y;
-  e.impact={time:0,duration,dirX:direction.x,dirZ:direction.z,mass,
+  e.impact={time:0,duration,dirX:direction.x,dirZ:direction.z,mass,reaction:response.reaction||'blunt',
     amplitude:(.38+Math.min(force/18,1)*.13)/mass**.35,bounced:false,
-    axis:new THREE.Vector3(direction.z,0,-direction.x),rotation:new THREE.Quaternion(),fromRotation:e.mesh.quaternion.clone()};
+    axis:new THREE.Vector3(direction.z,response.reaction==='slash'?.25:0,-direction.x).normalize(),rotation:new THREE.Quaternion(),fromRotation:e.mesh.quaternion.clone()};
   e.hp-=damage;e.flash=.16;e.stagger=Math.max(e.stagger||0,response.stagger??duration);
   // Put a visible recoil on the mesh in the SAME contact step, including the
   // frozen impact frame. Do not wait for a 45 ms animation blend after damage.
@@ -656,7 +722,7 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   // Heavy bodies keep a clear flinch while resisting most of the displacement.
   if(!response.preserveVelocity){
     e.vx=direction.x*impulse;e.vz=direction.z*impulse;
-    e.vy=force>0?clamp((Number.isFinite(lift)?lift:0)*1.12+.15,2.2,4.1)/Math.sqrt(mass):Math.min(e.vy||0,0);
+    e.vy=force>0&&!response.grounded?clamp((Number.isFinite(lift)?lift:0)*1.12+.15,2.2,4.1)/Math.sqrt(mass):Math.min(e.vy||0,0);
     e.kickFlight=null;
   }
   e.hurtTimer=2.4;
@@ -712,8 +778,8 @@ function hitBoss(damage,dir,strength=5,response={}){
   if(!boss||boss.dead||!Number.isFinite(damage)||damage<=0)return;
   damage=followupDamage(boss,damage,response.weapon);
   if(response.combo!==false)recordCombatContact(boss);audio.play('hit',Math.min(1,damage/120),{material:'metal',weapon:response.weapon||(characterStats.weaponTier<2?'wood':'metal')});audio.play('enemyHurt',.8,{type:'siegeMech',fatal:boss.hp<=damage});
-  boss.hp-=damage;boss.flash=.15;boss.stagger=Math.max(boss.stagger,response.stagger??.12);if(!response.preserveVelocity){boss.vx=dir.x*strength*.13;boss.vz=dir.z*strength*.13;}
-  boss.impact={time:0,duration:.32,dirX:dir.x,dirZ:dir.z};
+  boss.hp-=damage;boss.flash=.15;boss.stagger=Math.max(boss.stagger,response.stagger??.12);if(!response.preserveVelocity){const impulse=Math.min(strength*.13,Number.isFinite(response.maxImpulse)?Math.max(0,response.maxImpulse):Infinity);boss.vx=dir.x*impulse;boss.vz=dir.z*impulse;}
+  boss.impact={time:0,duration:.32,dirX:dir.x,dirZ:dir.z,reaction:response.reaction||'blunt'};
   if(response.interrupt!==false&&boss.state!=='enter'){boss.state='recover';boss.timer=Math.max(.32,boss.timer*.35);if(boss.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}}
   applyEnemyFlash(boss.materials,1);impactClouds?.emit(boss.x,boss.y+1.1,boss.z,dir,1.8);showHitPoints(boss,damage);fragments.add(boss.x,2,boss.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
   if(boss.hp<=0)defeatBoss();
@@ -729,23 +795,27 @@ function impact(from=headPrevious,to=headNow){
   const objects=nearbyObjects(player.x,player.z,stats.range+stats.size+2).filter(o=>!s.hits.has(o));
   const headWall=firstHammerHit(from,to,objects,radius),shaftWall=firstHammerHit(grip,to,objects,shaftRadius);
   const wall=shaftWall||headWall;
-  let hits=0,breaks=0;
+  const barbed=readBarbedSegment(s);
+  let hits=0,hardHits=0,breaks=0;
   for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
-    if(s.hits.has(e))continue;
+    if(s.hits.has(e)||e.dead||Math.hypot(e.x-player.x,e.z-player.z)>stats.range+stats.size+(e.radius||1)+2)continue;
     if((e.x-player.x)*s.fx+(e.z-player.z)*s.fz<0)continue;
-    // The moving head and the physical shaft both make contact. This removes
-    // the dead zone that let enemies touching the warrior survive every swing.
-    const headContact=firstHammerHit(from,to,[e],radius),shaftContact=firstHammerHit(grip,to,[e],shaftRadius);
+    // Metal hammers cut with the visible wire beyond the safe grip. Thick
+    // early wood weapons retain their blunt whole-shaft collision.
+    let headContact=firstHammerHit(from,to,[e],radius);
+    const shaftContact=characterStats.weaponTier>=2?wireContact(s,barbed,e):firstHammerHit(grip,to,[e],shaftRadius);
+    if(headWall&&headContact&&headContact.t>headWall.t)headContact=null;
     if(!headContact&&!shaftContact)continue;
-    if(headWall&&headContact&&headContact.t>headWall.t&&!shaftContact)continue;
-    const lineOfContact=firstHammerHit(grip,{x:e.x,y:grip.y,z:e.z},[...objects,e],shaftRadius);
-    if(lineOfContact&&lineOfContact.target!==e)continue;
+    const contact=headContact||shaftContact;
+    const contactRadius=!headContact&&characterStats.weaponTier>=2?barbed.radius:shaftRadius;
+    if(firstHammerHit(grip,contact,objects,contactRadius))continue;
     const dir=normalize(e.x-player.x+s.fx*.3,e.z-player.z+s.fz*.3);s.hits.add(e);hits++;
-    if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,headContact||shaftContact);
+    if(!headContact&&characterStats.weaponTier>=2)hitBarbedTarget(e,s,contact);
+    else{hardHits++;if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,contact);}
   }
-  if(wall){s.hits.add(wall.target);hits++;if(hurtObject(wall.target,s.damage,s.q,wall))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
+  if(wall){s.hits.add(wall.target);hits++;hardHits++;if(hurtObject(wall.target,s.damage,s.q,wall))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
   if(hits){if(chargeHeld)spinCharge={life:.45,hits:s.hits};s.hit=true;shake=Math.max(shake,(.105+s.q*.14)*(breaks?1.2:1));if(!s.feedbackDone){s.feedbackDone=true;s.contactTime=s.time;hitStop=(s.variant==='two-overhead'?.032:s.variant==='two-cross'?.026:.022)+s.q*.006;}}
-  if(hits&&s.charged&&!s.quakeDone){
+  if(hardHits&&s.charged&&!s.quakeDone){
     s.quakeDone=true;const radius=2.3+stats.quake*.7;pulse(to.x,to.z,radius,0xffd48b,.35);
     for(const e of [...enemies])if(!s.hits.has(e)&&Math.hypot(e.x-to.x,e.z-to.z)<radius){s.hits.add(e);hitEnemy(e,s.damage*(.25+stats.quake*.12),normalize(e.x-to.x,e.z-to.z),s.knockback*.7,s.lift);}
     fragments.add(to.x,.2,to.z,20,[0xffbd6a,0xffedbf,0x9ba9a0],7,.1);
@@ -760,19 +830,13 @@ function toggleStance(){
   audio.play('ui');
 }
 function updateAim(preview=true){
-  if(touchThrowAim?.dragged){
-    // Thumb travel is relative to its button. Re-anchor it to the warrior
-    // each frame so movement and Safari's viewport never shift the aim.
-    const origin=screenPoint(player.x,player.y+1.2,player.z),g=touchThrowAim,d=Math.hypot(g.dx,g.dy);
-    const reach=Math.min(screenW,screenH)*.31;
-    pointer.x=origin.x+g.dx/d*reach;pointer.y=origin.y+g.dy/d*reach;pointer.active=true;
-  }
-  const committedDirection=touchThrowAim?.confirming?touchThrowAim.confirmedDirection:!touchThrowAim?.dragged&&(touchThrowQueued?.dir||throwWindup?.dir||touchThrowAim?.manualDirection);
+  const committedDirection=touchThrowAim?.confirming?touchThrowAim.confirmedDirection:
+    touchThrowQueued?.dir||throwWindup?.dir;
   if(committedDirection){
     // Guidance must show the direction the animation will actually release.
     // A stale screen coordinate drifts as the warrior and camera move.
     aim.x=committedDirection.x;aim.z=committedDirection.z;
-  }else if(pointer.active){
+  }else if(pointer.active&&!touchThrowAim?.touchInput){
     aimPlane.constant=-(player.y+1.2);camera.updateMatrixWorld(true);raycaster.setFromCamera({x:pointer.x/screenW*2-1,y:1-pointer.y/screenH*2},camera);
     const point=raycaster.ray.intersectPlane(aimPlane,tempV);
     if(point){const d=normalize(point.x-player.x,point.z-player.z);if(d.x||d.z){aim.x=d.x;aim.z=d.z;}}
@@ -781,6 +845,23 @@ function updateAim(preview=true){
     aim.x=d.x;aim.z=d.z;
   }
   if(preview)updateAimPreview(true);
+}
+function throwGuidanceDirection(){
+  if(throwWindup)return throwWindup.dir;
+  if(touchThrowQueued)return touchThrowQueued.dir;
+  if(touchThrowAim?.confirming){
+    const target=touchThrowAim.confirmedTarget;
+    return target&&validThrowLock(target)?normalize(target.x-player.x,target.z-player.z):touchThrowAim.confirmedDirection;
+  }
+  return throwLock&&settings.throwAutoLock?normalize(throwLock.x-player.x,throwLock.z-player.z):aim;
+}
+function updateThrowIndicator(){
+  if(!throwIndicator)return;
+  const active=phase==='playing'&&!throwFlight&&!!(touchThrowAim||touchThrowQueued||throwWindup);
+  throwIndicator.update({active,origin:player,direction:throwGuidanceDirection(),
+    meleeRange:stats.range,throwRange:characterStats.throwRange,time:visualTime,
+    holding:touchThrowAim?.mode==='hold',
+    heightAt:(x,z)=>world.supportHeight(x,z,0,player.y+.18)});
 }
 function updateAimPreview(withThrow=!!(touchThrowAim||throwWindup)){
   aimDiagnostics.previews++;
@@ -1146,7 +1227,7 @@ function hurtPlayer(damage,dx=0,dz=0,blockable=true){
   if(blockable&&characterStats.hasShield&&directionLength>.01&&stance<.05&&!throwWindup&&!throwFlight&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
 
   player.hp=Math.max(0,player.hp-damage);player.invincible=.85;player.hurtAgo=0;player.vx=dx*4;player.vz=dz*4;
-  redFlash=.55;shake=Math.max(shake,.19);resetHitCombo(combatCombo);comicState=null;audio.play('hurt');floatText(player.x,2.5,player.z,'−'+Math.ceil(damage),'#ff8d80',21);
+  resetAttackChain();redFlash=.55;shake=Math.max(shake,.19);resetHitCombo(combatCombo);comicState=null;audio.play('hurt');floatText(player.x,2.5,player.z,'−'+Math.ceil(damage),'#ff8d80',21);
   if(player.hp<=0)endGame(false);
 }
 function guardContact(from,to){
@@ -1396,7 +1477,7 @@ function dodge(){
   if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
-  punch=null;dashFollowup=1.1;kick=null;dashDirection=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};dashTime=leap?.18:.23;dashCooldown=1.5;
+  resetAttackChain();punch=null;dashFollowup=1.1;kick=null;dashDirection=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};dashTime=leap?.18:.23;dashCooldown=1.5;
   if(leap){leap.airDashed=true;leap.dir={...dashDirection};}player.invincible=Math.max(player.invincible,.3);
   audio.play('dash');pulse(player.x,player.z,1.5,0x86d3c2,.25).position.y=player.y+.08;return true;
 }
@@ -1564,6 +1645,7 @@ function guardDimensions(){
 }
 const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
 function updatePlayer(dt){
+  for(const sequence of swingSequences)tickSwingSequence(sequence,dt,!!(swing||spin));
   player.invincible=Math.max(0,player.invincible-dt);player.hurtAgo+=dt;
   hammerLightning=Math.max(0,hammerLightning-dt);
   kickCooldown=Math.max(0,kickCooldown-dt);if(kick)kick.time+=dt;
@@ -1690,6 +1772,7 @@ function updatePlayer(dt){
     if(g.channelTime-g.trailTime>=1/45){weaponTrail(g.trailFrom||headPrevious,headNow,.13,0x8aeaff);g.trailTime=g.channelTime;g.trailFrom=headNow.clone();}
   }
   headPrevious.copy(headNow);
+  rememberBarbedSegment(swing||spin);
   updateThrownHammer(dt);
   if(touchThrowQueued){
     touchThrowQueued.life-=dt;
@@ -1863,8 +1946,8 @@ function poseHero(dt,moving=false){
   u.updateGrip?.();
   flashMaterials(player,player.invincible>0&&player.hurtAgo<1?(Math.sin(visualTime*30)*.5+.5)*.55:0,0xff8b71);
   chargeRing.visible=!!spin;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(stats.range*.88);chargeRing.material.opacity=spin?.12+Math.sin(spin.rotation*2)*.04:0;chargeRing.material.color.setHex(0xffcb7d);
-  const markerDirection=touchThrowAim?.dragged||touchThrowQueued||throwWindup?aim:facing;
-  directionMarker.position.set(player.x+markerDirection.x*1.15,player.y+.055,player.z+markerDirection.z*1.15);directionMarker.rotation.y=Math.atan2(markerDirection.x,markerDirection.z);directionMarker.visible=phase==='playing';
+  const markerDirection=touchThrowQueued||throwWindup?aim:facing;
+  directionMarker.position.set(player.x+markerDirection.x*1.15,player.y+.055,player.z+markerDirection.z*1.15);directionMarker.rotation.y=Math.atan2(markerDirection.x,markerDirection.z);directionMarker.visible=phase==='playing'&&!touchThrowAim&&!touchThrowQueued&&!throwWindup;
   if(guardRing){const g=guardDimensions();guardRing.visible=guarding;guardRing.position.set(player.x+facing.x*g.forward,player.y+g.height,player.z+facing.z*g.forward);guardRing.scale.setScalar(g.radius/1.72);guardRing.rotation.set(0,Math.atan2(facing.x,facing.z),0);guardRing.material.opacity=.12+Math.sin(guardAngle*2)*.035;}
   if(groundShadow){groundShadow.position.set(player.x,.035,player.z);groundShadow.scale.setScalar(1+player.y*.035);groundShadow.material.opacity=clamp(.34-player.y*.018,.15,.34);groundShadow.visible=phase!=='menu';}
   if(landingMarker){landingMarker.visible=!!leap;landingMarker.position.set(player.x,.09,player.z);landingMarker.scale.setScalar(leap?.slam?5.2+stats.quake*.7:leap?.strike?1.65:.9);landingMarker.material.color.setHex(leap?.slam?0xffbf6d:0x9edac9);}
@@ -1958,7 +2041,7 @@ function updateHUD(force=false){
   $('throwButton')?.classList.toggle('cooldown',!!(throwFlight||throwWindup)||throwCooldown>0);
   $('throwButton')?.classList.toggle('aiming',!!touchThrowAim);
   $('throwButton')?.setAttribute('aria-pressed',String(!!touchThrowAim));
-  const throwLabel=touchThrowAim?(touchThrowAim.mode==='confirm'?'Πάτησε ξανά για ρίψη στον επιλεγμένο στόχο.':'Άφησε για ρίψη στον επιλεγμένο στόχο.'):(settings.throwMode==='confirm'?'Πρώτο πάτημα για στόχευση, δεύτερο για ρίψη.':'Κράτα για στόχευση και άφησε για ρίψη.');
+  const throwLabel=touchThrowAim?(touchThrowAim.mode==='confirm'?'Πάτησε ξανά για ρίψη προς το βέλος στο έδαφος.':'Άφησε για ρίψη προς το βέλος στο έδαφος.'):(settings.throwMode==='confirm'?'Πρώτο πάτημα για στόχευση, δεύτερο για ρίψη.':'Κράτα για στόχευση και άφησε για ρίψη.');
   $('throwButton')?.setAttribute('aria-label',throwLabel);$('throwButton')?.setAttribute('title',throwLabel);
   $('throwButton')?.classList.toggle('returning',!!throwFlight?.returning);
   $('throwButton')?.classList.toggle('queued',!!touchThrowQueued);
@@ -2033,10 +2116,11 @@ function drawAim(){
   if(phase!=='playing')return;
   const c=fxContext;
   const marked=touchThrowAim?(settings.throwAutoLock?throwPreviewTargets:focusedTarget?[focusedTarget]:[]):throwWindup?.target&&!throwWindup.target.dead?[throwWindup.target]:throwFlight?.chainTarget&&!throwFlight.chainTarget.dead?[throwFlight.chainTarget]:[];
-  if(!spin&&!guarding&&!leap&&!touchThrowAim&&!throwWindup&&meleeHint){
-    const direction=swing?{x:swing.fx,z:swing.fz}:manualAttackDirection();
-    const yaw=Math.atan2(direction.x,direction.z),spec=meleeHint;
-    c.save();c.strokeStyle=meleeHintTargets.length?'#f8d48b':'#9dbeb4';c.lineWidth=touchLayout?2:1.5;c.globalAlpha=.46;c.beginPath();
+  if(!spin&&!guarding&&!leap&&meleeHint){
+    const throwing=!!(touchThrowAim||touchThrowQueued||throwWindup);
+    const direction=throwing?throwGuidanceDirection():swing?{x:swing.fx,z:swing.fz}:manualAttackDirection();
+    const yaw=Math.atan2(direction.x,direction.z),spec=throwing?meleeAimSpec({range:stats.range,twoHanded:stance>.9}):meleeHint;
+    c.save();c.strokeStyle=throwing||meleeHintTargets.length?'#f8d48b':'#9dbeb4';c.lineWidth=touchLayout?2:1.5;c.globalAlpha=throwing?.70:.46;c.beginPath();
     for(let i=0;i<=22;i++){
       const a=yaw-spec.halfAngle+i/22*spec.halfAngle*2;
       const p=screenPoint(player.x+Math.sin(a)*spec.range,player.y+.07,player.z+Math.cos(a)*spec.range);
@@ -2049,11 +2133,6 @@ function drawAim(){
       c.globalAlpha=.70;c.strokeStyle='#f7d38b';c.beginPath();
       for(let i=0;i<=24;i++){const a=i/24*Math.PI*2,r=e.radius+.17,p=screenPoint(e.x+Math.sin(a)*r,(e.y||0)+.065,e.z+Math.cos(a)*r);if(!i)c.moveTo(p.x,p.y);else c.lineTo(p.x,p.y);}c.stroke();
     }c.restore();
-  }
-  if(touchThrowAim&&!settings.throwAutoLock&&aimPreview){
-    const p=screenPoint(aimPreview.end.x,aimPreview.end.y,aimPreview.end.z);
-    c.save();c.strokeStyle=focusedTarget?'#f8d48b':'#b1dfda';c.lineWidth=2;c.globalAlpha=.85;
-    c.beginPath();c.arc(p.x,p.y,7,0,Math.PI*2);c.moveTo(p.x-11,p.y);c.lineTo(p.x+11,p.y);c.moveTo(p.x,p.y-11);c.lineTo(p.x,p.y+11);c.stroke();c.restore();
   }
   for(let index=0;index<marked.length;index++){
     const e=marked[index];
@@ -2070,11 +2149,6 @@ function drawAim(){
     }
     const p=screenPoint(e.x,(e.y||0)+.07,e.z);c.font='bold 12px Arial';c.textAlign='center';c.lineWidth=3;c.strokeStyle='#11272c';
     if(settings.throwAutoLock){c.strokeText(String(index+1),p.x,p.y+4);c.fillStyle=focused?'#ffe0a0':'#a4f1e1';c.fillText(String(index+1),p.x,p.y+4);}
-  }
-  if(pointer.active){
-    c.globalAlpha=.85;c.strokeStyle=focusedTarget?'#ffd180':'#badbd2';c.lineWidth=1.35;
-    const x=pointer.x,y=pointer.y;c.beginPath();
-    c.moveTo(x-10,y);c.lineTo(x-4,y);c.moveTo(x+4,y);c.lineTo(x+10,y);c.moveTo(x,y-10);c.lineTo(x,y-4);c.moveTo(x,y+4);c.lineTo(x,y+10);c.stroke();
   }
   c.globalAlpha=1;
 }
@@ -2161,7 +2235,7 @@ function releaseAttack(){
   // second strike; an explicitly tapped buffered strike remains valid.
   updateAttackFeedback();
 }
-function cancelAttack(){spinCharge=null;if(leap)leap.attackHeld=false;stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim||touchThrowQueued)cancelTouchThrow();updateAttackFeedback();}
+function cancelAttack(){resetAttackChain();spinCharge=null;if(leap)leap.attackHeld=false;stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim||touchThrowQueued)cancelTouchThrow();updateAttackFeedback();}
 function pressGuard(){
   if(phase!=='playing')return;
   if(throwFlight)return;
@@ -2215,15 +2289,10 @@ async function testGameAudio(){
 const isTouchPointer=e=>e?.pointerType==='touch'||e?.pointerType==='pen';
 function aimFromClient(e){
   const gesture=touchThrowAim;
-  if(gesture&&!gesture.pressed)gesture.manualDirection=null;
+  if(gesture&&isTouchPointer(e))return;
   const rect=$('gameCanvas').getBoundingClientRect();
   pointer.x=(e.clientX-rect.left)*screenW/Math.max(1,rect.width);
   pointer.y=(e.clientY-rect.top)*screenH/Math.max(1,rect.height);pointer.active=true;
-  if(gesture&&!gesture.pressed&&isTouchPointer(e)){
-    // A canvas tap chooses a world direction. Keep it while the other thumb
-    // starts walking, even when the joystick releases the screen pointer.
-    updateAim();gesture.manualDirection={...aim};
-  }
 }
 function beginTouchThrow(e){
   if(phase!=='playing'||leap||Math.abs(stance-stanceTarget)>.005)return;
@@ -2243,19 +2312,10 @@ function beginTouchThrow(e){
     time:0,channelTime:0,channelAngle:-.7,channeling:false,trailTime:0};
   updateAim();updateHUD();
 }
-function moveTouchThrow(e){
-  const g=touchThrowAim;if(!g||g.confirming||!g.touchInput||!g.pressed||g.pointerId!==e?.pointerId||phase!=='playing')return;
-  g.dx=e.clientX-g.startX;g.dy=e.clientY-g.startY;
-  // Crossing the threshold deliberately starts manual aim. Returning the
-  // thumb to the origin keeps its last useful direction, without a divide by 0.
-  const distance=Math.hypot(g.dx,g.dy);
-  if(distance>=10){g.dragged=true;g.lastX=g.dx;g.lastY=g.dy;g.lockedTarget=null;}
-  else if(g.dragged){g.dx=g.lastX;g.dy=g.lastY;}
-  if(g.dragged)updateAim();
-}
+// The throw tile is a button, never a second directional stick. Finger
+// wobble/drag cannot redirect a throw; turn with the existing left stick.
 function releaseTouchThrow(e){
   if(!touchThrowAim||touchThrowAim.pointerId!==(e?.pointerId??'keyboard'))return;
-  moveTouchThrow(e);
   const g=touchThrowAim;
   if(g.touchInput&&!g.dragged&&!g.lockedTarget){
     pointer.active=false;
@@ -2322,7 +2382,7 @@ function initInput(){
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
   updateSoundButtons();
   window.addEventListener('keydown',e=>{
-    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyU','KeyE'];
+    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyQ','KeyU','KeyE'];
     const focused=document.activeElement,editable=['INPUT','SELECT','TEXTAREA'].includes(focused?.tagName)||focused?.isContentEditable;
     const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
     if(phase==='playing'&&handled.includes(e.code)&&!editable&&!nativeActivation)e.preventDefault();
@@ -2330,7 +2390,7 @@ function initInput(){
     if(phase==='menu'&&e.code==='Enter'&&!e.repeat&&!$('startButton').disabled&&!forgeMenu?.panelOpen&&!editable&&!nativeActivation){startGame();return;}
     if(phase==='playing'&&upgradePanelOpen&&upgradeTab==='powers'&&['Digit1','Digit2','Digit3'].includes(e.code)){if(!e.repeat)$('upgradeChoices').children[Number(e.code.slice(-1))-1]?.click();return;}
     if(phase!=='playing'||editable||nativeActivation)return;
-    if(e.code==='KeyU'&&!e.repeat){toggleUpgradePanel();return;}
+    if(e.code==='KeyQ'||e.code==='KeyU'){if(!e.repeat)toggleUpgradePanel();return;}
     keys.add(e.code);document.querySelector('[data-key="'+e.code+'"]')?.classList.add('active');
     if(e.code==='Space'&&!e.repeat)startLeap();
     if(e.code==='KeyE'&&!e.repeat)startKick();
@@ -2423,7 +2483,7 @@ function initInput(){
   bindAction('guardButton',pressGuard,releaseGuard);
   bindAction('leapButton',startLeap);
   bindAction('kickButton',startKick);
-  bindAction('throwButton',beginTouchThrow,releaseTouchThrow,cancelTouchThrow,moveTouchThrow);
+  bindAction('throwButton',beginTouchThrow,releaseTouchThrow,cancelTouchThrow);
   bindAction('stanceButton',toggleStance);
   bindAction('dashButton',dodge);
   for(const [id,code] of [['moveUpButton','KeyW'],['moveLeftButton','KeyA'],['moveDownButton','KeyS'],['moveRightButton','KeyD']]){
@@ -2476,7 +2536,7 @@ function frame(now){
     updateAim(false);aimPreviewTimer-=realDt;
     if(aimPreviewTimer<=0){updateAimPreview();aimPreviewTimer=settings.quality==='low'?1/20:1/30;}
   }
-  renderer.render(scene,camera);drawFX();
+  updateThrowIndicator();renderer.render(scene,camera);drawFX();
   if(menuBackground)menuBackdropReady=true;
   hudTimer-=realDt;if(hudTimer<=0){updateHUD();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
   minimapTimer-=realDt;if(minimapTimer<=0){drawMinimap();minimapTimer=.18;}
@@ -2501,6 +2561,7 @@ async function init(){
   chargeRing=new THREE.Mesh(new THREE.RingGeometry(.93,1,48),new THREE.MeshBasicMaterial({color:color.gold,side:THREE.DoubleSide,transparent:true,opacity:.5,depthWrite:false}));chargeRing.rotation.x=-Math.PI/2;chargeRing.visible=false;scene.add(chargeRing);
   const arrowGeo=new THREE.BufferGeometry();arrowGeo.setAttribute('position',new THREE.Float32BufferAttribute([-.19,0,-.1,.19,0,-.1,0,0,.25],3));
   directionMarker=new THREE.Mesh(arrowGeo,new THREE.MeshBasicMaterial({color:0xf6cf8a,side:THREE.DoubleSide,transparent:true,opacity:.64,depthWrite:false}));scene.add(directionMarker);
+  throwIndicator=createThrowIndicator(THREE,$('throwArrowImage'));scene.add(throwIndicator.mesh);
   guardRing=new THREE.Mesh(new THREE.RingGeometry(1.68,1.72,64),new THREE.MeshBasicMaterial({color:0x9ee4db,side:THREE.DoubleSide,transparent:true,opacity:.15,depthWrite:false}));guardRing.visible=false;scene.add(guardRing);
   landingMarker=makeTelegraph(0,0,1,0xffc371);landingMarker.visible=false;
   groundShadow=new THREE.Mesh(new THREE.CircleGeometry(.65,24),new THREE.MeshBasicMaterial({color:0x081719,transparent:true,opacity:.32,depthWrite:false}));groundShadow.rotation.x=-Math.PI/2;scene.add(groundShadow);

@@ -265,8 +265,21 @@ export function sampleHammerSwing(progress, options = {}) {
  * The weighted choice prefers a load on the previous follow-through side.
  * `random` is injectable so continuity/coverage can be regression-tested.
  */
+export const HAMMER_CHAIN_RESET_SECONDS = .75;
 export function createSwingSequence() {
-  return {remaining: [], recent: [], last: null, count: 0};
+  return {remaining: [], recent: [], last: null, count: 0, idle: 0};
+}
+export function resetSwingSequence(state) {
+  Object.assign(state, createSwingSequence());
+}
+// This clock advances in simulation time AFTER the current stroke, not from
+// pointer-up: releasing a tap must not erase the combo during its animation.
+export function tickSwingSequence(state, dt, active = false) {
+  if (active) state.idle = 0;
+  else if (state.count) {
+    state.idle = (state.idle || 0) + Math.max(0, Number(dt) || 0);
+    if (state.idle >= HAMMER_CHAIN_RESET_SECONDS) resetSwingSequence(state);
+  }
 }
 export function selectHammerSwing(state, {twoHanded = false, moving = false, random = Math.random} = {}) {
   const pool = twoHanded ? HAMMER_COMBOS.twoHanded : HAMMER_COMBOS.oneHanded;
@@ -284,11 +297,11 @@ export function selectHammerSwing(state, {twoHanded = false, moving = false, ran
   const roll = Number(random());
   let cursor = (Number.isFinite(roll) ? Math.min(.99999999, Math.max(0, roll)) : .5) * weights.reduce((a,b) => a+b, 0);
   let selected = choices.at(-1);
-  // A clean first opening remains learnable; subsequent bags are not reset.
+  // Every new chain opens horizontally; uninterrupted follow-up bags still vary.
   if (!state.count) selected = pool[0];
   else for (let i = 0; i < choices.length; i++) { cursor -= weights[i]; if (cursor < 0) { selected = choices[i]; break; } }
   state.remaining.splice(state.remaining.indexOf(selected), 1);
-  state.last = selected; state.recent.push(selected); state.recent = state.recent.slice(-3); state.count++;
+  state.idle = 0; state.last = selected; state.recent.push(selected); state.recent = state.recent.slice(-3); state.count++;
   return selected;
 }
 

@@ -229,6 +229,58 @@ function logHead(g, banded = false) {
   }
 }
 
+// One small, continuous coil is instanced along the exposed shaft. Reach
+// upgrades add coils instead of stretching spikes into long needles; even a
+// very long weapon needs only one draw call for its entire wire wrapping.
+const BARBED_PITCH = .24, BARBED_START = .77, BARBED_CAPACITY = 256;
+let barbedCoilRadius = 0;
+function makeBarbedCoils() {
+  const key = 'hammer-barbed-coil';
+  if (!GEO.has(key)) {
+    const detail = new THREE.Group();
+    const temporary = [];
+    for (const [phase, tint] of [[0, 0xc1c8c4], [.26, 0x687b81]]) {
+      const curve = new THREE.Curve();
+      curve.getPoint = (t, out = new THREE.Vector3()) => {
+        const angle = t * Math.PI * 2 + phase;
+        return out.set(Math.cos(angle) * .101, (t - .5) * BARBED_PITCH, Math.sin(angle) * .101);
+      };
+      const wire = new THREE.TubeGeometry(curve, 16, .018, 4, false);
+      temporary.push(wire); part(detail, wire, tint, 0, 0, 0);
+    }
+    const up = new THREE.Vector3(0, 1, 0);
+    for (let side = 0; side < 4; side++) {
+      const angle = side * Math.PI / 2, slope = side % 2 ? -1 : 1;
+      const from = new THREE.Vector3(Math.cos(angle) * .09, slope * .018, Math.sin(angle) * .09);
+      const to = new THREE.Vector3(Math.cos(angle) * .213, slope * .074, Math.sin(angle) * .213);
+      const delta = to.clone().sub(from), length = delta.length();
+      const barb = cylinder(detail, side % 2 ? 0xa5b6b7 : 0xe1e0cd, 0, 0, 0, 0, .032, length, 4);
+      barb.position.copy(from).add(to).multiplyScalar(.5);
+      barb.quaternion.setFromUnitVectors(up, delta.divideScalar(length));
+    }
+    compact(detail);
+    for (const geometry of temporary) geometry.dispose();
+    const geometry = detail.children.find(node => node.isMesh).geometry;
+    geometry.computeBoundingBox();
+    const points = geometry.getAttribute('position');
+    // A capsule through the coil centers must also contain the bent tips at
+    // their small axial offsets, including the first and last complete coil.
+    for (let i = 0; i < points.count; i++) barbedCoilRadius = Math.max(barbedCoilRadius,
+      Math.hypot(points.getX(i), points.getY(i), points.getZ(i)));
+    GEO.set(key, geometry);
+  }
+  const mesh = new THREE.InstancedMesh(GEO.get(key), vertexMaterial, BARBED_CAPACITY);
+  mesh.name = 'twistedWireAndBarbs';
+  mesh.count = 0; mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  return mesh;
+}
+
+function drawHandGuard(parent, iron = 0x7e9299) {
+  cylinder(parent, iron, 0, 0, 0, .185, .16, .075, 8);
+  cylinder(parent, 0xc5c9b9, 0, .043, 0, .17, .18, .018, 8);
+}
+
 export function makeWarrior() {
   const root = new THREE.Group();
   root.name = 'Warrior — Stormforged';
@@ -323,6 +375,13 @@ export function makeWarrior() {
   const collar = group(hammerPivot, 'hammerCollar');
   box(collar, P.steel, 0, 0, 0, .2, .13, .2);
   compact(collar);
+  // Both hands remain on plain wrapped wood. The metal flange is beyond the
+  // forward hand; the first sharp wire sits farther toward the head again.
+  const handGuard = group(hammerPivot, 'hammerHandGuard', 0, .64, 0);
+  drawHandGuard(handGuard); compact(handGuard);
+  const barbedWrap = group(hammerPivot, 'hammerBarbedWrap');
+  barbedWrap.add(makeBarbedCoils());
+  barbedWrap.visible = false;
   const hammerHead = group(hammerPivot, 'hammerHead', 0, 1.43, 0);
   box(hammerHead, P.ink, 0, 0, 0, 1.27, .58, .63);
   box(hammerHead, P.blue, 0, .015, 0, 1.02, .65, .69);
@@ -563,6 +622,7 @@ export function makeWarrior() {
     shaft.scale.set(1, length, 1);
     collar.position.y = hammerHead.position.y - .31;
     root.userData.reachScale = reachScale;
+    updateBarbedWrap();
     return hammerHead.position.y;
   }
 
@@ -644,6 +704,49 @@ export function makeWarrior() {
   // fit an entire log or hammer through guard/orbit poses without assumptions
   // about which equipment axis is longest.
   const getHeadHalfExtents = () => headContactDimensions().halfExtents;
+  const barbedInstance = new THREE.Matrix4();
+  function barbedCoilCount(reach = reachScale) {
+    if (equipmentTier < 2) return 0;
+    measureContactGeometry();
+    const headY = .43 + reach;
+    // Stop before the actual head underside and the retaining collar. Large
+    // head upgrades and compact guard/orbit poses must not bury active wire.
+    const end = Math.min(headY - .385, headY + contactCache.head.min.y * hammerHead.scale.y - .04);
+    return Math.max(0, Math.min(BARBED_CAPACITY, Math.floor((end - BARBED_START + 1e-8) / BARBED_PITCH)));
+  }
+  function updateBarbedWrap() {
+    const mesh = barbedWrap.children[0], count = barbedCoilCount();
+    handGuard.visible = equipmentTier >= 2;
+    barbedWrap.visible = count > 0;
+    barbedWrap.userData.sectionStart = BARBED_START;
+    barbedWrap.userData.sectionEnd = BARBED_START + count * BARBED_PITCH;
+    barbedWrap.userData.contactRadius = barbedCoilRadius;
+    if (!mesh || mesh.userData.fittedCount === count) return;
+    for (let index = 0; index < count; index++) {
+      barbedInstance.makeTranslation(0, BARBED_START + (index + .5) * BARBED_PITCH, 0);
+      mesh.setMatrixAt(index, barbedInstance);
+    }
+    mesh.count = count; mesh.userData.fittedCount = count;
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingBox(); mesh.computeBoundingSphere();
+  }
+  // Callers reuse their own vectors. These endpoints describe the actual
+  // sharp section, never the grip or a made-up extension of the thin wood.
+  // A single short coil intentionally returns coincident capsule endpoints.
+  function getBarbedContactSegment(start, end) {
+    updateBarbedWrap();
+    if (!weaponHeld || !hammerPivot.visible || !barbedWrap.visible) return false;
+    barbedWrap.updateWorldMatrix(true, false);
+    start.set(0, BARBED_START + BARBED_PITCH / 2, 0).applyMatrix4(barbedWrap.matrixWorld);
+    end.set(0, barbedWrap.userData.sectionEnd - BARBED_PITCH / 2, 0).applyMatrix4(barbedWrap.matrixWorld);
+    return true;
+  }
+  function getBarbedContactRadius() {
+    updateBarbedWrap();
+    if (!weaponHeld || !hammerPivot.visible || !barbedWrap.visible) return 0;
+    barbedWrap.updateWorldMatrix(true, false);
+    return barbedCoilRadius * barbedWrap.matrixWorld.getMaxScaleOnAxis();
+  }
   const headFloorMatrix = new THREE.Matrix4(), headFloorBounds = new THREE.Box3();
   function getHeadFloorY() {
     // Hero-local ground height, independent of the hero's world location or
@@ -663,8 +766,10 @@ export function makeWarrior() {
   const localRootScale = new THREE.Matrix4();
   const localMeshBox = new THREE.Box3();
   const localSphere = new THREE.Sphere();
+  const wireBoundsMatrix = new THREE.Matrix4(), wireInstanceMatrix = new THREE.Matrix4();
   const boundsPoseMatrix = new THREE.Matrix4(), boundsPosePosition = new THREE.Vector3(), boundsPoseScale = new THREE.Vector3();
   function localHammerBounds(requestedReach = reachScale) {
+    updateBarbedWrap();
     const reach = Number.isFinite(requestedReach) ? Math.max(.35, requestedReach) : reachScale;
     const key = [equipmentTier, reach, hammerHead.scale.x, hammerHead.scale.y, hammerHead.scale.z,
       hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z].join(':');
@@ -673,6 +778,21 @@ export function makeWarrior() {
     bounds.makeEmpty();
     localRootScale.makeScale(hammerPivot.scale.x, hammerPivot.scale.y, hammerPivot.scale.z);
     function visit(node, parentMatrix) {
+      if (node === barbedWrap) {
+        // Measure a predicted release reach using virtual instances. This
+        // does not change the held weapon, instance buffer or visibility.
+        const count = barbedCoilCount(reach), mesh = barbedWrap.children[0];
+        if (!count || !mesh) return;
+        node.updateMatrix(); mesh.updateMatrix();
+        wireBoundsMatrix.multiplyMatrices(parentMatrix, node.matrix).multiply(mesh.matrix);
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        for (let index = 0; index < count; index++) {
+          wireInstanceMatrix.makeTranslation(0, BARBED_START + (index + .5) * BARBED_PITCH, 0).premultiply(wireBoundsMatrix);
+          localMeshBox.copy(mesh.geometry.boundingBox).applyMatrix4(wireInstanceMatrix);
+          bounds.union(localMeshBox);
+        }
+        return;
+      }
       if (!node.visible) return;
       node.updateMatrix();
       let poseMatrix = node.matrix;
@@ -727,6 +847,7 @@ export function makeWarrior() {
   function createThrownHammer() {
     // Clone only the actual hammer, with independent resources so disposing
     // the projectile never invalidates the weapon still owned by the hero.
+    updateBarbedWrap();
     const projectile = new THREE.Group();
     projectile.name = `Thrown ${equipmentNames[equipmentTier]}`;
     const weapon = hammerPivot.clone(true);
@@ -768,7 +889,7 @@ export function makeWarrior() {
 
   const weaponKinds = ['log', 'banded-club', 'iron-hammer', 'war-hammer', 'storm-hammer'];
   const equipmentNames = ['Κούτσουρο', 'Δεμένο ρόπαλο', 'Σιδερένιο σφυρί', 'Πολεμικό σφυρί', 'Σφυρί της καταιγίδας'];
-  const weaponSlots = new Set([handle, shaft, collar, hammerHead]);
+  const weaponSlots = new Set([handle, shaft, collar, handGuard, barbedWrap, hammerHead]);
   for(const leg of [leftLeg,rightLeg]){
     for(const child of leg.children.slice())if(child.isMesh){child.removeFromParent();child.geometry?.dispose();}
     const {thigh,shin}=leg.userData;
@@ -780,7 +901,7 @@ export function makeWarrior() {
   const appearanceSlots = [body, leftLeg.userData.thigh, leftLeg.userData.shin, rightLeg.userData.thigh, rightLeg.userData.shin,
     leftArm.getObjectByName('pauldron'), leftArm.userData.upper, leftArm.userData.fore,
     rightArm.getObjectByName('pauldron'), rightArm.userData.upper, rightArm.userData.fore,
-    cape, shield, leftGrip, rightGrip, handle, shaft, collar, hammerHead];
+    cape, shield, leftGrip, rightGrip, handle, shaft, collar, handGuard, barbedWrap, hammerHead];
   const equipmentCache = new Map();
 
   function finishEquipment(parts, tier) {
@@ -815,11 +936,11 @@ export function makeWarrior() {
     const skin = 0xc58c68, skinShadow = 0xa66f51, hair = 0x433026;
     const cloth = tier === 0 ? 0x40565a : tier === 1 ? 0x46534c : P.blueDark;
     const iron = tier === 2 ? 0x929e9d : 0x677d89;
-    const draw = (slot, paint) => {
+    const draw = (slot, paint, merge = true) => {
       const detail = new THREE.Group();
       paint(detail);
       const sourceGeometry = detail.userData.sourceGeometry;
-      if (detail.children.length) compact(detail);
+      if (merge && detail.children.length) compact(detail);
       sourceGeometry?.dispose();
       for (const mesh of detail.children) mesh.name = `${weaponKinds[tier]}-${slot.name}`;
       parts.set(slot, detail.children.slice());
@@ -966,6 +1087,8 @@ export function makeWarrior() {
       cylinder(g, iron, 0, 0, 0, .15, .14, .13, 8);
       box(g, 0xbbc3b9, 0, 0, .15, .065, .065, .03);
     });
+    draw(handGuard, g => { if (tier >= 2) drawHandGuard(g, iron); });
+    draw(barbedWrap, g => { if (tier >= 2) g.add(makeBarbedCoils()); }, false);
     draw(hammerHead, g => {
       if (tier < 2) { logHead(g, tier === 1); return; }
       const width = tier === 2 ? 1.03 : 1.25, height = tier === 2 ? .47 : .58, depth = tier === 2 ? .49 : .62;
@@ -1011,6 +1134,7 @@ export function makeWarrior() {
       shieldEquipped, shieldStored: shieldEquipped && stance >= .65, color: next < 2 ? 0xc58c68 : P.blue,
       fragments: next < 2 ? [0x795638, 0xb18b59, 0xc58c68, 0x40565a] : [P.blue, P.steel, P.gold, P.hot] });
     localBoundsCache.key = ''; localMatrices.clear(); contactCache.tier = -1;
+    updateBarbedWrap();
     updateGrip();
     return next;
   }
@@ -1018,11 +1142,12 @@ export function makeWarrior() {
   const getWeaponMaterials = () => equipmentCache.get(equipmentTier).weaponMaterials;
 
   root.userData = {
-    body, leftLeg, rightLeg, legRest, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
+    body, leftLeg, rightLeg, legRest, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, handGuard, barbedWrap, cape,
     leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
     shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach, setUnarmedPose,
     setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld, getThrowMetrics,
     getSpinRadius, getHeadContactRadius, getHeadForwardExtent, getShaftContactRadius, getHeadHalfExtents, getHeadFloorY,
+    getBarbedContactSegment, getBarbedContactRadius,
     weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,
     stance: 0, shieldStored: false, weaponHeld: true, reachScale: 1,
     hammerRest: { x: 0, y: 0, z: 0 },

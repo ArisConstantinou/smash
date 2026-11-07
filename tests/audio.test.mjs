@@ -205,7 +205,7 @@ test('intense mixed combat stays within the source and vocal budgets, and frees 
   const ctx = audio.ctx;
   for (let n = 0; n < 150; n++) {
     ctx.currentTime += .27;
-    audio.play('hit', 1, { material: ['flesh', 'metal', 'masonry', 'wood'][n % 4], weapon: 'wood' });
+    audio.play('hit', 1, { material: ['flesh', 'metal', 'masonry', 'wood'][n % 4], weapon: n%3===0?'barbed':'wood' });
     audio.play('swing', 1, { exert: true, duration: .7, variant: 'two-overhead' });
     audio.play('enemyHurt', 1, { type: 'zombie', fatal: true });
     assert.ok(audio._sources.size <= 64); assert.ok(audio._voices.size <= 2);
