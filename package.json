@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules --test tests/*.test.mjs tests/game.integration.mjs"
+    "test": "node --import ./tools/node-environment.mjs --experimental-vm-modules --test tests/*.test.mjs tests/game.integration.mjs",
+    "build:wasm": "sh tools/build-wasm.sh"
   },
-  "description": "IRONFALL \u2014 retro 3D hammer horde survival"
+  "description": "IRONFALL — retro 3D hammer horde survival"
 }

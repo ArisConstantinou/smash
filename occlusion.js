@@ -23,7 +23,11 @@ export function occludesBattlePoint(object, point, towardsCamera, distance=140) 
   const length=Math.hypot(towardsCamera.x,towardsCamera.y,towardsCamera.z);
   if (!Number.isFinite(length)||length<1e-6) return false;
   const origin={x:point.x+towardsCamera.x/length*distance,y:point.y+towardsCamera.y/length*distance,z:point.z+towardsCamera.z/length*distance};
-  const hit=firstHammerHit(origin,point,[object],.025);
+  // This is only a broad-phase envelope. Calling object.geometryHit here
+  // repeats an expensive swept-sphere/triangle query before the exact rendered
+  // surface raycast below, for every body sample and every nearby building.
+  const envelope={x:object.x,z:object.z,w:object.w,d:object.d,y:base,h:object.h};
+  const hit=firstHammerHit(origin,point,[envelope],.025);
   if(!hit||hit.t>=.9995)return false;
   if(!object.mesh)return true; // Geometry-free callers use the conservative box.
   if(!object.mesh.visible)return false;

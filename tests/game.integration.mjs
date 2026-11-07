@@ -28,6 +28,9 @@ import * as manualCombat from '../manual-combat.js';
 import * as weaponRest from '../weapon-rest.js';
 import * as throwIndicatorModule from '../throw-indicator.js';
 import * as barbedContact from '../barbed-contact.js';
+import * as vehicleEffectsModule from '../vehicle-effects.js';
+import * as performanceModule from '../performance-hud.js';
+import * as weaponPoseModule from '../weapon-pose.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -180,6 +183,11 @@ function synthetic(exports, identifier) {
   return new vm.SyntheticModule(names, function () { for (const name of names) this.setExport(name, exports[name]); }, { context: sandbox, identifier });
 }
 const imports = new Map([
+  ['./vehicle-effects.js', synthetic(vehicleEffectsModule, 'real-vehicle-effects')],
+  ['./renderer-policy.js', synthetic({createGameRenderer: async ({canvas}) => new FakeRenderer({canvas})}, 'renderer-test-surface')],
+  ['./collision-wasm.js', synthetic({loadCollisionWasm: async () => false, collisionWasmStatus: () => ({active:false})}, 'wasm-bootstrap-test-surface')],
+  ['./performance-hud.js', synthetic(performanceModule, 'real-performance-hud')],
+  ['./weapon-pose.js', synthetic(weaponPoseModule, 'real-weapon-pose')],
   ['./vendor/three.module.js', synthetic({ ...THREE, WebGLRenderer: FakeRenderer }, 'three-test-surface')],
   ['./models.js', synthetic(models, 'real-models')],
   ['./world.js', synthetic(world, 'real-world')],
@@ -212,7 +220,7 @@ export const __integration = {
   get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,segmentObjects,
-  get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
+  get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},get vehicleEffects(){return vehicleEffects;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
   get phase(){return phase;}, get combatCombo(){return combatCombo;}, get comboXpCarry(){return comboXpCarry;}, get battleOccluders(){return battleOccluders;}, get heroSilhouette(){return heroSilhouette;}, get upgradeTab(){return upgradeTab;}, get comicState(){return comicState;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
@@ -251,7 +259,7 @@ await game.link(specifier => {
   return imports.get(localModule);
 });
 await game.evaluate();
-await Promise.resolve();
+for(let i=0;i<10;i++)await Promise.resolve();
 const api = game.namespace.__integration;
 const initialThrowMode=api.settings.throwMode;
 const initialAutoLock=api.settings.throwAutoLock;
@@ -3201,14 +3209,13 @@ test('wall impacts injure and stun launched enemies without repeated wall damage
  assert.ok(e.hp<1000-kickPhysics.kickStats(1,0).damage);assert.ok(e.stunTime>0);assert.ok(wall.hp<1000);assert.ok(e.z<wall.z-wall.d/2);
  const hp=wall.hp;api.updateEnemies(.15);assert.equal(wall.hp,hp);
 });
-test('base kick damages cars but only an upgraded kick translates their real collider and model',()=>{
+test('every kick moves cars by metres and upgrades add force to the real collider and model',()=>{
  for(const upgraded of [false,true]){
   arena(1,{test:false});if(upgraded)api.levels.kick=2;
   const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:1000,maxHp:1000});const oldZ=car.z;
   api.startKick();playerSteps(.25);assert.ok(car.hp<1000);
   for(let t=0;t<.6;t+=1/120)api.updateMovingVehicles(1/120);
-  if(upgraded){assert.ok(car.z>oldZ+.4);close(car.mesh.position.z,car.z);assert.ok(api.world.nearObjects(car.x,car.z,0).includes(car));}
-  else{close(car.z,oldZ);assert.equal(api.movingVehicles.has(car),false);}
+  assert.ok(car.z>oldZ+2.0, 'A single kick must move the car metres, not millimetres');close(car.mesh.position.z,car.z);assert.ok(api.world.nearObjects(car.x,car.z,0).includes(car));
  }
 });
 test('kicked cars hurt and shove enemies at the car body, not at the player',()=>{
@@ -3872,4 +3879,53 @@ test('aim13: early wood equipment keeps its blunt close contact without wire',()
     mouseAttack(true);mouseAttack(false);const strike=api.swing;playerSteps(.4,1/240);
     assert.equal(enemy.hp,hp-strike.damage);assert.equal(enemy.impact.reaction,'blunt');assert.ok(enemy.vz>0&&enemy.vy>0);
   }
+});
+
+test('perf14: a base kick moves a car metres and higher ranks travel farther without changing the player',()=>{
+ const distances=[];
+ for(const rank of [0,2]){
+  arena(1,{test:false});api.levels.kick=rank;
+  const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:10000,maxHp:10000}),start=car.z;
+  api.startKick();playerSteps(.25);for(let i=0;i<600;i++)api.updateMovingVehicles(1/120);
+  distances.push(car.z-start);assert.ok(car.z-start>5,'A car must slide several metres on an open road');
+  close(api.player.x,0);close(api.player.z,0);close(car.mesh.position.z,car.z);
+ }
+ assert.ok(distances[1]>distances[0]+1);console.log('Vehicle displacement (metres), base and rank+2:',distances);
+});
+test('perf14: car-wall and car-enemy hits emit visible impact and bounded damage effects',()=>{
+ for(const targetKind of ['wall','enemy']){
+  arena(1,{test:false});const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:1000,maxHp:1000});
+  const target=targetKind==='wall'?placeObject('wall',0,5,{w:5,d:.06,h:3,hp:1000,maxHp:1000}):resilientEnemy('zombie',0,5);
+  api.startKick();playerSteps(.25);for(let i=0;i<180&&!car.crashCount;i++)api.updateMovingVehicles(1/120);
+  assert.ok(car.crashCount>0);assert.ok(car.crashTime>0&&car.crashStrength>0);assert.ok(target.hp<target.maxHp);
+  if(targetKind==='wall')assert.ok(car.z+car.d/2<5);
+ }
+});
+test('perf14: damaged cars smoke then burn, effects follow movement and release every resource on reset',()=>{
+ arena();const car=placeObject('car',0,4,{w:2,d:3,h:1.4,hp:1000,maxHp:1000});
+ api.hurtObject(car,460);let effects=api.vehicleEffects;effects.update(.1,api.player,api.camera);
+ assert.equal(effects.smoke.count,8);assert.equal(effects.fire.count,0);
+ api.hurtObject(car,300);effects.update(.1,api.player,api.camera);
+ assert.equal(effects.fire.count,6);const matrix=new THREE.Matrix4();effects.fire.getMatrixAt(0,matrix);const before=matrix.elements[12];
+ car.x+=8;car.mesh.position.x=car.x;effects.update(.1,api.player,api.camera);effects.fire.getMatrixAt(0,matrix);
+ assert.ok(matrix.elements[12]-before>7);
+ api.hurtObject(car,1000);effects.update(10.1,api.player,api.camera);assert.equal(effects.sources.size,0);assert.equal(effects.fire.count,0);
+ arena();assert.equal(effects.disposed,true);assert.equal(effects.smoke.parent,null);assert.equal(effects.fire.parent,null);
+});
+test('perf14: huge-hammer wielding, strikes and slam keep reachable hands and original bone lengths',()=>{
+ for(const twoHanded of [false,true]){
+  arena(15);api.levels.range=14;api.levels.size=12;api.applyStats();
+  if(twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+  const verify=()=>{
+   const u=api.hero.userData;for(const [arm,hand]of [[u.rightArm,u.rightGrip],[u.leftArm,u.leftGrip]]){
+    assert.ok(worldPosition(arm).distanceTo(worldPosition(hand))<=.901,'The gigantic head must not stretch a forearm');
+    close(arm.userData.upper.scale.y,.44);close(arm.userData.fore.scale.y,.46);
+   }
+   close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)),0);
+   if(twoHanded)close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.leftGripAnchor)),0);
+  };
+  api.poseHero(1);verify();
+  mouseAttack(true);mouseAttack(false);playerSteps(.45,1/120,verify);
+  api.startLeap();playerSteps(.25);api.armAirSmash();playerSteps(1.3,1/120,verify);
+ }
 });

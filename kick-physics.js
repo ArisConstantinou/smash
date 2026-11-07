@@ -1,7 +1,7 @@
 // Gameplay-scaled masses (an ordinary enemy is one unit), not kilograms.
 // Momentum transfer is resolved along the contact normal; restitution never
-// creates energy. Buildings are static; the car-moving gate belongs to the
-// kick upgrade rather than to the equipped weapon.
+// creates energy. Buildings stay static. Every kick can move a car; upgrades
+// increase the impulse rather than unlock a barely visible displacement.
 import {segmentBoxHit} from './combat.js?v=20261107-forge9';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const safe=(v,f=0)=>Number.isFinite(v)?v:f;
@@ -22,7 +22,7 @@ export function kickStats(characterLevel=1,upgrades=0){
   const rank=clamp(Math.floor(safe(upgrades)),0,30),growth=1+.025*(Math.max(1,safe(characterLevel,1))-1);
   return {rank:rank+1,damage:Math.round((14+rank*7)*growth),impulse:Math.min(24,8+rank*2.4),
     range:1.30,radius:.23,duration:.38,cooldown:Math.max(.44,.65-rank*.025),
-    canMoveCars:rank>=2,carSpeed:rank>=2?Math.min(5.8,1.8+(rank-2)*.65):0};
+    canMoveCars:true,carSpeed:Math.min(18,7.5+rank*1.25)};
 }
 export function kickVelocity(target,stats){
   const mass=bodyMass(target);

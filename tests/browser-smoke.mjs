@@ -51,7 +51,7 @@ try{
     await context.addInitScript(saved=>{localStorage.setItem('ironfall.character',JSON.stringify(saved));},saved);
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
     try{
-      await page.goto(origin,{waitUntil:'networkidle'});
+      await page.goto(origin+'?renderer=webgl',{waitUntil:'networkidle'});
       await page.waitForFunction(()=>window.__ironfallQA&&!document.querySelector('#startButton').disabled,null,{timeout:45000});
       assert.equal(await page.evaluate(()=>!!document.querySelector('#gameCanvas').getContext('webgl2')),true);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.settings.throwMode),'confirm');

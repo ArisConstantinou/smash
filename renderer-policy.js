@@ -1,0 +1,19 @@
+/** Strict WebGPU by default. No silent WebGL fallback and no browser flags.
+ * The explicit ?renderer=webgl diagnostic mode exists for controlled A/B tests.
+ */
+export async function createGameRenderer({THREE,canvas,mode='webgpu',gpu=globalThis.navigator?.gpu}={}){
+  if(mode==='webgl'){
+    const renderer=new THREE.WebGLRenderer({canvas,antialias:false,alpha:false,powerPreference:'high-performance'});
+    renderer.userData={backend:'WebGL2 · diagnostic'};return renderer;
+  }
+  if(!gpu)throw new Error('Το WebGPU δεν είναι διαθέσιμο σε αυτόν τον browser. Χρειάζεται συμβατός browser/GPU και ενεργή επιτάχυνση γραφικών. Δεν έγινε αυτόματη μετάβαση σε WebGL.');
+  const renderer=new THREE.WebGPURenderer({canvas,antialias:false,alpha:false,powerPreference:'high-performance'});
+  // Pinned r170 installs its own fallback; disable it before asynchronous init.
+  // A post-init backend check also protects this contract when upgrading Three.
+  renderer._getFallback=null;
+  try{
+    await renderer.init();
+    if(renderer.backend?.isWebGPUBackend!==true)throw new Error('WebGPU initialization did not select a WebGPU backend');
+    renderer.userData={backend:'WebGPU'};return renderer;
+  }catch(error){renderer.dispose?.();throw error;}
+}
