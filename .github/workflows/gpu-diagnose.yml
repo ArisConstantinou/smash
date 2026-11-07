@@ -1,0 +1,32 @@
+name: WebGPU loss diagnosis
+on:
+  push:
+    branches: [feature/performance14-webgpu]
+    paths: [tests/browser-gpu-diagnostic.mjs, .github/workflows/gpu-diagnose.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - run: |
+          mkdir -p gpu-diagnostic
+          DEBUG=pw:browser node tests/browser-gpu-diagnostic.mjs 2>&1 | tee gpu-diagnostic/browser.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-loss-diagnostic
+          path: gpu-diagnostic/
+          retention-days: 7

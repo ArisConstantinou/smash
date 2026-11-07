@@ -28,6 +28,8 @@ export function createThrowIndicator(THREE, image) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  const index=new THREE.BufferAttribute(new Uint16Array(rows*6),1).setUsage(THREE.DynamicDrawUsage);
+  geometry.setIndex(index);geometry.setDrawRange(0,0);
   const texture = new THREE.Texture(image);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
@@ -64,14 +66,14 @@ export function createThrowIndicator(THREE, image) {
       positions[i] = x; positions[i + 1] = (Number.isFinite(ground) ? ground : layout.y) - layout.y + .075;
       positions[i + 2] = z;
     }
-    const indices = [];
+    let used=0;
     for (let row = 0; row < rows; row++) {
       const a = row * 2, b = a + 1, c = a + 2, d = a + 3;
       const heights = [a,b,c,d].map(v=>positions[v*3+1]);
       // Don't stretch the picture vertically down a roof edge or across a wall.
-      if (Math.max(...heights) - Math.min(...heights) <= .65) indices.push(a,c,b,b,c,d);
+      if (Math.max(...heights) - Math.min(...heights) <= .65) {const arr=index.array;arr[used++]=a;arr[used++]=c;arr[used++]=b;arr[used++]=b;arr[used++]=c;arr[used++]=d;}
     }
-    geometry.setIndex(indices); geometry.attributes.position.needsUpdate = true;
+    geometry.setDrawRange(0,used);index.needsUpdate=true;geometry.attributes.position.needsUpdate = true;
   }
   function dispose() {
     disposed = true; image?.removeEventListener?.('load', ready);

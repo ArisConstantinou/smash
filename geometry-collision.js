@@ -1,3 +1,4 @@
+import {sweepPartWasm} from './collision-wasm.js?v=20261107-perf14';
 import * as THREE from './vendor/three.module.js';
 
 // Physics uses the same solid pieces as the rendered architecture. The broad
@@ -42,7 +43,9 @@ function buildGeometry(geometry, diagnostics) {
   const position=geometry.attributes.position, index=geometry.index;
   if(!position)return {parts:[],cells:new Map(),bounds:new THREE.Box3()};
   const specs=geometry.userData.collisionParts||geometry.userData.fractureParts;
-  const active=index?new Set(index.array):null, parts=[];
+  const first=Math.max(0,geometry.drawRange.start||0),end=Math.min(index?.count??position.count,first+geometry.drawRange.count);
+  const visibleIndices=index?index.array.subarray(first,end):null;
+  const active=visibleIndices?new Set(visibleIndices):null, parts=[];
   const add=indices=>{const part=makePart(position,indices);if(part)parts.push(part);};
   if(specs?.length) {
     for(const spec of specs) {
@@ -57,7 +60,7 @@ function buildGeometry(geometry, diagnostics) {
       add(ids);
     }
   } else {
-    const ids=index?Array.from(index.array):Array.from({length:position.count},(_,i)=>i);
+    const ids=index?Array.from(visibleIndices):Array.from({length:Math.max(0,end-first)},(_,i)=>i+first);
     // Ordinary Three primitives are convex. An unknown merged mesh falls back
     // to its individual triangle faces, never a hull over disconnected parts.
     if(/^(Box|Cylinder|Cone|Sphere|Icosahedron|Octahedron|Tetrahedron|Plane)Geometry$/.test(geometry.type))add(ids);
@@ -72,7 +75,7 @@ function buildGeometry(geometry, diagnostics) {
       }
   }
   diagnostics.cacheBuilds++;
-  return {geometry,position,positionVersion:position.version,index,indexVersion:index?.version,parts,cells,bounds,
+  return {geometry,position,positionVersion:position.version,index,indexVersion:index?.version,drawStart:geometry.drawRange.start,drawCount:geometry.drawRange.count,parts,cells,bounds,
     matrix:new THREE.Matrix4().makeScale(0,0,0),inverse:new THREE.Matrix4(),worldBounds:new THREE.Box3(),revision:0};
 }
 
@@ -196,6 +199,8 @@ function quadraticFirst(a,b,c,maximum) {
 // finite edge cylinders and vertex spheres form the real rounded Minkowski
 // boundary; expanded AABBs/planes alone would invent hits at empty corners.
 function sweepPart(part,start,direction,radius,maximum) {
+  const accelerated=sweepPartWasm(part,start,direction,radius,maximum);
+  if(accelerated!==undefined)return accelerated;
   let best=maximum,found=false;
   const accept=t=>{if(t!==null&&t<=best+1e-10){best=Math.max(0,t);found=true;}};
   if(part.closed&&part.worldTriangles.every(t=>dot(t.normal,delta(start,t.a))<=EPS))return 0;
@@ -237,7 +242,7 @@ function sweepPart(part,start,direction,radius,maximum) {
 export function createGeometryCollision({nearObjects,bounds=117}={}) {
   if(typeof nearObjects!=='function')throw new TypeError('Geometry collision requires a nearby-object query');
   let meshes=new WeakMap(),objectMeshes=new WeakMap(),fallbacks=new WeakMap();
-  const diagnostics={cacheBuilds:0,queries:0,partsTested:0,triangleTests:0};
+  const diagnostics={cacheBuilds:0,queries:0,partsTested:0,triangleTests:0,gridCells:0};
   const queryBox=new THREE.Box3(),localBox=new THREE.Box3(),rootInverse=new THREE.Matrix4(),correction=new THREE.Matrix4(),matrix=new THREE.Matrix4();
   const anchorMatrix=new THREE.Matrix4(),anchorPosition=new THREE.Vector3();
 
@@ -281,7 +286,7 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
         const geometry=node.geometry,position=geometry?.attributes?.position;
         if(!position)continue;
         let cache=meshes.get(node);
-        if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version) {
+        if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version||cache.drawStart!==geometry.drawRange.start||cache.drawCount!==geometry.drawRange.count) {
           cache=buildGeometry(geometry,diagnostics);meshes.set(node,cache);
         }
         if(!cache.parts.length)continue;
@@ -293,10 +298,14 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
         if(b.max.y<minY-EPS||b.min.y>maxY+EPS||b.max.x<minX||b.min.x>maxX||b.max.z<minZ||b.min.z>maxZ)continue;
         queryBox.min.set(minX,Math.max(minY,b.min.y)-EPS,minZ);
         queryBox.max.set(maxX,Math.min(maxY,b.max.y)+EPS,maxZ);
-        localBox.copy(queryBox).applyMatrix4(cache.inverse);
+        localBox.copy(queryBox).applyMatrix4(cache.inverse).intersect(cache.bounds);
+        // A long cast (camera ray/huge hammer) must not scan thousands of empty
+        // grid cells outside this mesh. Clipping cannot remove a real part.
+        if(localBox.isEmpty())continue;
         const seen=new Set();
         for(let cz=Math.floor(localBox.min.z/CELL);cz<=Math.floor(localBox.max.z/CELL);cz++)
           for(let cx=Math.floor(localBox.min.x/CELL);cx<=Math.floor(localBox.max.x/CELL);cx++) {
+            diagnostics.gridCells++;
             for(const id of cache.cells.get(cellKey(cx,cz))||[]) {
               if(seen.has(id))continue;seen.add(id);
               const part=cache.parts[id];if(!part.bounds.intersectsBox(localBox))continue;

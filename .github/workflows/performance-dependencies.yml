@@ -1,0 +1,26 @@
+name: Performance dependencies
+on:
+  push:
+    branches: [feature/performance14-webgpu]
+    paths: [.github/workflows/performance-dependencies.yml]
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch pinned official Three.js package
+        run: |
+          npm pack three@0.170.0 --silent
+          mkdir -p dependencies
+          tar -xzf three-0.170.0.tgz -C dependencies
+          npm view three@0.170.0 dist.integrity > dependencies/npm-integrity.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: three-r170-official
+          path: dependencies
+          retention-days: 3

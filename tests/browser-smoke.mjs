@@ -5,14 +5,14 @@ import {createServer} from 'node:http';
 import {readFile, mkdir, writeFile} from 'node:fs/promises';
 import {resolve, extname, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {chromium} from 'playwright';
+const {chromium}=await import(process.env.SMASH_PLAYWRIGHT||'playwright');
 import {manualCombatQA,verifyManualCombat} from './browser-manual-combat.mjs';
 import {throwIndicatorQA,verifyThrowPicture} from './browser-throw-indicator.mjs';
 import {barbedCombatQA,verifyBarbedCombat} from './browser-barbed-combat.mjs';
 import {createCharacterProgression,xpForNextLevel} from '../character-progression.js';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
-const output=resolve(root,'browser-evidence');await mkdir(output,{recursive:true});
+const output=resolve(process.env.CODEX_TEST_OUTPUT||resolve(root,'browser-evidence'),'smoke');await mkdir(output,{recursive:true});
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.wav':'audio/wav','.mp3':'audio/mpeg','.png':'image/png','.webp':'image/webp'};
 const qa=`\nwindow.__ironfallQA={get phase(){return phase},get settings(){return settings},get audio(){return audio},get player(){return player},get world(){return world},get hero(){return hero},get character(){return character},get menu(){return forgeMenu},get testRun(){return testRun},get aiming(){return !!touchThrowAim},get windup(){return !!throwWindup},get flight(){return !!throwFlight},get throwLock(){return throwLock},setPhase,startGame,persistCharacter,updateSavedCharacter,updatePlayer};\n`;
 const server=createServer(async(req,res)=>{
@@ -25,9 +25,12 @@ const server=createServer(async(req,res)=>{
     res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);
   }catch{res.writeHead(404);res.end();}
 });
-await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-const origin='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
+if(!process.env.SMASH_EXISTING_SERVER)await new Promise(resolve=>server.listen(8000,'127.0.0.1',resolve));
+const origin='http://127.0.0.1:8000';
+let managed;
+const browser=process.env.SMASH_BROWSER_LIFECYCLE
+ ?(managed=await (await import(process.env.SMASH_BROWSER_LIFECYCLE)).launchManagedBrowser(chromium,{headless:true,channel:'chrome',screenshotDir:output})).browser
+ :await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
 const results=[];
 const character=createCharacterProgression(6);character.xp=Math.floor(xpForNextLevel(6)*.6);
 const saved={character,levels:{power:1,size:0,range:0,speed:0,vitality:0,quake:0,kick:0}};
@@ -50,8 +53,9 @@ try{
     const context=await browser.newContext({viewport:{width:config.width,height:config.height},hasTouch:config.mobile,isMobile:config.mobile,deviceScaleFactor:1});
     await context.addInitScript(saved=>{localStorage.setItem('ironfall.character',JSON.stringify(saved));},saved);
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+    if(process.env.SMASH_EXISTING_SERVER)await page.route('**/game.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text())+qa+manualCombatQA+throwIndicatorQA+barbedCombatQA});});
     try{
-      await page.goto(origin,{waitUntil:'networkidle'});
+      await page.goto(origin+'?renderer=webgl',{waitUntil:'networkidle'});
       await page.waitForFunction(()=>window.__ironfallQA&&!document.querySelector('#startButton').disabled,null,{timeout:45000});
       assert.equal(await page.evaluate(()=>!!document.querySelector('#gameCanvas').getContext('webgl2')),true);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.settings.throwMode),'confirm');
@@ -163,7 +167,7 @@ try{
     }finally{await context.close();}
   }
 }finally{
-  await browser.close();await new Promise(resolve=>server.close(resolve));
+  if(managed)await managed.cleanup();else await browser.close();if(server.listening)await new Promise(resolve=>server.close(resolve));
   await writeFile(resolve(output,'results.json'),JSON.stringify(results,null,2));
   console.log(JSON.stringify(results,null,2));
 }

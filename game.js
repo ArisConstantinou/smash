@@ -1,22 +1,27 @@
+import {VehicleEffects} from './vehicle-effects.js?v=20261107-perf14';
+import {createGameRenderer} from './renderer-policy.js?v=20261107-perf14-fix1';
+import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
+import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
+import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
-import {DestructionSystem} from './destruction.js?v=20261107-aim13';
+import {DestructionSystem} from './destruction.js?v=20261107-perf14-fix2';
 import {createForgeMenu} from './menu.js?v=20261107-cities10';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261107-forge9';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
-import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-forge9';
+import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-perf14';
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-aim13';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261107-cities10';
+import {createWorld} from './world.js?v=20261107-perf14-fix1';
 import {GameAudio} from './audio.js?v=20261107-aim13';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
-import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-forge9';
-import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
+import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-perf14';
+import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261107-perf14';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
-import {createThrowIndicator} from './throw-indicator.js?v=20261107-aim13';
+import {createThrowIndicator} from './throw-indicator.js?v=20261107-perf14-fix3';
 import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
 import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261107-combat7';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
@@ -32,6 +37,8 @@ settings.muted=!!settings.muted;
 if(settings.aimControlVersion!==1){settings.throwAutoLock=false;settings.aimControlVersion=1;save('ironfall.settings',settings);}
 settings.throwAutoLock=settings.throwAutoLock===true;
 settings.throwMode=settings.throwMode==='hold'?'hold':'confirm';
+const rendererMode=typeof location!=='undefined'&&new URLSearchParams(location.search).get('renderer')==='webgl'?'webgl':'webgpu';
+const performanceMonitor=new FrameTelemetry();
 const keys = new Set();
 const touch = {x:0,y:0,aimX:0,aimY:0,turnOnly:false,attack:false};
 const inputResetters=[];
@@ -70,7 +77,7 @@ let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,si
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0,landingPose=null;
-let kick=null,kickCooldown=0,vehicleNavTimer=0;
+let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null;
 let punch=null,punchSequence=0,throwLock=null,throwPreviewTargets=[],dashFollowup=0;
 const movingVehicles=new Set();
 const THROW_CHAIN_RADIUS=9,THROW_MAX_HITS=5,HAMMER_LIGHTNING_SECONDS=2.8;
@@ -233,6 +240,8 @@ function setPhase(next){
   audio.setMenuActive?.(next==='menu');menuBackdropReady=false;
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
+  if($('performanceHud'))$('performanceHud').hidden=next!=='playing';
+  performanceMonitor.reset();
   if(next!=='playing'){if(throwIndicator)throwIndicator.mesh.visible=false;audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
   syncTouchControls();
@@ -399,12 +408,14 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   hammerLightning=0;if(hammerAura){hammerAura.root.visible=false;hammerAura.lastPattern=-1;}
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
+  vehicleEffects?.dispose();
   destruction?.dispose();
   world?.dispose();
   world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
   scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
   destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size)});
+  vehicleEffects=new VehicleEffects(scene,document);
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
@@ -760,6 +771,7 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
   if(o.dead||!Number.isFinite(damage)||damage<=0)return false;o.hp-=damage;o.flash=.15;o.shudder=.22;flashMaterials(o,.85);showHitPoints(o,damage);
   const nearest=impactPoint||nearestPoint(player.x,player.z,o),contact={x:nearest.x,y:nearest.y??Math.min(player.y+1,o.h),z:nearest.z};
   const fracture=destruction?.hit(o,contact,player);
+  vehicleEffects?.damage(o);
   if(!fracture)audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
   impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7);
   if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
@@ -1519,7 +1531,7 @@ function kickImpact(from,foot){
     hurtObject(target,k.damage,.15,contact,'foot');
     if(!target.dead&&isVehicle(target)&&k.canMoveCars){
       const speed=kickVelocity(target,k);target.vx=dir.x*speed;target.vz=dir.z*speed;
-      target.kickFlight=makeKickFlight({level,damage:k.damage});target.kickFlight.life=3;
+      target.kickFlight=makeKickFlight({level,damage:k.damage});target.kickFlight.life=5;
       movingVehicles.add(target);
     }
   }
@@ -1586,6 +1598,15 @@ function relocateVehicle(car,x,z){
   else{car.x=nx;car.z=nz;world.rebuildSpatialIndex?.();}
   car.mesh.position.x=nx;car.mesh.position.z=nz;
 }
+function vehicleCrash(car,contact,speed){
+  const n=contact.normal,point={x:contact.x+n.x*car.w*.35,y:(car.baseY||0)+.65,z:contact.z+n.z*car.d*.35};
+  car.crashTime=.34;car.crashNormal={x:n.x,z:n.z};car.crashStrength=Math.min(1,speed/12);
+  car.crashCount=(car.crashCount||0)+1;
+  impactClouds?.emit(point.x,point.y,point.z,n,Math.min(2,.7+speed*.07));
+  fragments.add(point.x,point.y,point.z,Math.min(18,6+Math.round(speed)),[0xffd78b,0xff8c3b,0x9db4be],Math.min(7,2+speed*.3),.07);
+  audio.play('hit',Math.min(1,speed/12),{material:'metal',weapon:'metal'});
+  shake=Math.max(shake,Math.min(.20,.04+speed*.01));
+}
 function updateMovingVehicles(dt){
   if(!movingVehicles.size)return;
   vehicleNavTimer-=dt;
@@ -1606,6 +1627,7 @@ function updateMovingVehicles(dt){
       if(target===boss||enemies.includes(target)){
         const impact=transferMomentum(car,target,n,.05);
         if(impact.impulse){
+          if(!flight.hits.has(target))vehicleCrash(car,contact,speed);
           applyBodyCollisionHit(target,Math.min(160,impact.energy*.65+speed*2),n,flight,impact,bodyMass(car));
           if(target.kickFlight)target.kickFlight.hits.add(car);
         }
@@ -1615,10 +1637,11 @@ function updateMovingVehicles(dt){
         const obstacle=isVehicle(target)?target:{...target,mass:Infinity,isBuilding:true,vx:0,vz:0};
         const impact=transferMomentum(car,obstacle,n,.03);
         if(!flight.hits.has(target)&&impact.impulse){
+          vehicleCrash(car,contact,speed);
           flight.hits.add(target);const damage=Math.min(200,Math.round(impact.energy*.40));
           const p={x:contact.x+n.x*car.w*.35,y:.75,z:contact.z+n.z*car.d*.35};
           hurtObject(target,Math.max(1,damage),.35,p,'metal');hurtObject(car,Math.max(1,Math.round(damage*.45)),.2,p,'metal');
-          if(isVehicle(target)&&!target.dead){target.kickFlight=makeKickFlight(flight,new Set([car,...flight.hits]));target.kickFlight.life=2;movingVehicles.add(target);}
+          if(isVehicle(target)&&!target.dead){target.kickFlight=makeKickFlight(flight,new Set([car,...flight.hits]));target.kickFlight.life=4;movingVehicles.add(target);}
           shake=Math.max(shake,.12);
         }
         if(!isVehicle(target)){const into=oldV.x*n.x+oldV.z*n.z;car.vx=(oldV.x-into*n.x)*.45;car.vz=(oldV.z-into*n.z)*.45;}
@@ -1626,7 +1649,7 @@ function updateMovingVehicles(dt){
       // Do not consume the remainder through a collider. The next fixed step
       // sees updated positions and velocities for every affected body.
     }
-    const damping=Math.exp(-1.7*dt);car.vx*=damping;car.vz*=damping;
+    const damping=Math.exp(-1.1*dt);car.vx*=damping;car.vz*=damping;
     // A car must not overlap the player's movement collider after being kicked
     // past them. Resolution uses the moved box, never the stale spatial index.
     if(!car.dead&&player.y<car.h&&circleOverlaps(player.x,player.z,player.radius,car))world.moveBody(player,0,0);
@@ -1943,6 +1966,9 @@ function poseHero(dt,moving=false){
   }
   else if(spinRecovery){const t=smooth(spinRecovery.time/.12);if(spinRecovery.fromReach!==undefined)u.setReach?.(lerp(spinRecovery.fromReach,u.reachScale,t));rig.position.lerpVectors(spinRecovery.fromPosition,new THREE.Vector3(rp.x,rp.y,rp.z),t);rig.quaternion.copy(spinRecovery.fromRotation).slerp(restQuaternion,t);}
   if((swing||spin||leap?.strike||landingRecovery>0)&&u.getHeadFloorY)rig.position.y+=Math.max(0,.04-u.getHeadFloorY());
+  // Keep both wrists within the anatomical span when head/range upgrades
+  // make the old ground-clearance lift physically unreachable.
+  if(!guarding&&!touchThrowAim?.channeling&&!throwWindup)constrainLargeWeaponPose(u,stance>.9);
   u.updateGrip?.();
   flashMaterials(player,player.invincible>0&&player.hurtAgo<1?(Math.sin(visualTime*30)*.5+.5)*.55:0,0xff8b71);
   chargeRing.visible=!!spin;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(stats.range*.88);chargeRing.material.opacity=spin?.12+Math.sin(spin.rotation*2)*.04:0;chargeRing.material.color.setHex(0xffcb7d);
@@ -1976,6 +2002,13 @@ function updateObjects(dt){
     o.mesh.position.set(o.x+jitter,o.baseY,o.z+jitter*.7);
     const damage=1-o.hp/o.maxHp;
     o.mesh.rotation.z=o.baseRotation.z+(damage>.65?Math.sin(o.seed||1)*.035:0)+jitter*.08;
+    if(isVehicle(o)){
+      o.crashTime=Math.max(0,(o.crashTime||0)-dt);
+      const recoil=o.crashTime>0?Math.sin((.34-o.crashTime)*27)*o.crashTime*(o.crashStrength||0):0;
+      o.mesh.rotation.x=o.baseRotation.x+recoil*(o.crashNormal?.z||0)*.7;
+      o.mesh.rotation.z+=recoil*(o.crashNormal?.x||0)*.7;
+      o.mesh.position.y=o.baseY+Math.abs(recoil)*.2;
+    }
   }
 }
 function updateEffects(dt){
@@ -2497,8 +2530,9 @@ function initInput(){
 
 let lastFrame=0;
 function frame(now){
-  requestAnimationFrame(frame);const realDt=clamp((now-lastFrame)/1000||1/60,0,.25);lastFrame=now;
-  if(document.hidden)return;
+  requestAnimationFrame(frame);const rawFrameDt=Math.max(0,(now-lastFrame)/1000||1/60),realDt=Math.min(.25,rawFrameDt);lastFrame=now;
+  if(document.hidden){performanceMonitor.reset();return;}
+  const frameStart=performance.now();let simulationMs=0;
   forgeMenu?.update(realDt);
   // Keep the workshop's own 3D hero animated while reusing the city backdrop.
   // Drawing the hidden battlefield every frame needlessly taxes mobile GPUs.
@@ -2509,18 +2543,25 @@ function frame(now){
   if(phase==='playing'){
     // Small physics steps retain wall-clock speed and swept hit detection even
     // when rendering is slower. Hit feedback freezes only its exact duration.
-    for(let remaining=realDt;remaining>1e-8&&phase==='playing';){
+    const simulationStart=performance.now(),span=Math.min(realDt,MAX_FRAME_SIMULATION);
+    performanceMonitor.droppedMs+=Math.max(0,rawFrameDt-span)*1000;
+    for(let remaining=span;remaining>1e-8&&phase==='playing';){
       const slice=Math.min(SIMULATION_STEP,remaining),frozen=Math.min(hitStop,slice);
       hitStop=Math.max(0,hitStop-frozen);const dt=slice-frozen;
       if(dt>0){updateGame(dt);simulated+=dt;}
       remaining-=slice;
+      // Stop the catch-up spiral. Normal 10–120 Hz play retains exact swept
+      // steps; overload drops simulation time, never teleports through walls.
+      if(performance.now()-simulationStart>=MAX_SIMULATION_CPU_MS){performanceMonitor.droppedMs+=remaining*1000;break;}
     }
+    simulationMs=performance.now()-simulationStart;
   }else if(phase==='menu'){player.walk+=realDt*.25;poseHero(realDt,false);updateObjects(realDt);}
   const weather=world.regionAt?.(player.x,player.z)?.weather||'rain';
   const environmentDt=phase==='playing'?simulated:phase==='menu'?realDt:0;
   if(phase==='playing')updateObjects(simulated);
   world.update(environmentDt,visualTime,player,weather);
   destruction?.update(environmentDt,player,{active:phase==='playing'});
+  if(phase==='playing')vehicleEffects?.update(environmentDt,player,camera);
   updateEffects(phase==='paused'||phase==='settings'?0:realDt);
   const desired=phase==='menu'?new THREE.Vector3(-5,.6,3.5):new THREE.Vector3(player.x+facing.x*.8,.6+player.y,player.z+facing.z*.8);
   cameraTarget.lerp(desired,1-Math.exp(-realDt*5.6));camera.position.copy(cameraTarget).add(cameraOffset);
@@ -2536,7 +2577,20 @@ function frame(now){
     updateAim(false);aimPreviewTimer-=realDt;
     if(aimPreviewTimer<=0){updateAimPreview();aimPreviewTimer=settings.quality==='low'?1/20:1/30;}
   }
-  updateThrowIndicator();renderer.render(scene,camera);drawFX();
+  updateThrowIndicator();const renderStart=performance.now();renderer.render(scene,camera);
+  const renderCpuMs=performance.now()-renderStart;drawFX();
+  const measured=performanceMonitor.sample(now,{backend:renderer.userData?.backend||'WebGL test',wasm:collisionWasmStatus().active,
+    simulationMs,renderCpuMs,cpuMs:performance.now()-frameStart,
+    calls:renderer.info?.render?.drawCalls??renderer.info?.render?.calls??0,
+    triangles:renderer.info?.render?.triangles??0,geometries:renderer.info?.memory?.geometries??0,
+    debris:destruction?.debris.length||0,destruction:destructionPercent(world.objects)});
+  if(measured){
+    const badge=$('performanceHud');if(badge){badge.hidden=phase!=='playing';
+      badge.textContent=Math.round(measured.fps)+' FPS · '+measured.backend+' · '+(measured.wasm?'WASM':'JS');
+      badge.dataset.slow=String(measured.fps<25);
+      badge.title='CPU '+measured.cpuMs.toFixed(1)+' ms · physics '+measured.simulationMs.toFixed(1)+' ms · render submission '+measured.renderCpuMs.toFixed(1)+' ms · draws '+measured.calls+' · debris '+measured.debris;
+    }
+  }
   if(menuBackground)menuBackdropReady=true;
   hudTimer-=realDt;if(hudTimer<=0){updateHUD();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
   minimapTimer-=realDt;if(minimapTimer<=0){drawMinimap();minimapTimer=.18;}
@@ -2548,9 +2602,10 @@ async function init(){
     onSound:(name,details)=>{if(!settings.muted&&settings.volume>0)audio.unlock().then(()=>audio.play(name,.5,details));},
     onSettings:()=>{previousPhase='menu';setPhase('settings');}});
   initInput();updateSavedCharacter();
-  renderer=new THREE.WebGLRenderer({canvas:$('gameCanvas'),antialias:false,alpha:false,powerPreference:'high-performance'});
+  renderer=await createGameRenderer({THREE,canvas:$('gameCanvas'),mode:rendererMode});
+  await loadCollisionWasm();
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.22;
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=renderer.backend?.isWebGPUBackend?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
   scene=new THREE.Scene();scene.background=new THREE.Color(0x223c40);scene.fog=new THREE.Fog(0x344c4c,34,88);
   camera=new THREE.OrthographicCamera(-20,20,13,-13,.1,160);cameraTarget.set(-5,.6,3.5);camera.position.copy(cameraTarget).add(cameraOffset);camera.lookAt(cameraTarget);
   fillLight=new THREE.HemisphereLight(0xb9dcd9,0x536650,1.45);scene.add(fillLight);
@@ -2576,6 +2631,6 @@ async function init(){
 }
 init().catch(error=>{
   console.error('IRONFALL initialization failed:',error);$('loadingStatus').textContent='Δεν ολοκληρώθηκε η εκκίνηση.';$('fatalError').hidden=false;
-  $('fatalText').textContent='Το παιχνίδι χρειάζεται WebGL 2. Δοκίμασε πρόσφατο Chrome ή Edge με ενεργή επιτάχυνση γραφικών. Λεπτομέρεια: '+error.message;
+  $('fatalText').textContent='Η εκκίνηση WebGPU απέτυχε. Δεν έγινε αυτόματη μετάβαση σε WebGL. Λεπτομέρεια: '+error.message;
   forgeMenu?.setReady(false);resize();requestAnimationFrame(frame);
 });

@@ -210,3 +210,23 @@ test('relocating a vehicle updates its model, new buckets and navigation without
  assert.equal(world.nearObjects(44,0,5).filter(o=>o===car).length,1);
  world.relocateObject(car,old.x,old.z);
 });
+
+test('static city details reuse local transforms while moving vehicles and crane joints still update',()=>{
+ const car=world.objects.find(o=>o.type==='car'),detail=car.mesh.children.find(n=>n.isMesh);
+ assert.ok(detail);world.group.updateMatrixWorld(true);
+ const before=detail.getWorldPosition(new THREE.Vector3()),local=detail.matrix.clone();
+ let recomposed=0;const original=detail.updateMatrix;
+ detail.updateMatrix=function(){recomposed++;return original.call(this);};
+ try{
+  for(let i=0;i<5;i++)world.group.updateMatrixWorld(true);
+  assert.equal(recomposed,0,'An unchanged body panel must not be recomposed for every render or collision query');
+  const x=car.x,z=car.z;world.relocateObject(car,x+2,z+3);world.group.updateMatrixWorld(true);
+  const after=detail.getWorldPosition(new THREE.Vector3());assert.ok(Math.abs(after.x-before.x-2)<1e-8&&Math.abs(after.z-before.z-3)<1e-8);
+  assert.ok(detail.matrix.equals(local));world.relocateObject(car,x,z);
+  const crane=world.objects.find(o=>o.mesh.userData.crane);world.updateVisibility({x:crane.x,z:crane.z});
+  const joint=crane.mesh.userData.crane;world.group.updateMatrixWorld(true);const prior=joint.hook.matrix.clone();
+  world.update(.1,17,{x:crane.x,z:crane.z},'rain');world.group.updateMatrixWorld(true);
+  assert.equal(joint.pivot.matrixAutoUpdate,true);assert.equal(joint.wire.matrixAutoUpdate,true);assert.equal(joint.hook.matrixAutoUpdate,true);
+  assert.equal(joint.hook.matrix.equals(prior),false,'The animated crane must retain its real moving hook');
+ }finally{detail.updateMatrix=original;}
+});
