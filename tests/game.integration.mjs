@@ -24,6 +24,7 @@ import * as combatTools from '../combat-tools.js';
 import * as destructionModule from '../destruction.js';
 import * as menuModule from '../menu.js';
 import * as cityLevels from '../city-levels.js';
+import * as manualCombat from '../manual-combat.js';
 import * as weaponRest from '../weapon-rest.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
@@ -195,12 +196,14 @@ const imports = new Map([
   ['./destruction.js', synthetic(destructionModule, 'real-destruction')],
   ['./menu.js', synthetic(menuModule, 'real-menu')],
   ['./city-levels.js', synthetic(cityLevels, 'real-city-levels')],
+  ['./manual-combat.js', synthetic(manualCombat, 'real-manual-combat')],
   ['./weapon-rest.js', synthetic(weaponRest, 'real-weapon-rest')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
   get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,segmentObjects,
@@ -246,6 +249,7 @@ await game.evaluate();
 await Promise.resolve();
 const api = game.namespace.__integration;
 const initialThrowMode=api.settings.throwMode;
+const initialAutoLock=api.settings.throwAutoLock;
 function emit(name, props = {}) {
   const event = { repeat: false, preventDefault() {}, ...props };
   for (const fn of listeners.get(name) || []) fn(event);
@@ -496,6 +500,10 @@ test('wave one gives breathing room and enemies survive a single hit even from t
   assert.equal(api.kills, 1);
 });
 
+function spinFuel(sides=false){
+  const points=sides?[[0,2.1],[2.1,0],[0,-2.1],[-2.1,0]]:[[api.player.x+api.facing.x*2.1,api.player.z+api.facing.z*2.1]];
+  return points.map(([x,z])=>{const e=stationaryEnemy('brute',x,z);e.hp=e.maxHp=100000;return e;});
+}
 test('stationary mouse aim directs a released left-click into a surviving brute', () => {
   arena();
   aimAt(0, 12); playerSteps(.1);
@@ -545,38 +553,27 @@ test('all eight WASD headings turn the warrior toward travel even with the mouse
   }
 });
 
-test('a moving normal swing strikes along travel instead of turning sideways toward the mouse', () => {
-  arena();
-  const direction = core.screenMovement(1, 0);
-  const point = api.screenPoint(-direction.x * 12, 1.2, -direction.z * 12);
-  aimAt(-direction.x * 12, -direction.z * 12);
-  key('KeyD', true); playerSteps(.04);
-  const front = stationaryEnemy('brute', api.player.x + direction.x * 2.3, api.player.z + direction.z * 2.3);
-  const behind = stationaryEnemy('brute', api.player.x - direction.x * 2.3, api.player.z - direction.z * 2.3);
-  mouseAttack(true, { clientX: point.x, clientY: point.y });
-  mouseAttack(false, { clientX: point.x, clientY: point.y });
-  const strike = api.swing; assert.ok(strike);
-  playerSteps(.4, 1 / 240, () => {
-    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
-    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
-  });
-  key('KeyD', false);
-  assert.equal(front.hp, front.maxHp - strike.damage);
-  assert.equal(behind.hp, behind.maxHp, 'A normal strike must not aim backward at the cursor while walking forward');
+test('a moving normal swing follows the mouse rather than overriding it with WASD', () => {
+  arena();api.settings.throwAutoLock=false;
+  const travel=core.screenMovement(1,0);
+  const point=api.screenPoint(-travel.x*12,1.2,-travel.z*12);
+  key('KeyD',true);playerSteps(.04);
+  const chosen=stationaryEnemy('brute',api.player.x-travel.x*2,api.player.z-travel.z*2);
+  const front=stationaryEnemy('brute',api.player.x+travel.x*2,api.player.z+travel.z*2);
+  const start={x:api.player.x,z:api.player.z};
+  mouseAttack(true,{clientX:point.x,clientY:point.y});mouseAttack(false,{clientX:point.x,clientY:point.y});
+  const strike=api.swing;assert.ok(strike.fx*travel.x+strike.fz*travel.z<-.99);
+  playerSteps(.22);
+  assert.ok(chosen.hp<chosen.maxHp);assert.equal(front.hp,front.maxHp);
+  assert.ok((api.player.x-start.x)*travel.x+(api.player.z-start.z)*travel.z>0,'WASD still controls motion');
+  key('KeyD',false);
 });
 
-test('changing movement direction during a swing immediately turns the body with the feet', () => {
-  arena();
-  key('KeyD', true); playerSteps(.03);
-  mouseAttack(true); mouseAttack(false); playerSteps(.08);
-  assert.ok(api.swing);
-  key('KeyD', false); key('KeyW', true);
-  const direction = core.screenMovement(0, -1);
-  playerSteps(.1, 1 / 240, () => {
-    close(api.facing.x, direction.x); close(api.facing.z, direction.z);
-    close(angleStep(Math.atan2(direction.x, direction.z), api.hero.rotation.y), 0, .001);
-  });
-  key('KeyW', false);
+test('a stroke heading stays stable after contact starts even if movement or cursor reverses',()=>{
+  arena();mouseAttack(true);mouseAttack(false);playerSteps(.08);
+  const dir={x:api.swing.fx,z:api.swing.fz};key('KeyW',true);aimAt(-dir.x*12,-dir.z*12);
+  playerSteps(.1,1/240,()=>{close(api.swing.fx,dir.x);close(api.swing.fz,dir.z);close(api.facing.x,dir.x);close(api.facing.z,dir.z);});
+  key('KeyW',false);
 });
 
 test('a jump and a dodge face their travel direction despite an opposite mouse aim', () => {
@@ -824,12 +821,12 @@ test('a second short left-click during recovery executes once after the current 
 });
 
 test('holding the left mouse button during recovery transitions into a continuous spin and stops on release', () => {
-  arena();
+  arena(); spinFuel(true);
   mouseAttack(true); mouseAttack(false); playerSteps(.2);
   assert.ok(api.swing);
   mouseAttack(true); playerSteps(.15);
   assert.equal(api.spin, null, 'The hold threshold must distinguish a quick tap');
-  playerSteps(.10);
+  playerSteps(.35);
   assert.ok(api.spin); assert.equal(api.swing, null);
   const heldSpin = api.spin;
   playerSteps(1.5);
@@ -928,10 +925,10 @@ test('all four illustrated WASD buttons move continuously and release on pointer
 });
 
 test('one attack control starts on press and holding flows into the pictured continuous spin', () => {
-  arena();
+  arena(); spinFuel(true);
   pointerEvent('attackButton', 'pointerdown'); pointerEvent('attackButton', 'pointerup');
   assert.ok(api.swing); assert.equal(api.swing.charged, false); assert.equal(api.spin, null);
-  arena();
+  arena(); spinFuel(true);
   pointerEvent('attackButton', 'pointerdown');
   assert.ok(api.swing, 'Pointer down commits a visible strike before release');
   playerSteps(.4);
@@ -981,7 +978,7 @@ test('the movement stick has a real deadzone, proportional walking speed and a c
     moveStick('pointerdown', .08, 0); playerSteps(.25);
     close(api.player.x, origin.x); close(api.player.z, origin.z);
     close(api.touch.x, 0); close(api.touch.y, 0);
-    moveStick('pointermove', .56, 0); playerSteps(.25);
+    moveStick('pointermove', .71, 0); playerSteps(.25);
     const slow = Math.hypot(api.player.x - origin.x, api.player.z - origin.z);
     close(slow, api.stats.speed * .5 * .25, .002);
     close(api.facing.x, direction.x); close(api.facing.z, direction.z);
@@ -1038,6 +1035,7 @@ test('a moving thumb can tap a real hammer hit or trigger an aimed leap with ano
 
 test('mobile air smash requires a fresh attack during the jump and its one button follows the landing state', () => {
   touchArena(() => {
+    spinFuel(true);
     api.updateHUD();
     assert.equal(elements.get('attackIcon').getAttribute('href'), '#a-swing');
     pointerEvent('attackButton', 'pointerdown', { pointerId: 202 }); playerSteps(.4);
@@ -1120,7 +1118,7 @@ test('the mobile armory changes grip without pausing and the toolbar sound pictu
 test('joystick movement and held spin or guard have independent owning fingers', () => {
   for (const [id, state, speed] of [['attackButton', 'spin', .84], ['guardButton', 'guarding', .55]]) {
     touchArena(() => {
-      moveStick('pointerdown', 1, 0, 101);
+      moveStick('pointerdown', 1, 0, 101);spinFuel();
       pointerEvent(id, 'pointerdown', { pointerId: 202 }); playerSteps(.4);
       assert.ok(api[state]);
       const origin={x:api.player.x,z:api.player.z};playerSteps(.3);
@@ -1141,7 +1139,7 @@ test('joystick movement and held spin or guard have independent owning fingers',
 test('touch cancellation, lost capture and releases outside the controls stop only their owned input', () => {
   for (const reason of ['pointercancel', 'lostpointercapture', 'outside']) {
     touchArena(() => {
-      moveStick('pointerdown', 1, 0, 101);
+      moveStick('pointerdown', 1, 0, 101);spinFuel();
       pointerEvent('attackButton', 'pointerdown', { pointerId: 202 }); playerSteps(.4);
       if (reason === 'outside') emit('pointerup', { pointerId: 101, pointerType: 'touch', target: document.body });
       else moveStick(reason, 1, 0, 101);
@@ -1318,6 +1316,7 @@ test('mobile throws in vertical and diagonal screen directions hit once, return,
     [60, 0, 'spin'], [-50, -50, 'moving'], [50, 50, 'still'],
   ]) touchArena(() => {
     if (mode === 'moving') { moveStick('pointerdown', 1, 0); playerSteps(.05); }
+    if (mode === 'spin') spinFuel(true);
     const priorAction = mode === 'guard' ? 'guardButton' : mode === 'spin' ? 'attackButton' : null;
     if (priorAction) { pointerEvent(priorAction, 'pointerdown', { pointerId: 303 }); playerSteps(.4); }
     throwTouch('pointerdown'); throwTouch('pointermove', dx, dy);
@@ -1678,7 +1677,7 @@ test('a boosted mobile run keeps manual throw guidance aligned with the captured
 });
 
 test('holding the left mouse button continuously rotates the whole warrior and extended hammer through more than two full turns', () => {
-  arena(); api.poseHero(1);
+  arena(); spinFuel(true); api.poseHero(1);
   mouseAttack(true); playerSteps(.4);
   assert.ok(api.spin); assert.equal(api.swing, null);
   let bodyAngle = api.hero.rotation.y, headAngle = headAzimuth();
@@ -1695,7 +1694,7 @@ test('holding the left mouse button continuously rotates the whole warrior and e
     close(worldPosition(api.hero.userData.rightGrip).distanceTo(worldPosition(api.hero.userData.rightGripAnchor)), 0);
   });
   assert.ok(bodyTravel < -Math.PI * 4, `The body rotated only ${(bodyTravel / Math.PI / 2).toFixed(2)} turns`);
-  close(bodyTravel, -2.1 / .52 * Math.PI * 2, .025);
+  assert.ok(Math.abs(bodyTravel)<=2.1/.52*Math.PI*2+.025,'Earned momentum never exceeds the speed cap');
   close(headTravel, bodyTravel, .15);
   assert.ok(minimumRadius > 1.8, 'The hammer must extend visibly out from the spinning warrior');
   assert.ok(poses.size > 180 && largestStep < .15, 'Body and hammer need continuous poses, not a frame swap');
@@ -1704,25 +1703,25 @@ test('holding the left mouse button continuously rotates the whole warrior and e
 });
 
 test('WASD remains directional and continuous while the warrior spins independently', () => {
-  arena(); api.poseHero(1);
+  arena(); spinFuel(true); api.poseHero(1);
   pointerEvent('attackButton', 'pointerdown'); playerSteps(.4);
   const start = { x: api.player.x, z: api.player.z }, direction = core.screenMovement(1, 0);
-  key('KeyD', true); playerSteps(1); key('KeyD', false);
+  key('KeyD', true); playerSteps(.3); key('KeyD', false);
   const dx = api.player.x - start.x, dz = api.player.z - start.z;
   close(dx * direction.z - dz * direction.x, 0, .001);
-  close(Math.hypot(dx, dz), api.stats.speed * .84, .01);
+  close(Math.hypot(dx, dz), api.stats.speed * .84 * .3, .01);
   assert.ok(api.spin, 'Changing walking direction must not cancel the held spin');
   pointerEvent('attackButton', 'pointerup');
 });
 
 test('a sustained spin hits real targets on every side no more than once per revolution', () => {
   arena(); api.poseHero(1);
-  mouseAttack(true); playerSteps(.4);
   const targets = [[0, 2.1], [2.1, 0], [0, -2.1], [-2.1, 0]].map(([x, z]) => {
     const enemy = stationaryEnemy('brute', x, z); enemy.hp = enemy.maxHp = 1000; return enemy;
   });
+  mouseAttack(true); playerSteps(.4);assert.ok(api.spin);
   const events = targets.map(() => []), previousHP = targets.map(e => e.hp);
-  const damage = Math.round(api.stats.power * .9);
+  const damage = Math.round(api.stats.power * manualCombat.SPIN_DAMAGE_SCALE);
   let t = 0;
   playerSteps(2.3, 1 / 240, dt => {
     t += dt;
@@ -1735,10 +1734,10 @@ test('a sustained spin hits real targets on every side no more than once per rev
     if (t < .04) assert.ok(events.some(hits => hits.length === 0), 'The entire circle must not be damaged instantly');
   });
   events.forEach((hits, index) => {
-    assert.ok(hits.length >= 4 && hits.length <= 5, `Side ${index} received ${hits.length} hits over 2.3 seconds`);
+    assert.ok(hits.length >= 3 && hits.length <= 5, `Side ${index} received ${hits.length} hits over 2.3 seconds`);
     for (let i = 1; i < hits.length; i++) {
       assert.ok(hits[i] - hits[i - 1] >= .52 - 1 / 240 - 1e-7, 'A target must not be hit twice at the turn boundary');
-      assert.ok(hits[i] - hits[i - 1] <= .56, 'Each subsequent physical revolution should reconnect');
+      assert.ok(hits[i] - hits[i - 1] <= .8, 'Each subsequent physical revolution should reconnect');
     }
     assert.ok(targets[index].stagger > 0 && Math.hypot(targets[index].vx, targets[index].vz) > 1);
   });
@@ -1761,7 +1760,7 @@ test('spinning strikes scenery but cannot hit through a surviving wall, outside 
 });
 
 test('releasing the left mouse button stops damage immediately without a charged follow-up', () => {
-  arena(); api.poseHero(1);
+  arena(); spinFuel(true); api.poseHero(1);
   mouseAttack(true); playerSteps(.9);
   assert.ok(api.spin);
   const head = worldPosition(api.hero.userData.hammerHead);
@@ -1779,12 +1778,12 @@ test('releasing the left mouse button stops damage immediately without a charged
 });
 
 test('a second spin input preserves the active turn and its per-target contact cooldown', () => {
-  arena(); mouseAttack(true); playerSteps(.3);
+  arena(); spinFuel(true); mouseAttack(true); playerSteps(.3);
   const activeSpin = api.spin; assert.ok(activeSpin);
   const head = worldPosition(api.hero.userData.hammerHead);
   const enemy = stationaryEnemy('brute', head.x, head.z); enemy.hp = enemy.maxHp = 1000;
   playerSteps(.01);
-  assert.equal(enemy.hp, 1000 - Math.round(api.stats.power * .9));
+  assert.equal(enemy.hp, 1000 - Math.round(api.stats.power * manualCombat.SPIN_DAMAGE_SCALE));
   const afterContact = enemy.hp, startedAt = activeSpin.time;
   for (let request = 0; request < 3; request++) {
     pointerEvent('attackButton', 'pointerdown'); playerSteps(.05);
@@ -1798,7 +1797,7 @@ test('a second spin input preserves the active turn and its per-target contact c
 
 test('RMB, Space, R and Z cancel a held spin and carry out their own actions without restarting it', () => {
   for (const action of ['RMB', 'Space', 'KeyR', 'KeyZ']) {
-    arena(); mouseAttack(true); playerSteps(.3); assert.ok(api.spin);
+    arena(); spinFuel(true); mouseAttack(true); playerSteps(.3); assert.ok(api.spin);
     if (action === 'RMB') chordButtons(3, { button: 2 });
     else key(action, true);
     api.updatePlayer(.01);
@@ -1818,7 +1817,7 @@ test('RMB, Space, R and Z cancel a held spin and carry out their own actions wit
 
 test('pause, blur and pointer cancellation stop a spin and clear held input on resume', () => {
   for (const action of ['pause', 'blur', 'pointercancel']) {
-    arena(); pointerEvent('attackButton', 'pointerdown'); playerSteps(.4); assert.ok(api.spin);
+    arena(); spinFuel(true); pointerEvent('attackButton', 'pointerdown'); playerSteps(.4); assert.ok(api.spin);
     if (action === 'pointercancel') pointerEvent('attackButton', 'pointercancel');
     else if (action === 'pause') { key('Escape', true); key('Escape', false); }
     else emit('blur');
@@ -1832,7 +1831,7 @@ test('pause, blur and pointer cancellation stop a spin and clear held input on r
 
 test('canvas pointer cancellation or lost capture stops a held mouse spin without a delayed swing', () => {
   for (const cancellation of ['pointercancel', 'lostpointercapture']) {
-    arena(); mouseAttack(true); playerSteps(.4); assert.ok(api.spin);
+    arena(); spinFuel(true); mouseAttack(true); playerSteps(.4); assert.ok(api.spin);
     pointerEvent('gameCanvas', cancellation, { pointerId: 10, pointerType: 'mouse', button: 0, buttons: 0 });
     assert.equal(api.spin, null); assert.equal(api.swing, null);
     const swings = audioEvents.filter(event => event.name === 'swing').length;
@@ -1844,7 +1843,7 @@ test('canvas pointer cancellation or lost capture stops a held mouse spin withou
 });
 
 test('RMB interrupts a held LMB spin and its release never reactivates the still-held left button', () => {
-  arena(); mouseAttack(true); playerSteps(.35);
+  arena(); spinFuel(true); mouseAttack(true); playerSteps(.35);
   assert.ok(api.spin);
   chordButtons(3, { button: 2 }); playerSteps(.03);
   assert.equal(api.spin, null); assert.equal(api.guarding, true);
@@ -1901,7 +1900,7 @@ test('an unrelated pointer cannot release a held mouse guard and unowned mouse m
 });
 
 test('two-handed spin keeps both hands attached and carries the stance damage bonus', () => {
-  arena(); key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
+  arena(); spinFuel(true); key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
   assert.equal(api.stance, 1);
   pointerEvent('attackButton', 'pointerdown');playerSteps(.45);assert.ok(api.spin);
   const enemy = stationaryEnemy('brute', 0, 2.1); enemy.hp = enemy.maxHp = 1000;
@@ -1911,7 +1910,7 @@ test('two-handed spin keeps both hands attached and carries the stance damage bo
     }
     assert.equal(api.hero.userData.shieldStored, true);
   });
-  const damage = enemy.maxHp - enemy.hp, expected = Math.round(api.stats.power * .9 * 1.25);
+  const damage = enemy.maxHp - enemy.hp, expected = Math.round(api.stats.power * manualCombat.SPIN_DAMAGE_SCALE * 1.25);
   assert.ok(damage >= expected && damage <= expected * 2); assert.equal(damage % expected, 0);
   pointerEvent('attackButton', 'pointerup');
 });
@@ -2282,25 +2281,14 @@ test('R retains mouse-directed throwing while the walking body stays aligned wit
   key('KeyD', false);
 });
 
-test('enemy target marks follow proximity and visibility and clear when the warrior moves away', () => {
-  arena();
-  const front = stationaryEnemy('brute', 0, 6), side = stationaryEnemy('brute', -5, 1);
-  const far = stationaryEnemy('robot', 0, 20);
-  aimAt(0, 12);
-  assert.ok(api.nearbyTargets.includes(front)); assert.ok(api.nearbyTargets.includes(side));
-  assert.equal(api.nearbyTargets.includes(far), false);
-  assert.equal(api.focusedTarget, front);
-  const wall = placeObject('wall', 0, 3, { w: 5, d: .1, h: 3, hp: 1000, maxHp: 1000 });
-  api.updateAim();
-  assert.equal(api.nearbyTargets.includes(front), false, 'A surviving building or wall prevents a visible target lock');
-  assert.notEqual(api.focusedTarget, front);
-  api.hurtObject(wall, 99999); api.updateAim();
-  assert.ok(api.nearbyTargets.includes(front)); assert.equal(api.focusedTarget, front);
-  api.hitEnemy(front, 99999, { x: 0, z: 1 }, 0, 0); api.updateAim();
-  assert.equal(api.nearbyTargets.includes(front), false, 'A destroyed target loses its mark immediately');
-  key('KeyD', true); playerSteps(3.8); key('KeyD', false); api.updateAim();
-  assert.equal(api.nearbyTargets.length, 0);
-  assert.equal(api.focusedTarget, null, 'Target locks never persist after leaving their proximity');
+test('manual enemy marks require actual reach, direction and unobstructed geometry',()=>{
+  arena();api.settings.throwAutoLock=false;
+  const front=stationaryEnemy('brute',0,2),side=stationaryEnemy('brute',-5,1),far=stationaryEnemy('robot',0,20);
+  aimAt(0,12);api.updateAimPreview(false);
+  assert.ok(api.meleeHintTargets.includes(front));assert.ok(!api.meleeHintTargets.includes(side));assert.ok(!api.meleeHintTargets.includes(far));
+  const wall=placeObject('wall',0,1.3,{w:4,d:.08,h:3,hp:1000,maxHp:1000});
+  api.updateAimPreview(false);assert.ok(!api.meleeHintTargets.includes(front));
+  wall.dead=true;aimAt(0,-12);api.updateAimPreview(false);assert.equal(api.meleeHintTargets.length,0);
 });
 
 test('an R throw that misses also returns automatically after its outward range', () => {
@@ -3038,7 +3026,7 @@ test('LMB starts its stroke and swing audio on DOWN; release never duplicates th
 });
 
 test('one held LMB keeps attacking without repeated clicks, and release stops the sustained damage',()=>{
-  arena(1,{test:false});mouseAttack(true);playerSteps(.5);assert.ok(api.spin);
+  arena(1,{test:false});spinFuel(true);mouseAttack(true);playerSteps(.5);assert.ok(api.spin);
   const enemy=stationaryEnemy('brute',0,2.1);enemy.hp=enemy.maxHp=1000;
   playerSteps(2.7);assert.ok(enemy.hp<=1000-api.spin.damage*3);
   mouseAttack(false);const hp=enemy.hp;playerSteps(.8);assert.equal(enemy.hp,hp);assert.equal(api.swing,null);
@@ -3108,7 +3096,7 @@ test('holding from the opening wood strike reconnects on the next visible pass w
 });
 
 test('the held spin continues the opening leftward cut instead of reversing the body and weapon',()=>{
-  arena(1,{test:false});api.poseHero(1);mouseAttack(true);playerSteps(.17);
+  arena(1,{test:false});spinFuel(true);api.poseHero(1);mouseAttack(true);playerSteps(.17);
   let previousHead=headAzimuth(),previousBody=api.hero.rotation.y;
   let spinHeadTravel=0,spinBodyTravel=0,maxReverse=0;
   playerSteps(.75,1/240,()=>{
@@ -3540,4 +3528,86 @@ test('numbered stationary ricochet preview agrees with real swept contact hit or
   key('KeyR',true);key('KeyR',false);playerSteps(.29);const h=api.throwFlight;assert.ok(h);
   playerSteps(1.5);
   assert.deepEqual([...h.hits].filter(target=>[a,b,c].includes(target)),shown);
+});
+
+test('manual aim is the default and the old default-on setting migrates only once',()=>{
+  assert.equal(initialAutoLock,false);assert.equal(api.settings.aimControlVersion,1);
+  assert.match(original,/if\(settings\.aimControlVersion!==1\)/);
+  assert.doesNotMatch(html,/id="throwAutoLockToggle"[^>]*checked/);
+});
+
+test('aim11: holding attack in empty space repeats normal strokes but never earns spin',()=>{
+  arena(1,{test:false});api.settings.throwAutoLock=false;
+  const before=audioEvents.filter(e=>e.name==='swing').length;mouseAttack(true);
+  playerSteps(3,1/120,()=>{assert.equal(api.spin,null);assert.equal(api.spinCharge,null);});
+  assert.ok(audioEvents.filter(e=>e.name==='swing').length-before>=6,'No repeated clicking required');
+  mouseAttack(false);playerSteps(.5);assert.equal(api.swing,null);
+});
+
+test('aim11: real enemy, vehicle and building hits each earn a held spin',()=>{
+  for(const kind of ['enemy','car','townhouse']){
+    arena(1,{test:false});api.settings.throwAutoLock=false;
+    const target=kind==='enemy'?spinFuel()[0]:placeObject(kind,0,2.1,{w:2,d:1,h:3,hp:100000,maxHp:100000,isBuilding:kind==='townhouse'});
+    mouseAttack(true);playerSteps(.5);
+    assert.ok(target.hp<target.maxHp,kind+' must physically take damage first');
+    assert.ok(api.spin,kind+' contact must earn rotation');assert.ok(api.spin.momentum>0&&api.spin.momentum<=1);
+    mouseAttack(false);
+  }
+});
+
+test('aim11: leaving every target drains momentum and cannot restart spin from held input alone',()=>{
+  arena(1,{test:false});const target=spinFuel()[0];mouseAttack(true);playerSteps(.45);
+  assert.ok(api.spin);const old=api.spin;
+  target.x=50;target.z=50;target.mesh.position.set(50,0,50);
+  let previous=old.momentum;playerSteps(.3,1/120,()=>{assert.ok(old.momentum<=previous);previous=old.momentum;});
+  playerSteps(.7);assert.equal(api.spin,null);
+  playerSteps(2,1/120,()=>assert.equal(api.spin,null));mouseAttack(false);
+});
+
+test('aim11: a target inside the rotating shaft continuously cannot award phantom repeated contact',()=>{
+  arena(1,{test:false});spinFuel();mouseAttack(true);playerSteps(.4);assert.ok(api.spin);
+  const spin=api.spin;const enclosing=placeObject('townhouse',0,0,{w:20,d:20,h:5,hp:100000,maxHp:100000,isBuilding:true});
+  // Keep locomotion outside the experiment: contact the same real geometry
+  // directly, so collision depenetration does not move the warrior away.
+  const from=worldPosition(api.hero.userData.hammerHead);
+  api.spinImpact(from,from);const hp=enclosing.hp;
+  for(let i=0;i<240;i++){spin.rotation+=.1;spin.time+=1/120;manualCombat.advanceSpinMomentum(spin,1/120);api.spinImpact(from,from);}
+  assert.equal(enclosing.hp,hp,'Continuous intersection is one contact, not a new hit each timer');
+  assert.equal(spin.momentum,0);mouseAttack(false);
+});
+
+test('aim11: small stick deflections turn in place, keep direction on release and aim the next attack',()=>{
+  touchArena(()=>{
+    api.settings.throwAutoLock=false;const origin={x:api.player.x,z:api.player.z};
+    moveStick('pointerdown',-.28,0,101);playerSteps(.25);
+    const dir=core.screenMovement(-1,0);close(api.player.x,origin.x);close(api.player.z,origin.z);
+    close(api.facing.x,dir.x);close(api.facing.z,dir.z);assert.equal(api.touch.turnOnly,true);
+    moveStick('pointerup',-.28,0,101);playerSteps(.1);close(api.facing.x,dir.x);close(api.facing.z,dir.z);
+    pointerEvent('attackButton','pointerdown',{pointerId:202});pointerEvent('attackButton','pointerup',{pointerId:202});
+    close(api.swing.fx,dir.x);close(api.swing.fz,dir.z);
+    assert.equal(elements.get('joystick').dataset.intent,'idle');
+  });
+});
+
+test('aim11: moving an enemy never rotates manual melee or thrown aim toward it',()=>{
+  arena(1,{test:false});api.settings.throwAutoLock=false;api.settings.throwMode='confirm';
+  const enemy=spinFuel()[0];aimAt(0,12);const dir={...api.aim};
+  enemy.x=3;api.updateAim();close(api.aim.x,dir.x);close(api.aim.z,dir.z);assert.equal(api.throwLock,null);
+  key('KeyR',true);key('KeyR',false);enemy.x=-3;
+  key('KeyR',true);key('KeyR',false);assert.equal(api.throwWindup.target,null);
+  close(api.throwWindup.dir.x,dir.x);close(api.throwWindup.dir.z,dir.z);
+});
+
+test('aim11: expensive preview geometry is not executed at the 120Hz simulation rate',()=>{
+  arena();api.settings.throwAutoLock=false;spinFuel(true);
+  const before=api.aimDiagnostics.previews,throws=api.aimDiagnostics.throwPreviews;
+  playerSteps(1);assert.equal(api.aimDiagnostics.previews,before,'Simulation steps update direction only');
+  advance(1);assert.ok(api.aimDiagnostics.previews-before<=32,'At most one 30Hz hint pass');
+  assert.equal(api.aimDiagnostics.throwPreviews,throws,'No throw geometry while only walking or swinging');
+});
+
+test('aim11: sustained contact at low rendering frequency has a bounded effect list',()=>{
+  arena();spinFuel(true);mouseAttack(true);playerSteps(4);
+  assert.ok(api.spin);assert.ok(api.arcs.length<=48,'Weapon ribbons cannot grow between rendered frames');
+  mouseAttack(false);api.updateEffects(1);assert.equal(api.arcs.length,0);
 });

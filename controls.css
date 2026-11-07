@@ -66,3 +66,9 @@ body[data-touch-controls="true"] #combatDock #attackButton[data-action="punch"]:
 .settings-panel .setting-row small { max-width:32ch; }
 
 .settings-panel { max-height:calc(100dvh - 32px); overflow-y:auto; overscroll-behavior:contain; }
+
+/* The one movement stick has a centre turn-only band, never a right stick. */
+.joystick-turn-zone{position:absolute;left:35.72%;top:35.72%;width:28.56%;height:28.56%;border:1px solid #a3c8b66b;border-radius:50%;background:#9bcbb40b;pointer-events:none;transition:background .12s,border-color .12s}
+.joystick.turn-only .joystick-turn-zone{background:#f0ce8b2b;border-color:#f3d395}
+.joystick.turn-only .joystick-caption{color:#f3d395}
+body[data-touch-controls="true"] .joystick-caption{font-size:8px;letter-spacing:.35px;white-space:nowrap}
