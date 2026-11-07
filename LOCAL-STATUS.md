@@ -17,6 +17,15 @@ Run `npm run preview` and open <http://127.0.0.1:8000/>. Python 3 and Node are a
 
 The source also includes the pending Performance14 work from branch `feature/performance14-webgpu`: WASM collision sweeps, bounded simulation catch-up, reusable destruction index buffers, reachable large-hammer hands, metre-scale kicks, vehicle impacts and staged smoke/fire, and the FPS HUD. These were absent from the published main at the initial inspection.
 
+
+## Regression candidate after publication (2026-11-08)
+
+Published main was verified at65b9dcb. The current candidate corrects Three r170's stale geometry render records: fracture holes and resized rubble now render using the geometry used by collision. Prior performance numbers below are historical; they predate this correction and do not certify the corrected appearance/performance.
+
+Fatal cars stay visible and blink for1.2 seconds, then explode over4.2 metres with falloff damage to buildings, enemies and a player who stays nearby. Escaping avoids damage, chained cars receive separate warning fuses, and repeated hits do not reset the fuse. The explosion uses Unity Labs Explosion00 (CC0):25 frames over1.25 seconds; residual smoke ends after2.2 seconds. Comic impact stars are disabled for explosions. The original TGA and license are retained; the runtime PNG is640KiB.
+
+487 unit/integration tests pass. Native before/after evidence is under staging/tests/contact-regression. Rendering and performance rechecks, followed by final branch CI, remain pending.
+
 ## Evidence and limits
 
 - 483 Node unit/integration tests pass, including regressions that failed before the WebGPU-error and transform changes, plus exact rubble-vertex equivalence through rotation, movement, fading and eviction.
