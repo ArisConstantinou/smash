@@ -16,7 +16,7 @@ hurtObject=function(...args){const hp=args[0]?.hp;const result=perf14OriginalHur
 window.__perf14={get spinEvidence(){return {steps:perf14SpinSteps,contacts:perf14SpinContacts,active:!!spin}},get ready(){return gameReady},get renderer(){return renderer},get phase(){return phase},get hero(){return hero},get player(){return player},get world(){return world},get stats(){return stats},get levels(){return levels},get effects(){return vehicleEffects},get telemetry(){return performanceMonitor},get wasm(){return collisionWasmStatus()},startGame,applyStats,poseHero,hurtObject,pressAttack,releaseAttack,startKick,startLeap,armAirSmash,updatePlayer,updateMovingVehicles,updateObjects,updateGame,
 prepare(percent){startGame(15,{test:true});perf14SpinSteps=perf14SpinContacts=0;player.invincible=1e9;const total=world.objects.reduce((n,o)=>n+o.weight,0);let done=0;for(const o of world.objects){if(Math.hypot(o.x,o.z)<25)continue;if(done/total*100>=percent)break;hurtObject(o,o.hp+1);done+=o.weight;}return destructionPercent(world.objects);},
 large(){levels.size=12;levels.range=14;applyStats();poseHero(0);},
-faceBuilding(){const o=world.buildingObjects.find(o=>!o.dead&&Math.hypot(o.x,o.z)<25);if(!o)throw new Error('No live building fixture');Object.assign(player,{x:o.x,z:o.z-o.d/2-1.2,y:0,vx:0,vz:0,vy:0});facing={x:0,z:1};aim={x:0,z:1};pointer.active=false;poseHero(0);return {type:o.type,x:o.x,z:o.z,hp:o.hp};},
+faceBuilding(){const o=world.buildingObjects.find(o=>!o.dead&&Math.hypot(o.x,o.z)<25);if(!o)throw new Error('No live building fixture');Object.assign(player,{x:o.x,z:o.z-o.d/2-1.2,y:0,vx:0,vz:0,vy:0});facing={x:0,z:1};Object.assign(aim,{x:0,z:1});pointer.active=false;poseHero(0);return {type:o.type,x:o.x,z:o.z,hp:o.hp};},
 vehicles(){const list=world.objects.filter(o=>['car','policecar','ambulance'].includes(o.type)&&!o.dead);return list.slice(0,5).map((o,i)=>{world.relocateObject(o,(i-2)*4,7,false);hurtObject(o,o.maxHp*(i%2?.5:.8));return {x:o.x,z:o.z,hp:o.hp,maxHp:o.maxHp};});},
 armLengths(){const u=hero.userData;return [u.leftArm,u.rightArm].map(a=>[a.userData.upper.scale.y,a.userData.fore.scale.y]);}}
 `;
@@ -28,8 +28,8 @@ const results=[];
 try{
  for(const size of [{name:'desktop',width:1440,height:900},{name:'phone',width:390,height:844}]){
   const context=await browser.newContext({viewport:{width:size.width,height:size.height},hasTouch:size.name==='phone',deviceScaleFactor:1});
-  const page=await context.newPage(),errors=[];
-  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!/404|Failed to load resource/.test(m.text()))errors.push(m.text());});
+  const page=await context.newPage(),errors=[];let closing=false;
+  page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!/404|Failed to load resource/.test(m.text())&&!(closing&&/Device was destroyed/.test(m.text())))errors.push(m.text());});
   try{
    await page.goto(origin+'/index.html',{waitUntil:'networkidle',timeout:180000});
    await page.waitForFunction(()=>window.__perf14?.ready||!document.querySelector('#fatalError').hidden,null,{timeout:180000});
@@ -59,8 +59,8 @@ try{
    await page.screenshot({path:resolve(out,size.name+'-vehicle-fire.png')});
    const gpuErrors=await page.evaluate(()=>window.__gpuErrors);assert.deepEqual(gpuErrors,[]);assert.deepEqual(errors,[]);
    results.push({name:size.name,passed:true,backend:'WebGPU',adapter:'CI software SwiftShader; not user hardware',measured,effect});
-  }catch(error){results.push({name:size.name,passed:false,error:String(error.stack),errors});await page.screenshot({path:resolve(out,size.name+'-failure.png')}).catch(()=>{});throw error;}
-  finally{await context.close();await writeFile(resolve(out,'results.json'),JSON.stringify(results,null,2));}
+  }catch(error){const debug=await page.evaluate(()=>({gpuErrors:window.__gpuErrors,spin:window.__perf14?.spinEvidence,frame:window.__perf14?.telemetry?.last})).catch(()=>null);results.push({name:size.name,passed:false,error:String(error.stack),errors,debug});await page.screenshot({path:resolve(out,size.name+'-failure.png')}).catch(()=>{});throw error;}
+  finally{closing=true;await context.close();await writeFile(resolve(out,'results.json'),JSON.stringify(results,null,2));}
  }
  const context=await browser.newContext();await context.addInitScript(()=>Object.defineProperty(navigator,'gpu',{value:undefined}));const page=await context.newPage();
  await page.goto(origin+'/index.html',{waitUntil:'networkidle'});await page.waitForFunction(()=>!document.querySelector('#fatalError').hidden);
