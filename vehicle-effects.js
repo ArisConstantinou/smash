@@ -52,7 +52,7 @@ export class VehicleEffects{
    car.mesh.updateMatrixWorld(true);
    this.origin.set(0,Math.min(car.h*.68,1.15),-car.d*.22);car.mesh.localToWorld(this.origin);
    for(let i=0;i<8;i++){
-    const t=(this.time*.28+i/8+s.seed)%1,spread=.25+t*.85;
+    const t=((this.time*.28+i/8+s.seed)%1+1)%1,spread=.25+t*.85;
     this.position.set(this.origin.x+Math.sin(i*2.4+s.seed)*spread+t*.5,this.origin.y+t*3.5,this.origin.z+Math.cos(i*3.1)*spread);
     const size=(.8+t*1.7)*Math.sin(Math.PI*t)*fade;
     this.scale.set(size,size*1.3,size);this.matrix.compose(this.position,this.rotation,this.scale);this.smoke.setMatrixAt(smokeCount++,this.matrix);

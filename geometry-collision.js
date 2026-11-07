@@ -43,7 +43,9 @@ function buildGeometry(geometry, diagnostics) {
   const position=geometry.attributes.position, index=geometry.index;
   if(!position)return {parts:[],cells:new Map(),bounds:new THREE.Box3()};
   const specs=geometry.userData.collisionParts||geometry.userData.fractureParts;
-  const active=index?new Set(index.array):null, parts=[];
+  const first=Math.max(0,geometry.drawRange.start||0),end=Math.min(index?.count??position.count,first+geometry.drawRange.count);
+  const visibleIndices=index?index.array.subarray(first,end):null;
+  const active=visibleIndices?new Set(visibleIndices):null, parts=[];
   const add=indices=>{const part=makePart(position,indices);if(part)parts.push(part);};
   if(specs?.length) {
     for(const spec of specs) {
@@ -58,7 +60,7 @@ function buildGeometry(geometry, diagnostics) {
       add(ids);
     }
   } else {
-    const ids=index?Array.from(index.array):Array.from({length:position.count},(_,i)=>i);
+    const ids=index?Array.from(visibleIndices):Array.from({length:Math.max(0,end-first)},(_,i)=>i+first);
     // Ordinary Three primitives are convex. An unknown merged mesh falls back
     // to its individual triangle faces, never a hull over disconnected parts.
     if(/^(Box|Cylinder|Cone|Sphere|Icosahedron|Octahedron|Tetrahedron|Plane)Geometry$/.test(geometry.type))add(ids);
@@ -73,7 +75,7 @@ function buildGeometry(geometry, diagnostics) {
       }
   }
   diagnostics.cacheBuilds++;
-  return {geometry,position,positionVersion:position.version,index,indexVersion:index?.version,parts,cells,bounds,
+  return {geometry,position,positionVersion:position.version,index,indexVersion:index?.version,drawStart:geometry.drawRange.start,drawCount:geometry.drawRange.count,parts,cells,bounds,
     matrix:new THREE.Matrix4().makeScale(0,0,0),inverse:new THREE.Matrix4(),worldBounds:new THREE.Box3(),revision:0};
 }
 
@@ -284,7 +286,7 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
         const geometry=node.geometry,position=geometry?.attributes?.position;
         if(!position)continue;
         let cache=meshes.get(node);
-        if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version) {
+        if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version||cache.drawStart!==geometry.drawRange.start||cache.drawCount!==geometry.drawRange.count) {
           cache=buildGeometry(geometry,diagnostics);meshes.set(node,cache);
         }
         if(!cache.parts.length)continue;

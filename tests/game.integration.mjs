@@ -862,21 +862,29 @@ test('a second short left-click during recovery executes once after the current 
   assert.equal(audioEvents.filter(e => e.name === 'swing').length - before, 2, 'The buffer must not repeat itself');
 });
 
-test('holding the left mouse button during recovery transitions into a continuous spin and stops on release', () => {
-  arena(); spinFuel(true);
-  mouseAttack(true); mouseAttack(false); playerSteps(.2);
-  assert.ok(api.swing);
-  mouseAttack(true); playerSteps(.15);
-  assert.equal(api.spin, null, 'The hold threshold must distinguish a quick tap');
-  playerSteps(.35);
-  assert.ok(api.spin); assert.equal(api.swing, null);
-  const heldSpin = api.spin;
-  playerSteps(1.5);
-  assert.equal(api.spin, heldSpin, 'Holding must continue the same rotation beyond one full turn');
-  mouseAttack(false);
-  assert.equal(api.spin, null); assert.equal(api.swing, null);
-  playerSteps(.7);
-  assert.equal(api.spin, null); assert.equal(api.swing, null, 'Release must not trigger the former charged attack');
+test('holding during recovery earns spin after every valid follow-up stroke and stops on release', () => {
+  // The longest follow-up lasts .32 s. The former .50 s fixed deadline was
+  // 1 simulation tick earlier than hold (.22) + .86 * .32 + entry tick.
+  // Exercise every follow-up explicitly instead of relying on a random bag.
+  for (const variant of hammerMotion.HAMMER_COMBOS.oneHanded.slice(1)) {
+    arena(); spinFuel(true);
+    mouseAttack(true); mouseAttack(false); playerSteps(.2);
+    assert.ok(api.swing);
+    api.swingSequences[0].remaining = [variant];
+    mouseAttack(true); playerSteps(.15);
+    assert.equal(api.spin, null, 'The hold threshold must distinguish a quick tap');
+    const deadline = .22 + hammerMotion.getHammerSwingDuration(variant) * .86 + 2 / 120;
+    playerSteps(deadline - .15);
+    assert.ok(api.spin, variant + ': actual contact must earn spin by its stroke-specific deadline');
+    assert.equal(api.swing, null);
+    const heldSpin = api.spin;
+    playerSteps(1.5);
+    assert.equal(api.spin, heldSpin, variant + ': contact sustains the same rotation');
+    mouseAttack(false);
+    assert.equal(api.spin, null); assert.equal(api.swing, null);
+    playerSteps(.7);
+    assert.equal(api.spin, null); assert.equal(api.swing, null, 'Release must not trigger the former charged attack');
+  }
 });
 
 test('an early second tap survives normal swing recovery without becoming a held spin', () => {

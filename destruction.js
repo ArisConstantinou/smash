@@ -115,6 +115,14 @@ function fractureBatch(mesh, root, cellSize, seed) {
   // Collision follows these newly subdivided solids and the same live render
   // index rewritten below. It must not keep the intact building envelope.
   geometry.userData.collisionParts=parts.map(part=>({start:part.start,count:part.count}));
+  // Allocate one fixed index buffer per fractured batch. Stage changes rewrite
+  // a prefix plus drawRange; replacing BufferAttributes leaks orphan GPU buffers
+  // on renderers which only dispose the current index on geometry disposal.
+  const vertexCount=geometry.attributes.position.count;
+  const indices=new (vertexCount>65535?Uint32Array:Uint16Array)(vertexCount);
+  for(let i=0;i<vertexCount;i++)indices[i]=i;
+  geometry.setIndex(new THREE.BufferAttribute(indices,1).setUsage(THREE.DynamicDrawUsage));
+  geometry.setDrawRange(0,vertexCount);
   geometry.computeBoundingBox(); geometry.computeBoundingSphere();
   mesh.geometry = geometry; original.dispose();
   return {mesh,parts,baseColors:new Float32Array(geometry.attributes.color.array)};
@@ -146,15 +154,15 @@ function prepare(object) {
 }
 function rewriteBatches(state) {
   for(const batch of state.batches) {
-    const index=[];
-    const colors=batch.mesh.geometry.attributes.color;
+    const geometry=batch.mesh.geometry,index=geometry.index;let used=0;
+    const colors=geometry.attributes.color;
     for(const p of batch.parts) {
       if(p.removed)continue;
-      for(let i=p.start;i<p.start+p.count;i++)index.push(i);
+      for(let i=p.start;i<p.start+p.count;i++)index.array[used++]=i;
       const shade=1-(state.stage-1)*(.025+noise(state.seed,p.id)*.035);
       for(let i=p.start*3;i<(p.start+p.count)*3;i++)colors.array[i]=batch.baseColors[i]*shade;
     }
-    batch.mesh.geometry.setIndex(index); colors.needsUpdate=true;
+    geometry.setDrawRange(0,used);index.needsUpdate=true;colors.needsUpdate=true;
     // Empty meshes stay empty (also to the occlusion raycaster).
   }
   state.revision++;

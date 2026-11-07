@@ -2530,7 +2530,7 @@ function initInput(){
 
 let lastFrame=0;
 function frame(now){
-  requestAnimationFrame(frame);const realDt=clamp((now-lastFrame)/1000||1/60,0,.25);lastFrame=now;
+  requestAnimationFrame(frame);const rawFrameDt=Math.max(0,(now-lastFrame)/1000||1/60),realDt=Math.min(.25,rawFrameDt);lastFrame=now;
   if(document.hidden){performanceMonitor.reset();return;}
   const frameStart=performance.now();let simulationMs=0;
   forgeMenu?.update(realDt);
@@ -2544,7 +2544,7 @@ function frame(now){
     // Small physics steps retain wall-clock speed and swept hit detection even
     // when rendering is slower. Hit feedback freezes only its exact duration.
     const simulationStart=performance.now(),span=Math.min(realDt,MAX_FRAME_SIMULATION);
-    performanceMonitor.droppedMs+=Math.max(0,realDt-span)*1000;
+    performanceMonitor.droppedMs+=Math.max(0,rawFrameDt-span)*1000;
     for(let remaining=span;remaining>1e-8&&phase==='playing';){
       const slice=Math.min(SIMULATION_STEP,remaining),frozen=Math.min(hitStop,slice);
       hitStop=Math.max(0,hitStop-frozen);const dt=slice-frozen;

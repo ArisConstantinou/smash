@@ -46,10 +46,11 @@ test('picture geometry follows supporting roof heights and cuts rather than stre
   assert.equal(view.mesh.userData.textureReady,true);assert.equal(view.mesh.visible,true);
   const attr=view.mesh.geometry.attributes.position;
   for(let i=0;i<attr.count;i++)assert.ok(Math.abs(attr.getY(i)-.075)<1e-5);
-  const full=view.mesh.geometry.index.count;
+  const full=view.mesh.geometry.drawRange.count,index=view.mesh.geometry.index;
   const ledge=view.mesh.position.z+view.mesh.userData.layout.length*.53;
   view.update({...params,time:1,heightAt:(_,z)=>z<ledge?4:0});
-  assert.ok(view.mesh.geometry.index.count<full,'Roof edge must not draw a vertical stretched arrow');
+  assert.ok(view.mesh.geometry.drawRange.count<full,'Roof edge must not draw a vertical stretched arrow');
+  assert.equal(view.mesh.geometry.index,index,'Terrain updates reuse the same GPU index buffer');
   view.update({active:false});assert.equal(view.mesh.visible,false);
   const root=new THREE.Scene();root.add(view.mesh);view.dispose();assert.equal(root.children.length,0);
 });

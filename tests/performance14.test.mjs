@@ -26,3 +26,13 @@ test('vehicle smoke and fire have explicit damage stages; buildings cannot be em
  assert.equal(vehicleDamageStage({...car,hp:28}),2);assert.equal(vehicleDamageStage({...car,hp:0}),2);
  assert.equal(vehicleDamageStage({type:'townhouse',hp:0,maxHp:100}),0);
 });
+
+test('pinned r170 transparent compilation receives scene and lights in their proper slots',async()=>{
+ class GPU{async init(){this.backend={isWebGPUBackend:true};}_renderTransparents(...args){this.received=args;}}
+ const renderer=await createGameRenderer({THREE:{WebGPURenderer:GPU},gpu:{}});
+ const list=[],camera={},scene={overrideMaterial:null},lights={};
+ renderer._renderTransparents(list,camera,scene,lights);
+ assert.deepEqual(renderer.received,[list,[],camera,scene,lights]);
+ const doubles=[1];renderer._renderTransparents(list,doubles,camera,scene,lights);
+ assert.deepEqual(renderer.received,[list,doubles,camera,scene,lights]);
+});

@@ -13,7 +13,7 @@ function object(type='townhouse',seed=31,x=0,z=0) {
   const d=mesh.userData;
   return{type,seed,x,z,mesh,isBuilding,w:d.width,d:d.depth,h:d.height,hp:100,maxHp:100,dead:false};
 }
-function indices(o){let total=0;o.mesh.traverse(n=>{if(n.isMesh)total+=n.geometry.index?.count??n.geometry.attributes.position.count;});return total;}
+function indices(o){let total=0;o.mesh.traverse(n=>{if(n.isMesh)total+=Math.min(n.geometry.drawRange.count,(n.geometry.index?.count??n.geometry.attributes.position.count)-n.geometry.drawRange.start);});return total;}
 function free(o){o.mesh.traverse(n=>{n.geometry?.dispose();n.material?.dispose();});}
 function strike(o,hp,p={x:o.x+o.w/2,y:1.3,z:o.z}){o.hp=hp;return fractureObject(o,p);}
 
@@ -147,4 +147,21 @@ test('rubble lands on neighboring solid roofs without falling through them',()=>
   for(let i=0;i<15;i++)sys.update(.1);
   assert.ok(part.mesh.position.y>=roof.h+roof.baseY+part.halfY-.01);
   sys.dispose();free(o);
+});
+
+
+test('destruction stages reuse fixed GPU index buffers and render only live pieces',()=>{
+  const o=object('office');strike(o,80);
+  const buffers=o.destruction.batches.map(b=>b.mesh.geometry.index);
+  for(const hp of [50,25,10,0]){
+    strike(o,hp);
+    o.destruction.batches.forEach((b,i)=>{
+      const g=b.mesh.geometry;
+      assert.equal(g.index,buffers[i]);
+      assert.equal(g.drawRange.count,b.parts.filter(p=>!p.removed).reduce((n,p)=>n+p.count,0));
+      const drawn=new Set(g.index.array.subarray(0,g.drawRange.count));
+      for(const p of b.parts)assert.equal(drawn.has(p.start),!p.removed);
+    });
+  }
+  free(o);
 });

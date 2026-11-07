@@ -8,9 +8,15 @@ import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 const root=fileURLToPath(new URL('../',import.meta.url)),out=resolve(root,'browser-evidence/perf14');await mkdir(out,{recursive:true});
 const qa=`
-window.__perf14={get ready(){return gameReady},get renderer(){return renderer},get phase(){return phase},get hero(){return hero},get player(){return player},get world(){return world},get stats(){return stats},get levels(){return levels},get effects(){return vehicleEffects},get telemetry(){return performanceMonitor},get wasm(){return collisionWasmStatus()},startGame,applyStats,poseHero,hurtObject,pressAttack,releaseAttack,startKick,startLeap,armAirSmash,updatePlayer,updateMovingVehicles,updateObjects,updateGame,
-prepare(percent){startGame(15,{test:true});player.invincible=1e9;const total=world.objects.reduce((n,o)=>n+o.weight,0);let done=0;for(const o of world.objects){if(Math.hypot(o.x,o.z)<25)continue;if(done/total*100>=percent)break;hurtObject(o,o.hp+1);done+=o.weight;}return destructionPercent(world.objects);},
+let perf14SpinSteps=0,perf14SpinContacts=0;
+const perf14OriginalUpdatePlayer=updatePlayer;
+updatePlayer=function(...args){const result=perf14OriginalUpdatePlayer(...args);if(spin)perf14SpinSteps++;return result;};
+const perf14OriginalHurtObject=hurtObject;
+hurtObject=function(...args){const hp=args[0]?.hp;const result=perf14OriginalHurtObject(...args);if(spin&&args[0]?.hp<hp)perf14SpinContacts++;return result;};
+window.__perf14={get spinEvidence(){return {steps:perf14SpinSteps,contacts:perf14SpinContacts,active:!!spin}},get ready(){return gameReady},get renderer(){return renderer},get phase(){return phase},get hero(){return hero},get player(){return player},get world(){return world},get stats(){return stats},get levels(){return levels},get effects(){return vehicleEffects},get telemetry(){return performanceMonitor},get wasm(){return collisionWasmStatus()},startGame,applyStats,poseHero,hurtObject,pressAttack,releaseAttack,startKick,startLeap,armAirSmash,updatePlayer,updateMovingVehicles,updateObjects,updateGame,
+prepare(percent){startGame(15,{test:true});perf14SpinSteps=perf14SpinContacts=0;player.invincible=1e9;const total=world.objects.reduce((n,o)=>n+o.weight,0);let done=0;for(const o of world.objects){if(Math.hypot(o.x,o.z)<25)continue;if(done/total*100>=percent)break;hurtObject(o,o.hp+1);done+=o.weight;}return destructionPercent(world.objects);},
 large(){levels.size=12;levels.range=14;applyStats();poseHero(0);},
+faceBuilding(){const o=world.buildingObjects.find(o=>!o.dead&&Math.hypot(o.x,o.z)<25);if(!o)throw new Error('No live building fixture');Object.assign(player,{x:o.x,z:o.z-o.d/2-1.2,y:0,vx:0,vz:0,vy:0});facing={x:0,z:1};aim={x:0,z:1};pointer.active=false;poseHero(0);return {type:o.type,x:o.x,z:o.z,hp:o.hp};},
 vehicles(){const list=world.objects.filter(o=>['car','policecar','ambulance'].includes(o.type)&&!o.dead);return list.slice(0,5).map((o,i)=>{world.relocateObject(o,(i-2)*4,7,false);hurtObject(o,o.maxHp*(i%2?.5:.8));return {x:o.x,z:o.z,hp:o.hp,maxHp:o.maxHp};});},
 armLengths(){const u=hero.userData;return [u.leftArm,u.rightArm].map(a=>[a.userData.upper.scale.y,a.userData.fore.scale.y]);}}
 `;
@@ -36,9 +42,14 @@ try{
    await page.screenshot({path:resolve(out,size.name+'-fps.png')});
    const measured=[];
    for(const percent of [0,38,45]){
-    const actual=await page.evaluate(p=>{const a=__perf14.prepare(p);__perf14.large();return a;},percent);
-    await page.evaluate(()=>{__perf14.pressAttack();});await page.waitForTimeout(1800);await page.evaluate(()=>__perf14.releaseAttack());await page.waitForTimeout(800);
-    measured.push(await page.evaluate(actual=>({destruction:actual,frame:__perf14.telemetry.last,wasm:__perf14.wasm,arms:__perf14.armLengths()}),actual));
+    const actual=await page.evaluate(p=>{const a=__perf14.prepare(p);__perf14.large();__perf14.faceBuilding();return a;},percent);
+    await page.evaluate(()=>{__perf14.pressAttack();});
+    await page.waitForFunction(()=>__perf14.spinEvidence.steps>=12&&__perf14.spinEvidence.contacts>=1,null,{timeout:90000});
+    await page.waitForTimeout(900);
+    const spinEvidence=await page.evaluate(()=>__perf14.spinEvidence);
+    assert.ok(spinEvidence.steps>=12&&spinEvidence.contacts>=1,'The stress test must actually spin and damage a building');
+    await page.evaluate(()=>__perf14.releaseAttack());await page.waitForTimeout(800);
+    measured.push(await page.evaluate(actual=>({destruction:actual,spin:__perf14.spinEvidence,frame:__perf14.telemetry.last,wasm:__perf14.wasm,arms:__perf14.armLengths()}),actual));
     for(const [upper,fore]of measured.at(-1).arms){assert.ok(upper<=.441&&fore<=.461,'Oversized weapon must not elongate arm bones');}
     assert.equal(await page.evaluate(()=>window.__perf14.renderer.backend.isWebGPUBackend),true);
     await page.screenshot({path:resolve(out,size.name+'-destruction-'+percent+'.png')});
