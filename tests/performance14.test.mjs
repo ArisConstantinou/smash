@@ -42,3 +42,20 @@ test('pinned r170 transparent compilation receives scene and lights in their pro
  const doubles=[1];renderer._renderTransparents(list,doubles,camera,scene,lights);
  assert.deepEqual(renderer.received,[list,doubles,camera,scene,lights]);
 });
+
+test('pinned WebGPU render records follow replacement fracture and debris geometry',async()=>{
+ let record,disposed=0;
+ class GPU{
+  async init(){this.backend={isWebGPUBackend:true};this._objects={get(object){return record??=( {geometry:object.geometry,dispose(){disposed++;record=null;}} );}};}
+ }
+ const renderer=await createGameRenderer({THREE:{WebGPURenderer:GPU},gpu:{}});
+ const object={geometry:{name:'intact'}};
+ const original=renderer._objects.get(object);
+ assert.equal(renderer._objects.get(object),original);assert.equal(disposed,0);
+ for(const name of ['fractured','grown debris buffer']){
+  object.geometry={name};const next=renderer._objects.get(object);
+  assert.equal(next.geometry,object.geometry,'Rendering must use the same geometry as collision and physics');
+  assert.equal(renderer._objects.get(object),next,'Unchanged geometry reuses its render record');
+ }
+ assert.equal(disposed,2);
+});

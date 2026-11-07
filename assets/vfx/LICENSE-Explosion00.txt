@@ -1,0 +1,14 @@
+Explosion00 — Unity Technologies / Unity Labs Paris
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Source and license announcement:
+https://unity.com/blog/engine-platform/free-vfx-image-sequences-flipbooks
+Original package:
+https://unity3d.com/files/labs/downloads/vfx/assets01/Explosion00/Explosion00-flipbooks.zip
+
+assets/source/Explosion00_5x5.tga is the unchanged original RGBA atlas.
+assets/vfx/explosion00.png is a lossless PNG encoding of the same pixels.
+Both are 1024 x 1024, with 25 frames in a 5 x 5 grid.
+Original TGA SHA-256: 1b1ad36ff986e2b23d6c0dd4fff30b28cc77e102141db45c1f195ce527a95bb9
+Runtime PNG SHA-256: 87dada1b815f41ea916284ed8e6a1b6aab29cd24bda4f8bc2e5e013ef0e63455

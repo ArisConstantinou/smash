@@ -23,6 +23,18 @@ export async function createGameRenderer({THREE,canvas,mode='webgpu',gpu=globalT
   try{
     await renderer.init();
     if(renderer.backend?.isWebGPUBackend!==true)throw new Error('WebGPU initialization did not select a WebGPU backend');
+    // r170 RenderObject snapshots object.geometry and does not invalidate that
+    // reference when a fracture replaces it or a debris buffer grows. Recreate
+    // only stale records, including shadow passes; stable draws keep their cache.
+    const objects=renderer._objects;
+    if(objects?.get){
+      const get=objects.get;
+      objects.get=function(object,...args){
+        let record=get.call(this,object,...args);
+        if(record.geometry!==object.geometry){record.dispose();record=get.call(this,object,...args);}
+        return record;
+      };
+    }
     renderer.userData={backend:'WebGPU'};return renderer;
   }catch(error){
     // r170 dispose() dereferences managers that do not exist when init() fails.

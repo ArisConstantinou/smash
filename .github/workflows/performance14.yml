@@ -1,7 +1,7 @@
 name: Verify performance14
 on:
   push:
-    branches: [feature/performance14-webgpu, fix/performance14-local]
+    branches: [feature/performance14-webgpu, fix/performance14-local, fix/combat-destruction-regressions]
   workflow_dispatch:
 permissions:
   contents: read

@@ -183,7 +183,7 @@ function synthetic(exports, identifier) {
   return new vm.SyntheticModule(names, function () { for (const name of names) this.setExport(name, exports[name]); }, { context: sandbox, identifier });
 }
 const imports = new Map([
-  ['./vehicle-effects.js', synthetic(vehicleEffectsModule, 'real-vehicle-effects')],
+  ['./vehicle-effects.js', synthetic({...vehicleEffectsModule,preloadVehicleExplosion:async()=>{}}, 'real-vehicle-effects')],
   ['./renderer-policy.js', synthetic({createGameRenderer: async ({canvas}) => new FakeRenderer({canvas})}, 'renderer-test-surface')],
   ['./collision-wasm.js', synthetic({loadCollisionWasm: async () => false, collisionWasmStatus: () => ({active:false})}, 'wasm-bootstrap-test-surface')],
   ['./performance-hud.js', synthetic(performanceModule, 'real-performance-hud')],
@@ -3918,7 +3918,7 @@ test('perf14: damaged cars smoke then burn, effects follow movement and release 
  car.x+=8;car.mesh.position.x=car.x;effects.update(.1,api.player,api.camera);effects.fire.getMatrixAt(0,matrix);
  assert.ok(matrix.elements[12]-before>7);
  api.hurtObject(car,1000);effects.update(10.1,api.player,api.camera);assert.equal(effects.sources.size,0);assert.equal(effects.fire.count,0);
- arena();assert.equal(effects.disposed,true);assert.equal(effects.smoke.parent,null);assert.equal(effects.fire.parent,null);
+ arena();assert.equal(effects.disposed,true);assert.equal(effects.smoke.parent,null);assert.equal(effects.fire.parent,null);assert.equal(effects.explosion.mesh.parent,null);
 });
 test('perf14: huge-hammer wielding, strikes and slam keep reachable hands and original bone lengths',()=>{
  for(const twoHanded of [false,true]){
@@ -3936,4 +3936,55 @@ test('perf14: huge-hammer wielding, strikes and slam keep reachable hands and or
   mouseAttack(true);mouseAttack(false);playerSteps(.45,1/120,verify);
   api.startLeap();playerSteps(.25);api.armAirSmash();playerSteps(1.3,1/120,verify);
  }
+});
+
+test('large whirlwinds retain real wire contact at inner and outer enemy distances',()=>{
+ arena(6);spinFuel(true);mouseAttack(true);playerSteps(.4);assert.ok(api.spin);
+ for(const e of api.enemies){e.dead=true;e.mesh.visible=false;}
+ api.levels.range=14;api.levels.size=12;api.applyStats();
+ const targets=[2,4,7,10,14].map(r=>stationaryEnemy('zombie',r,0));
+ for(const e of targets)e.hp=e.maxHp=100000;
+ const barrel=placeObject('barrel',-4,0,{hp:100000,maxHp:100000});
+ const crate=placeObject('crate',0,-6,{hp:100000,maxHp:100000});
+ playerSteps(2,1/120,()=>{if(api.spin)api.spin.momentum=1;});
+ for(const e of targets)assert.ok(e.hp<e.maxHp,'The real wire or head must connect at distance '+e.x);
+ assert.ok(barrel.hp<barrel.maxHp);
+ // The range ring is not a disk collider: this low crate is below the actual
+ // shaft at this azimuth. Do not introduce phantom area damage to hide a miss.
+ assert.equal(crate.hp,crate.maxHp);
+ mouseAttack(false);
+});
+
+test('fatal cars warn before exploding once, damage buildings/enemies/player and expire their flames',()=>{
+ arena(1,{test:false});
+ const car=placeObject('car',0,2,{hp:1000,maxHp:1000});car.mesh.visible=true;
+ const wall=placeObject('wall',2.5,2,{w:.2,d:2,h:3,hp:1000,maxHp:1000});
+ const near=stationaryEnemy('brute',-2,2),far=stationaryEnemy('brute',-7,2);
+ near.hp=near.maxHp=far.hp=far.maxHp=1000;
+ api.player.invincible=0;const hp=api.player.hp,effects=api.vehicleEffects;
+ api.hurtObject(car,1001);assert.equal(car.exploding,true);assert.equal(car.dead,false);assert.equal(car.mesh.visible,true);
+ const flashes=new Set();
+ for(let i=0;i<10;i++){effects.update(.1,api.player,api.camera);flashes.add(car.lastFlashAmount);}
+ assert.equal(car.dead,false);assert.equal(wall.hp,1000);assert.equal(near.hp,1000);assert.equal(api.player.hp,hp);assert.ok(flashes.has(0)&&flashes.has(.95),'The warning visibly alternates between normal and bright');
+ effects.update(.21,api.player,api.camera);
+ assert.equal(car.dead,true);assert.equal(car.mesh.visible,false);assert.equal(car.explosionComplete,true);
+ assert.ok(wall.hp<1000);assert.ok(near.hp<1000);assert.equal(far.hp,1000);assert.ok(api.player.hp<hp);
+ const damagedHP=wall.hp;assert.ok(effects.explosion.geometry.drawRange.count>0,'The explosion flipbook replaces the floating fire');assert.equal(effects.fire.count,0);
+ for(let i=0;i<5;i++)effects.update(.1,api.player,api.camera);
+ assert.equal(effects.fire.count,0,'No fire remains attached to the invisible car');assert.ok(effects.smoke.count>0);
+ for(let i=0;i<20;i++)effects.update(.1,api.player,api.camera);
+ assert.equal(effects.sources.has(car),false);assert.equal(wall.hp,damagedHP);assert.equal(effects.smoke.count,0);
+});
+
+test('leaving a flashing car blast avoids damage and another car gets its own warning fuse',()=>{
+ arena(1,{test:false});const car=placeObject('car',0,2,{hp:100,maxHp:100});
+ const other=api.world.objects.find(o=>o.type==='car'&&o!==car);
+ api.world.relocateObject(other,2,2);other.hp=50;other.maxHp=260;
+ api.player.invincible=0;const hp=api.player.hp;api.hurtObject(car,101);
+ api.player.x=-8;api.player.z=-8;
+ api.vehicleEffects.update(1.21,api.player,api.camera);
+ assert.equal(car.dead,true);assert.equal(api.player.hp,hp);assert.equal(other.exploding,true);assert.equal(other.dead,false);
+ api.hurtObject(other,1000);const fuse=api.vehicleEffects.sources.get(other).fuse;
+ assert.ok(fuse>0&&fuse<=1.2,'Repeated damage cannot reset or skip the warning');
+ api.vehicleEffects.update(1.21,api.player,api.camera);assert.equal(other.dead,true);
 });

@@ -36,6 +36,7 @@ async function assertRendering(page){
  const health=await page.evaluate(()=>({lost:!!__perf14.renderer._isDeviceLost,draws:__perf14.renderer.info.render.drawCalls,triangles:__perf14.renderer.info.render.triangles,frame:__perf14.renderer.info.frame}));
  assert.equal(health.lost,false,'WebGPU device was lost; requestAnimationFrame is NOT proof of rendering');
  assert.ok(health.draws>0&&health.triangles>1000,JSON.stringify(health));
+ assert.deepEqual(await page.evaluate(()=>window.__staleGeometry||[]),[],'WebGPU must draw the current fracture and rubble geometry');
  const pixels=await assertScenePixels(page);return {...health,sampledColors:pixels};
 }
 try{
@@ -49,6 +50,10 @@ try{
    await page.waitForFunction(()=>window.__perf14?.ready||!document.querySelector('#fatalError').hidden,null,{timeout:180000});
    const boot=await page.evaluate(()=>({ready:__perf14.ready,fatal:document.querySelector('#fatalText').textContent,backend:__perf14.renderer?.backend?.isWebGPUBackend,wasm:__perf14.wasm}));
    assert.equal(boot.ready,true,JSON.stringify(boot));assert.equal(boot.backend,true);assert.equal(boot.wasm.active,true);
+   await page.evaluate(()=>{
+    window.__staleGeometry=[];const objects=__perf14.renderer._objects,get=objects.get;
+    objects.get=function(object,...args){const record=get.call(this,object,...args);if(record.geometry!==object.geometry)__staleGeometry.push(object.name||object.type);return record;};
+   });
    await page.evaluate(()=>{const d=__perf14.renderer.backend.device;window.__gpuErrors=[];d.addEventListener('uncapturederror',e=>window.__gpuErrors.push(e.error.message));});
    await page.locator('#startButton').click();
    await page.waitForFunction(()=>document.querySelector('#performanceHud').textContent.includes('FPS · WebGPU · WASM'),null,{timeout:30000});

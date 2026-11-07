@@ -1,5 +1,5 @@
-import {VehicleEffects} from './vehicle-effects.js?v=20261107-perf14';
-import {createGameRenderer} from './renderer-policy.js?v=20261107-perf14-fix1';
+import {VehicleEffects,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-explosion1';
+import {createGameRenderer} from './renderer-policy.js?v=20261108-contact1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
@@ -141,11 +141,11 @@ class ImpactClouds {
     this.dust=texture(false);this.star=texture(true);
     for(let n=0;n<72;n++){const mesh=new THREE.Sprite(new THREE.SpriteMaterial({map:this.dust,transparent:true,opacity:0,depthWrite:false,toneMapped:false}));mesh.visible=false;scene.add(mesh);this.pool.push({mesh,life:0,max:0,x:0,y:0,z:0,vx:0,vz:0,vy:0,size:1,star:false});}
   }
-  emit(x,y,z,dir,radius=1){
+  emit(x,y,z,dir,radius=1,stars=true){
     const count=settings.quality==='low'?5:8;
     for(let n=0;n<count;n++){
       const p=this.pool.find(p=>p.life<=0);if(!p)break;
-      const star=n<2,angle=Math.random()*Math.PI*2,speed=star?.15:1.1+Math.random()*1.7;
+      const star=stars&&n<2,angle=Math.random()*Math.PI*2,speed=star?.15:1.1+Math.random()*1.7;
       Object.assign(p,{star,life:star?.13:.42+Math.random()*.2,x:x+(star?0:Math.cos(angle)*.3),y:y+(star?1.05:.15+Math.random()*.18),z:z+(star?0:Math.sin(angle)*.3),
         vx:star?0:dir.x*.8+Math.cos(angle)*speed,vz:star?0:dir.z*.8+Math.sin(angle)*speed,vy:star?0:.45+Math.random()*.5,size:(star?n===0?1.05:.57:.55)*radius});
       p.max=p.life;p.mesh.material.map=star?this.star:this.dust;p.mesh.material.color.setHex(star?n===0?0xffca67:0xffffff:0xc7b99c);
@@ -414,8 +414,8 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
   scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
-  destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size)});
-  vehicleEffects=new VehicleEffects(scene,document);
+  destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
+  vehicleEffects=new VehicleEffects(scene,document,{onExplode:explodeVehicle,onBlink:(car,amount)=>flashMaterials(car,amount)});
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
@@ -739,7 +739,7 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   e.hurtTimer=2.4;
   if(response.interrupt!==false){const interrupted=interruptEnemyAttack(e,(response.stagger??duration)+.18);if(interrupted)removeEffect(interrupted);}
   applyEnemyFlash(e.materials,1);
-  impactClouds?.emit(hitPoint.x,hitPoint.y,hitPoint.z,direction,Math.min(1.5,e.radius*1.6));
+  impactClouds?.emit(hitPoint.x,hitPoint.y,hitPoint.z,direction,Math.min(1.5,e.radius*1.6),response.weapon!=='explosion');
   if(response.fear!==false)frightenNearby(e.x,e.z,.55+characterStats.weaponTier*.2,3.6+characterStats.weaponTier*.35,e);
   showHitPoints(e,damage);
   audio.play('hit',Math.min(1,damage/100),{material:impactMaterial(e),weapon:response.weapon||(characterStats.weaponTier<2?'wood':'metal')});
@@ -767,13 +767,37 @@ function killEnemy(e){
   if(e.miniBoss){spawnDrop(e.x,e.z,'relic');spawnDrop(e.x+.5,e.z,'heart');}
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
 }
+function explodeVehicle(car){
+  if(car.dead||car.explosionComplete)return;
+  car.exploding=false;car.explosionComplete=true;
+  const x=car.x,z=car.z,radius=VEHICLE_BLAST_RADIUS,falloff=d=>1-.65*clamp(d/radius,0,1);
+  hurtObject(car,1,0,{x,y:.5,z},'explosion');
+  pulse(x,z,radius,0xff783d,.5);shake=Math.max(shake,.25);
+  fragments.add(x,.45,z,24,[0xffb34c,0xff682d,0xffe6a2],7,.14);
+  for(const o of nearbyObjects(x,z,radius+2)){
+    if(o===car||o.dead||o.exploding)continue;
+    const p=nearestPoint(x,z,o),d=Math.hypot(p.x-x,p.z-z);
+    if(d<radius)hurtObject(o,Math.round(180*falloff(d)),0,{x:p.x,y:.7,z:p.z},'explosion');
+  }
+  for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+    if(e.dead)continue;const d=Math.hypot(e.x-x,e.z-z,(e.y||0)+Math.min(.8,(e.height||1)/2)-.5)-(e.radius||0);
+    if(d>=radius)continue;const dir=normalize(e.x-x,e.z-z),damage=Math.round(180*falloff(d));
+    if(e===boss)hitBoss(damage,dir,7,{weapon:'explosion'});else hitEnemy(e,damage,dir,7,2,null,{weapon:'explosion'});
+  }
+  const d=Math.hypot(player.x-x,player.z-z,player.y+.8-.5);
+  if(d<radius){const dir=normalize(player.x-x,player.z-z);hurtPlayer(Math.round(55*falloff(d)),dir.x,dir.z,false);}
+}
 function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
-  if(o.dead||!Number.isFinite(damage)||damage<=0)return false;o.hp-=damage;o.flash=.15;o.shudder=.22;flashMaterials(o,.85);showHitPoints(o,damage);
+  if(o.dead||o.exploding||!Number.isFinite(damage)||damage<=0)return false;o.hp-=damage;o.flash=.15;o.shudder=.22;flashMaterials(o,.85);showHitPoints(o,damage);
+  if(isVehicle(o)&&o.hp<=0&&!o.explosionComplete){
+    o.exploding=true;vehicleEffects.arm(o);
+    floatText(o.x,o.h+1,o.z,'ΕΚΡΗΞΗ — ΦΥΓΕ!','#ff915d',17);audio.play('carAlarm',.75);return false;
+  }
   const nearest=impactPoint||nearestPoint(player.x,player.z,o),contact={x:nearest.x,y:nearest.y??Math.min(player.y+1,o.h),z:nearest.z};
   const fracture=destruction?.hit(o,contact,player);
   vehicleEffects?.damage(o);
   if(!fracture)audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
-  impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7);
+  impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7,weapon!=='explosion');
   if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
   o.dead=true;o.mesh.visible=false;world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
@@ -793,7 +817,7 @@ function hitBoss(damage,dir,strength=5,response={}){
   boss.hp-=damage;boss.flash=.15;boss.stagger=Math.max(boss.stagger,response.stagger??.12);if(!response.preserveVelocity){const impulse=Math.min(strength*.13,Number.isFinite(response.maxImpulse)?Math.max(0,response.maxImpulse):Infinity);boss.vx=dir.x*impulse;boss.vz=dir.z*impulse;}
   boss.impact={time:0,duration:.32,dirX:dir.x,dirZ:dir.z,reaction:response.reaction||'blunt'};
   if(response.interrupt!==false&&boss.state!=='enter'){boss.state='recover';boss.timer=Math.max(.32,boss.timer*.35);if(boss.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}}
-  applyEnemyFlash(boss.materials,1);impactClouds?.emit(boss.x,boss.y+1.1,boss.z,dir,1.8);showHitPoints(boss,damage);fragments.add(boss.x,2,boss.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
+  applyEnemyFlash(boss.materials,1);impactClouds?.emit(boss.x,boss.y+1.1,boss.z,dir,1.8,response.weapon!=='explosion');showHitPoints(boss,damage);fragments.add(boss.x,2,boss.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
   if(boss.hp<=0)defeatBoss();
 }
 function checkGoal(){if(phase==='playing'&&!bossSpawned&&destructionPercent(world.objects)>=GOAL)spawnBoss();}
@@ -2604,6 +2628,7 @@ async function init(){
   initInput();updateSavedCharacter();
   renderer=await createGameRenderer({THREE,canvas:$('gameCanvas'),mode:rendererMode});
   await loadCollisionWasm();
+  await preloadVehicleExplosion();
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.22;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=renderer.backend?.isWebGPUBackend?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
   scene=new THREE.Scene();scene.background=new THREE.Color(0x223c40);scene.fog=new THREE.Fog(0x344c4c,34,88);
@@ -2624,7 +2649,10 @@ async function init(){
   resize();setPhase('menu');
   $('gameCanvas').setAttribute('tabindex','-1');
   // Shader compilation is local. Optional recorded audio preloads separately.
-  if(renderer.compileAsync)await renderer.compileAsync(scene,camera);
+  if(renderer.compileAsync){
+    const blast=vehicleEffects.explosion;blast.mesh.visible=true;blast.geometry.setDrawRange(0,6);
+    try{await renderer.compileAsync(scene,camera);}finally{blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
+  }
   gameReady=true;forgeMenu.setReady(true);updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη. Το επόμενο χτύπημα είναι δικό σου.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');
   requestAnimationFrame(frame);
