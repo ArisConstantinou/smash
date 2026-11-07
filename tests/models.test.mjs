@@ -189,7 +189,7 @@ test('shoulders follow torso rotation and retain complete arm chains during a bo
     u.body.rotation.set(.12, yaw, -.03); u.body.position.y = .02;
     u.setStance(yaw > 0 ? 1 : 0); u.updateGrip(); hero.updateMatrixWorld(true);
     for (const [side, arm] of [[-1, u.leftArm], [1, u.rightArm]]) {
-      const expected = new THREE.Vector3(side * .49, 1.28, .015).applyMatrix4(u.body.matrix).applyMatrix4(hero.matrixWorld);
+      const expected = new THREE.Vector3(side * .51, 1.28, .015).applyMatrix4(u.body.matrix).applyMatrix4(hero.matrixWorld);
       close(worldPosition(arm).distanceTo(expected), 0);
     }
     armsConnected(hero);

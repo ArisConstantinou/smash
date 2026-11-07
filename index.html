@@ -9,6 +9,7 @@
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261106-audio2">
   <link rel="stylesheet" href="./controls.css?v=20261107-combat7">
+  <link rel="stylesheet" href="./menu.css?v=20261107-menu9">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -107,65 +108,49 @@
   <canvas id="fxCanvas" aria-hidden="true"></canvas>
   <div class="world-vignette" aria-hidden="true"></div>
 
-  <section id="menu" class="landing" aria-label="Κεντρικό μενού">
-    <div class="landing-grain" aria-hidden="true"></div>
-    <header class="landing-header">
-      <div class="wordmark"><svg><use href="#i-hammer"/></svg><span>IRONFALL</span></div>
-      <div class="edition"><i></i> RETRO ARCADE SURVIVAL <span>FAST COMBAT</span></div>
-    </header>
-
-    <div class="hero-content">
-      <div class="eyebrow"><span class="tiny-cross">✚</span> HAMMER THE HORDE</div>
-      <h1>IRON<span>FALL</span><sup>01</sup></h1>
-      <div class="hero-rule"><span></span><b>ΚΑΝΕ ΘΟΡΥΒΟ. ΑΦΗΣΕ ΕΡΕΙΠΙΑ.</b></div>
-      <h2>Ο κόσμος είναι<br>για σπάσιμο.</h2>
-      <p class="hero-description">Ένα κούτσουρο. Μια ολόκληρη ορδή.<br>Μάζεψε υλικά. Κατασκεύασε τη δύναμή σου.</p>
-
-      <button id="startButton" class="primary-button start-button" type="button" disabled>
-        <svg><use href="#i-hammer"/></svg>
-        <span>ΝΕΑ ΕΞΕΛΙΞΗ · LEVEL 1</span>
-        <svg class="button-arrow"><use href="#i-arrow"/></svg>
-      </button>
-      <button id="resumeCharacterButton" class="resume-character" type="button" hidden disabled>ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ</button>
-      <div class="menu-audio-check">
-        <button id="menuAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
-        <span id="menuAudioStatus" role="status" aria-live="polite">Χτυπήματα · μέταλλο · φωνές</span>
+  <section id="menu" class="forge-menu" aria-label="Κεντρικό μενού IRONFALL">
+    <div class="forge-atmosphere" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    <header class="forge-top"><span class="forge-brand"><svg><use href="#i-hammer"/></svg> STORMFORGED</span><button id="menuAudioButton" class="menu-sound" data-audio-control type="button" aria-label="Ενεργοποίηση ή σίγαση ήχου μενού"><svg><use href="#i-sound"/></svg><span id="menuSoundText">ΗΧΟΣ</span></button></header>
+    <div class="forge-layout">
+      <div class="forge-heading"><span class="forge-eyebrow">ΞΥΛΟ. ΣΙΔΕΡΟ. ΚΑΤΑΙΓΙΔΑ.</span><h1>IRON<span>FALL</span></h1><p>Χτίσε τη δύναμή σου. Γκρέμισε την πόλη.</p></div>
+      <div class="forge-console">
+        <div class="journey-heading"><span id="menuLevel">ΕΠΙΠΕΔΟ 1</span><span id="menuProgressText">0 / 8 XP</span></div>
+        <div id="journeyViewport" class="journey-viewport" role="progressbar" aria-label="Πρόοδος προς το επόμενο επίπεδο" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="journey-horizon" aria-hidden="true"></div><canvas id="journeyCanvas" aria-hidden="true"></canvas>
+          <div class="journey-rail" aria-hidden="true"><div id="menuProgressFill"></div><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="journey-endpoints"><span id="menuFromLevel">LV 1</span><span id="menuToLevel">LV 2</span></div>
+        </div>
+        <nav class="forge-navigation" aria-label="Επιλογές παιχνιδιού">
+          <button id="startButton" class="forge-button wood-button" type="button" disabled><span class="button-art"><svg viewBox="0 0 96 80"><use href="#a-swing"/></svg></span><span class="button-copy"><b>ΝΕΟΣ ΓΥΡΟΣ</b><small>Η δύναμή σου μένει</small></span><svg class="menu-arrow"><use href="#i-arrow"/></svg></button>
+          <button id="resumeCharacterButton" class="forge-button iron-button" type="button" disabled><span class="button-art"><svg viewBox="0 0 96 80"><use href="#upgrade-vitality"/></svg></span><span class="button-copy"><b>ΣΥΝΕΧΕΙΑ</b><small id="resumeCaption">Ξεκίνα την ιστορία σου</small></span><svg class="menu-arrow"><use href="#i-arrow"/></svg></button>
+          <button id="roundSelectButton" class="forge-button stone-button" type="button" disabled><span class="button-art"><svg><use href="#i-skull"/></svg></span><span class="button-copy"><b>ΕΠΙΛΟΓΗ ΓΥΡΟΥ</b><small id="roundCaption">Οι κατακτήσεις σου</small></span><span class="button-index">01</span></button>
+          <button id="menuSettingsButton" class="forge-button brass-button" type="button"><span class="button-art"><svg><use href="#i-settings"/></svg></span><span class="button-copy"><b>ΡΥΘΜΙΣΕΙΣ</b><small>Ήχος · στόχευση · γραφικά</small></span><span class="button-index">⚙</span></button>
+        </nav>
+        <div class="forge-save-line"><span class="save-led"></span><span id="menuSaveStatus">Η πρόοδος αποθηκεύεται σε αυτή τη συσκευή</span></div>
       </div>
-      <details class="character-testing">
-        <summary>ΔΟΚΙΜΗ ΧΑΡΑΚΤΗΡΑ <span>Διάλεξε αρχικό επίπεδο</span></summary>
-        <div class="test-level-row"><label for="startingLevel">ΕΠΙΠΕΔΟ</label><select id="startingLevel" aria-describedby="startingLoadout"><option value="10">10</option></select><button id="testStartButton" type="button" disabled>ΔΟΚΙΜΗ</button></div>
-        <p id="startingLoadout">Πολεμικό σφυρί · αυτόματη επιστροφή</p>
-        <small>Ίδια πόλη, έτοιμος εξοπλισμός. Η δοκιμή κρατά χωριστά την αποθηκευμένη εξέλιξή σου.</small>
-      </details>
-      <div id="loadingStatus" class="loading-status" role="status">Το σφυρί ετοιμάζεται…</div>
-
-      <div class="landing-controls desktop-only">
-        <div class="legend-movement"><span class="key-set"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Ελεύθερη κίνηση</span></div>
-        <div><kbd class="mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg><span>LMB</span></kbd><span>Κλικ: σφυριά<br><em>Κράτα: περιστροφή 360°</em></span></div>
-      </div>
-      <p class="direction-note desktop-only">Ο πολεμιστής κοιτάζει εκεί που κινείται με WASD.<br>Όταν στέκεσαι, στρέφεται προς το ποντίκι.</p>
-      <div class="combat-hints desktop-only" aria-label="Κινήσεις πολεμιστή"><span><kbd>SPACE</kbd> Άλμα · LMB για smash</span><span><kbd class="mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-right"/></svg>RMB</kbd> Κράτα για άμυνα</span><span><kbd>E</kbd> Κλωτσιά</span><span><kbd>R</kbd> Ρίψη</span><span><kbd>Z</kbd> Δύο χέρια</span><span><kbd>U</kbd> Αναβαθμίσεις</span></div>
-      <p class="air-hint desktop-only">Στον αέρα, πάτησε <b>αριστερό κλικ</b> για συντριβή στην προσγείωση.</p>
-      <div class="touch-intro touch-only" aria-label="Χειρισμός στο κινητό">
-        <span><svg viewBox="0 0 48 48" aria-hidden="true"><use href="#i-joystick"/></svg><b>ΣΥΡΕ ΓΙΑ ΚΙΝΗΣΗ</b></span>
-        <span><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-swing"/></svg><b>ΠΑΤΑ ΓΙΑ ΣΦΥΡΙΑ</b></span>
-      </div>
-      <p class="touch-intro-note touch-only">Κράτα τον μοχλό και πάτα τις εικόνες με το άλλο χέρι. Για στόχευση: κράτα τη <b>ΡΙΨΗ</b>, σύρε και άφησε.</p>
+      <aside class="forge-workbench" aria-label="Διαδραστικό σφυρί και κούτσουρο">
+        <span class="workbench-tag">ΤΟ ΕΡΓΑΣΤΗΡΙΟ ΣΟΥ</span>
+        <button id="forgeToy" class="forge-toy" type="button" aria-label="Χτύπησε το κούτσουρο με το σφυρί. Κράτα για πιο δυνατό χτύπημα.">
+          <svg viewBox="0 0 340 320" aria-hidden="true">
+            <defs><linearGradient id="menuSteel" x1="0" x2=".8" y1="0" y2="1"><stop stop-color="#dce6db"/><stop offset=".34" stop-color="#829da0"/><stop offset=".38" stop-color="#506e76"/><stop offset="1" stop-color="#1c343c"/></linearGradient><linearGradient id="menuBark" x1="0" x2="1"><stop stop-color="#64412a"/><stop offset=".4" stop-color="#bd8754"/><stop offset="1" stop-color="#533928"/></linearGradient><radialGradient id="menuHeat"><stop stop-color="#ffb44e" stop-opacity=".42"/><stop offset="1" stop-color="#ffb44e" stop-opacity="0"/></radialGradient></defs>
+            <ellipse cx="170" cy="239" rx="159" ry="76" fill="url(#menuHeat)"/><ellipse cx="174" cy="285" rx="119" ry="19" fill="#071318" opacity=".8"/>
+            <path d="m52 257 28-26 190 0 22 26-14 22H68Z" fill="#2c4144" stroke="#84918a" stroke-width="2"/><path d="M66 258h211M86 270h21m119 0h29" stroke="#bba878" stroke-width="2"/>
+            <g class="toy-log"><path d="m100 195 15 58 113 2 16-61-25-22-100 2Z" fill="url(#menuBark)" stroke="#2a2a22" stroke-width="4"/><path d="m118 204 7 43m12-39 4 45m30-49-4 48m32-43-4 41m27-46-7 44" stroke="#473427" stroke-width="5"/><ellipse cx="171" cy="192" rx="71" ry="23" fill="#d7b379" stroke="#61452c" stroke-width="5"/><ellipse cx="171" cy="192" rx="51" ry="15" fill="none" stroke="#a17a49" stroke-width="2"/><ellipse cx="171" cy="192" rx="28" ry="8" fill="none" stroke="#a17a49" stroke-width="2"/><path class="toy-crack" d="m171 180-8 13 16 3-10 13m-6-16-23-7" fill="none" stroke="#4d3224" stroke-width="3"/></g>
+            <g class="toy-hammer"><path d="m211 154 10 6 44-88-11-5Z" fill="#855531" stroke="#263336" stroke-width="3"/><path d="m219 140 10 5m-4-17 10 5m-4-17 10 5m-4-17 10 5" stroke="#e0b36e" stroke-width="5"/><path d="m209 29 65 9 22 23-7 43-74-11-23-23Z" fill="url(#menuSteel)" stroke="#152a31" stroke-width="5"/><path d="m209 29 65 9 22 23-69-9Z" fill="#cad7cf"/><path d="m192 70 23 23 12-41-18-23Z" fill="#729199"/><path d="m273 40-12 59 15 3 14-52Z" fill="#d6c18a"/><path d="m232 64 18 2-3 19-19-3Z" fill="#e9ad55" stroke="#f8d992" stroke-width="2"/></g>
+            <g class="toy-sparks" fill="#ffd794"><path d="m170 177-9-27 17 18 21-16-10 24 23 9-27 1-7 22-8-22-26-1Z"/><path d="m123 168-10-13 4 18Zm101 3 12-17-2 20ZM142 226l-11 8 15-1Z"/></g>
+            <g class="toy-chips" fill="#d8a165"><path d="m124 194-12-8 4 12Z"/><path d="m217 190 15-6-7 12Z"/><path d="m189 211 9 10 2-12Z"/></g>
+          </svg>
+          <span class="forge-charge"><i id="forgeChargeFill"></i></span>
+        </button>
+        <div class="workbench-copy"><strong id="forgeToyStatus">ΠΑΤΑ ΤΟ ΣΦΥΡΙ</strong><span>Κράτα λίγο. Άφησε. Κάνε θόρυβο.</span></div>
+      </aside>
     </div>
-
-    <aside class="world-label" aria-hidden="true">
-      <span class="coordinate-lines">SECTOR 07 / 34.9° N</span>
-      <div class="label-line"></div>
-      <strong>Η ΠΟΛΗ<br>ΔΕΝ ΘΑ ΑΝΤΕΞΕΙ.</strong>
-      <span class="world-label-bottom"><i></i> LIVE WORLD · FULL DESTRUCTION</span>
-    </aside>
-
-    <footer class="landing-footer">
-      <div class="landing-step"><span>01</span><div><b>ΣΠΑΣΕ ΤΑ ΠΑΝΤΑ</b><small>Σπίτια, αμάξια, τοίχους & ορδές</small></div></div>
-      <div class="landing-step"><span>02</span><div><b>ΒΡΕΣ ΘΗΣΑΥΡΟΥΣ</b><small>Περισσότερη δύναμη σε κάθε εύρημα</small></div></div>
-      <div class="landing-step"><span>03</span><div><b>ΞΥΠΝΑ ΤΟΝ BOSS</b><small>Φτάσε στο 60% καταστροφής</small></div></div>
-      <div class="footer-stamp">BUILT TO<br><b>BREAK.</b></div>
-    </footer>
+    <footer class="forge-footer"><span id="loadingStatus" role="status">Το εργαστήριο ετοιμάζεται…</span><span id="menuAudioStatus" role="status">Ο ήχος ξεκινά με ένα πάτημα.</span><span>IRONFALL <b>·</b> THE FORGE</span></footer>
+  </section>
+  <section id="roundSelectMenu" class="modal-overlay" aria-label="Επιλογή γύρου" hidden>
+    <div class="modal-panel rounds-panel"><div class="modal-eyebrow">ΟΙ ΚΑΤΑΚΤΗΣΕΙΣ ΣΟΥ</div><h2>ΕΠΙΛΟΓΗ ΓΥΡΟΥ<span>.</span></h2><p>Ξαναπαίξε έναν ξεκλειδωμένο γύρο με τον εξελιγμένο χαρακτήρα σου. Η πόλη και η ορδή ξεκινούν ξανά.</p><div id="roundChoices" class="round-choices"></div><p id="roundUnlockNote" class="round-unlock-note"></p>
+      <details class="character-testing"><summary>ΔΟΚΙΜΗ ΕΠΙΠΕΔΟΥ ΧΑΡΑΚΤΗΡΑ</summary><div class="test-level-row"><label for="startingLevel">ΕΠΙΠΕΔΟ</label><select id="startingLevel" aria-describedby="startingLoadout"><option value="10">10</option></select><button id="testStartButton" type="button" disabled>ΔΟΚΙΜΗ</button></div><p id="startingLoadout"></p><small>Δοκιμαστικός εξοπλισμός. Δεν αλλάζει την αποθηκευμένη πρόοδο ή τους ξεκλειδωμένους γύρους.</small></details>
+      <button id="closeRoundsButton" class="primary-button" type="button"><span>ΕΠΙΣΤΡΟΦΗ</span><svg><use href="#i-arrow"/></svg></button></div>
   </section>
 
   <section id="hud" class="hud" aria-label="Στοιχεία παιχνιδιού" hidden>
@@ -286,7 +271,7 @@
             <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-jump"/></svg><span class="action-name"><span class="desktop-only">ΨΗΛΟ ΑΛΜΑ</span><span class="touch-only">ΑΛΜΑ</span></span><small id="leapValue" class="action-status">ΕΤΟΙΜΟ</small>
           </button>
-          <button id="throwButton" class="action-tile" data-key="KeyR" type="button" aria-label="Ρίξε το σφυρί προς το ποντίκι. Αναπηδά σε έως πέντε εχθρούς και επιστρέφει." title="Ρίξε το σφυρί προς το ποντίκι. Αναπηδά σε έως πέντε εχθρούς και επιστρέφει." data-desktop-label="Ρίξε το σφυρί προς το ποντίκι. Αναπηδά σε έως πέντε εχθρούς και επιστρέφει." data-touch-label="Κράτα για κατακόρυφη περιστροφή, σύρε για στόχευση και άφησε. Το σφυρί αναπηδά σε κοντινούς εχθρούς και επιστρέφει.">
+          <button id="throwButton" class="action-tile" data-key="KeyR" type="button" aria-label="Πάτησε για στόχευση και ξανά για ρίψη. Εναλλακτικά, επίλεξε κράτημα και άφημα στις Ρυθμίσεις." title="Πάτησε για στόχευση και ξανά για ρίψη. Εναλλακτικά, επίλεξε κράτημα και άφημα στις Ρυθμίσεις." data-desktop-label="Πάτησε για στόχευση και ξανά για ρίψη. Εναλλακτικά, επίλεξε κράτημα και άφημα στις Ρυθμίσεις." data-touch-label="Πάτησε για στόχευση, σύρε για κατεύθυνση και ξαναπάτησε για ρίψη. Η επιλογή κράτημα–άφημα βρίσκεται στις Ρυθμίσεις.">
             <kbd class="action-key">R</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-throw"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-throw"/></svg><span class="action-name">ΡΙΨΗ</span><small id="throwValue" class="action-status">ΣΤΟΧΕΥΣΕ</small>
           </button>
@@ -345,7 +330,7 @@
         <dt>ΠΕΡΙΣΤΡΟΦΗ</dt><dd>Κράτα πατημένο για συνεχή περιστροφή 360°. Άφησε για να σταματήσεις.</dd>
         <dt>ΑΜΥΝΑ</dt><dd>Κράτα πατημένο για προστασία προς την κατεύθυνση που κοιτάς.</dd>
         <dt>ΑΛΜΑ</dt><dd>Πάτησε για άλμα και, με το όπλο στα χέρια, πάτα ΧΤΥΠΗΜΑ στον αέρα για μικρό smash. Με σιδερένιο σφυρί ή καλύτερο, κράτα για μεγάλη συντριβή.</dd>
-        <dt>ΡΙΨΗ</dt><dd>Κράτα για κατακόρυφη περιστροφή, σύρε προς τον στόχο και άφησε. Το σφυρί αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με ηλεκτρική λάμψη.</dd>
+        <dt>ΡΙΨΗ</dt><dd>Πάτησε R ή το κουμπί ρίψης για στόχευση και ξανά για ρίψη. Στην αφή μπορείς να σύρεις προς τον στόχο. Προαιρετικά: κράτημα–άφημα από τις Ρυθμίσεις. Οι δείκτες δείχνουν τον κλειδωμένο εχθρό. Το αρχικό ξύλο χρειάζεται συλλογή· οι αναπηδήσεις και η επιστροφή ξεκλειδώνουν με καλύτερα όπλα.</dd>
         <dt>ΛΑΒΗ</dt><dd>Άνοιξε τις αναβαθμίσεις επάνω και πάτα ΑΛΛΑΓΗ ΛΑΒΗΣ. Βάζει την ασπίδα στην πλάτη και κρατά το σφυρί με δύο χέρια για +25% ζημιά. Πάτησε ξανά για επαναφορά.</dd>
         <dt>ΕΥΡΗΜΑΤΑ</dt><dd>Άνοιξε τις αναβαθμίσεις από το επάνω κουμπί και πάτα την επιλογή σου. Η μάχη συνεχίζεται.</dd></dl>
         <p>Η ασπίδα στο χέρι μειώνει τη μετωπική ζημιά κατά 35%. Η πλάτη και τα χτυπήματα εδάφους παραμένουν εκτεθειμένα.</p>
@@ -360,6 +345,7 @@
       <h2>ΡΥΘΜΙΣΕΙΣ<span>.</span></h2>
       <label class="setting-row" for="qualitySelect"><span><b>Γραφικά</b><small>Ποιότητα εικόνας & εφέ</small></span><select id="qualitySelect"><option value="high" selected>Υψηλά</option><option value="medium">Μεσαία</option><option value="low">Χαμηλά</option></select></label>
       <label class="setting-row" for="throwAutoLockToggle"><span><b>Αυτόματη στόχευση ρίψης</b><small>Κοντινοί εχθροί προς τη στόχευση · χωρίς στόχους πίσω από εμπόδια. Επηρεάζει και τις αυτόματες αναπηδήσεις.</small></span><input id="throwAutoLockToggle" type="checkbox" checked></label>
+      <label class="setting-row throw-mode-row" for="throwModeSelect"><span><b>Χειρισμός ρίψης</b><small>Ισχύει για το R, το ποντίκι και το κουμπί αφής. Esc ή άλλη επίθεση ακυρώνει τη στόχευση.</small></span><select id="throwModeSelect"><option value="tap">Πάτημα → στόχευση → πάτημα</option><option value="hold">Κράτημα → στόχευση → άφημα</option></select></label>
       <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
       <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
       <div class="audio-check">
@@ -387,6 +373,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261107-damage8"></script>
+  <script type="module" src="./game.js?v=20261107-menu9"></script>
 </body>
 </html>

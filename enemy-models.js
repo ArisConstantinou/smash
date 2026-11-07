@@ -351,7 +351,13 @@ export function installEnemyHead(root,type='zombie',bind=true){
 
 function prototype(type){
   if(PROTOTYPES.has(type))return PROTOTYPES.get(type);
-  const root=makers[type]();installEnemyHead(root,type,false);root.updateMatrixWorld(true);
+  const root=makers[type]();installEnemyHead(root,type,false);
+  // Open the shoulder/hip sockets without scaling entire limbs or detaching
+  // wrist geometry. Crawler's authored six-legged stance remains untouched.
+  if(type!=='crawler')for(const [name,side,spread]of [['leftArm',-1,.08],['rightArm',1,.08],['leftLeg',-1,.06],['rightLeg',1,.06]]){
+    const joint=root.getObjectByName(name);if(joint)joint.position.x+=side*spread;
+  }
+  root.updateMatrixWorld(true);
   const initial=new THREE.Box3().setFromObject(root),target=root.userData.heightTarget;
   root.scale.setScalar(target/initial.max.y);root.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(root),size=bounds.getSize(new THREE.Vector3());

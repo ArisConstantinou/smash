@@ -245,3 +245,16 @@ test('alarm pulses differ by car and can stop individually without cancelling co
  audio.stopEnvironment();assert.equal(audio._environmentSources.size,0);assert.ok([...combat].every(s=>audio._sources.has(s)));
  audio.play('carAlarm',.4,{id:99});audio.toggle();assert.equal(audio._environmentSources.size,0);assert.equal(audio._sources.size,0);
 });
+
+test('menu music schedules a distinct motif only in menu mode and stops on gameplay or mute',async t=>{
+ const {audio}=environment(t);await audio.unlock();audio.setMode('menu');audio.update(.1);
+ assert.ok(audio._menuSources.size>=4);const music=[...audio._menuSources];
+ audio.setMode('game');assert.equal(audio._menuSources.size,0);assert.ok(music.every(s=>!audio._sources.has(s)));
+ audio.ctx.currentTime+=1;audio.update(.1);assert.equal(audio._menuSources.size,0);
+ audio.setMode('menu');audio.update(.1);assert.ok(audio._menuSources.size>0);audio.toggle();assert.equal(audio._menuSources.size,0);
+});
+test('interactive menu hammer uses wood, low impact, metallic overtones and a separate swing',async t=>{
+ const {audio}=environment(t);await audio.unlock();audio.samples.buffers.set('wood-1',{duration:.3});
+ assert.equal(audio.play('menuSwing',.7),true);audio.ctx.currentTime+=.2;assert.equal(audio.play('menuForge',.7),true);
+ assert.ok([...audio._sources].some(s=>s.buffer===audio.samples.buffers.get('wood-1')));assert.ok(audio._sources.size>=7);assert.ok(audio._sources.size<=64);
+});

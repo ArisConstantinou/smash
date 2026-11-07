@@ -245,8 +245,8 @@ export function makeWarrior() {
   box(body, P.gold, 0, 1.96, -.025, .06, .12, .29);
   compact(body);
 
-  const leftLeg = limb(root, 'leftLeg', -.205, .62, 0, P.blueDark, P.steel, P.ink);
-  const rightLeg = limb(root, 'rightLeg', .205, .62, 0, P.blueDark, P.steel, P.ink);
+  const leftLeg = limb(root, 'leftLeg', -.27, .62, 0, P.blueDark, P.steel, P.ink);
+  const rightLeg = limb(root, 'rightLeg', .27, .62, 0, P.blueDark, P.steel, P.ink);
   // Preserve the leg roots used by walking, but give kicks an actual knee.
   for(const leg of [leftLeg,rightLeg]){
     // Existing storm-tier geometry remains the reference for normal walking;
@@ -258,7 +258,7 @@ export function makeWarrior() {
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .49, 1.28, .015);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .51, 1.28, .015);
     const pauldron = group(arm, 'pauldron');
     box(pauldron, P.steel, side * .025, -.015, 0, .36, .23, .44, 0, 0, side * .13);
     box(pauldron, P.pale, side * .03, .095, .025, .29, .065, .35, 0, 0, side * .13);
@@ -272,7 +272,7 @@ export function makeWarrior() {
     box(fore, P.timberDark, 0, 0, 0, .205, 1, .225);
     box(fore, P.steel, 0, .22, .015, .26, .49, .27);
     compact(fore);
-    const elbowPole = new THREE.Vector3(side * .85, -1, .20).normalize();
+    const elbowPole = new THREE.Vector3(side * 1.05, -.8, .25).normalize();
     arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone() };
     return arm;
   }
@@ -526,13 +526,13 @@ export function makeWarrior() {
     weaponRest.x = .22 + (.55 - .22) * stance;
     weaponRest.y = 0;
     weaponRest.z = -.24 + (-.72 + .24) * stance;
-    weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
+    weaponRestPosition.set(.56 * (1 - stance), .98 + .06 * stance, .29 + .15 * stance);
     if (equipmentTier < 2) {
       // Carry the heavy wood forward with bent elbows, rather than balancing
       // it upright on one wrist. Both anchor points stay on the real handle.
       weaponRest.x = .30 + .56 * stance;
       weaponRest.z = -.23 - .05 * stance;
-      weaponRestPosition.set(.48 - .60 * stance, .93 - .03 * stance, .25 + .05 * stance);
+      weaponRestPosition.set(.51 - .62 * stance, .93 - .03 * stance, .30 + .07 * stance);
     }
     root.userData.stance = stance;
     root.userData.shieldStored = shieldEquipped && (!weaponHeld || stance >= .65);

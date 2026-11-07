@@ -1,11 +1,13 @@
+import {geometrySupport,geometryCeiling,moveOnGeometry} from './geometry-collision.js?v=20261107-menu9';
+import {MenuPresentation,journeyInfo} from './menu.js?v=20261107-menu9';
 import {DestructionSystem} from './destruction.js?v=20261107-damage8';
 import {selectThrowLock,punchStats,samplePunchMotion,restSpotClear,nearestPickupPoint,findWeaponRest} from './combat-tools.js?v=20261107-combat7';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261106-kick6';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-damage8';
-import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-combat7';
+import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-menu9';
+import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-menu9';
 import {createWorld} from './world.js?v=20261107-damage8';
-import {GameAudio} from './audio.js?v=20261107-damage8';
+import {GameAudio} from './audio.js?v=20261107-menu9';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261106-impact4';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
@@ -18,10 +20,11 @@ import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
 const read = (key,fallback) => {try {return JSON.parse(localStorage.getItem(key)) ?? fallback;} catch {return fallback;}};
-const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false,throwAutoLock:true},read('ironfall.settings',{}));
+const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false,throwAutoLock:true,throwMode:'tap'},read('ironfall.settings',{}));
 settings.volume=Number.isFinite(Number(settings.volume))?clamp(Number(settings.volume),0,1):.75;
 settings.muted=!!settings.muted;
 settings.throwAutoLock=settings.throwAutoLock!==false;
+settings.throwMode=settings.throwMode==='hold'?'hold':'tap';
 const keys = new Set();
 const touch = {x:0,y:0,attack:false};
 const inputResetters=[];
@@ -33,7 +36,11 @@ audio.onStatusChange=updateSoundButtons;
 audio.bindUnlock?.(document);
 audio.preload?.();
 // Sound tests work even while the renderer is still loading.
-for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
+if($('testAudioButton'))$('testAudioButton').onclick=testGameAudio;
+if($('menuAudioButton'))$('menuAudioButton').onclick=toggleSound;
+let menuPresentation=null,gameReady=false;
+let highestRound=Math.max(1,Math.min(9999,Math.floor(Number(read('ironfall.rounds',1))||1),9999));
+highestRound=Math.max(highestRound,journeyInfo(read('ironfall.character',null)).round);
 let destruction=null;
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
@@ -209,7 +216,11 @@ function updateBattleVisibility(dt){
 
 function setPhase(next){
   phase=next;document.body.dataset.state=next;
-  $('menu').hidden=next!=='menu';$('hud').hidden=next==='menu';
+  const menuScreen=next==='menu'||next==='rounds'||next==='settings'&&previousPhase==='menu';
+  $('menu').hidden=!menuScreen;$('menu').inert=menuScreen&&next!=='menu';$('hud').hidden=menuScreen;
+  if($('roundSelectMenu'))$('roundSelectMenu').hidden=next!=='rounds';
+  menuPresentation?.setActive(next==='menu');
+  audio.setMode?.(menuScreen?'menu':next==='playing'?'game':'paused');
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
   if(next!=='playing'){audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
@@ -363,22 +374,52 @@ function resetWorld(keepUpgrades=false,startLevel=1){
 }
 function startGame(startLevel=1,options={}){
   const requested=typeof startLevel==='number'?startLevel:1;
+  const storedRun=read('ironfall.character',null);
   testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));resetWorld(false,requested);
   if(options.resume){
     const stored=read('ironfall.character',null),restored=restoreCharacterProgression(stored?.character);
     if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();}
+  }
+  if(!testRun){
+    const selected=Math.max(1,Math.min(highestRound,Math.floor(Number(options.round??(options.resume?storedRun?.run?.round:1))||1)));
+    beginWave(selected);
   }
   setPhase('playing');persistCharacter();
   announce(testRun?'ΔΟΚΙΜΗ · ΕΠΙΠΕΔΟ '+level:options.resume?'Η ΕΞΕΛΙΞΗ ΣΟΥ ΣΥΝΕΧΙΖΕΤΑΙ':'ΑΠΟ ΞΥΛΟ ΣΕ ΚΑΤΑΙΓΙΔΑ',
     testRun?characterStats.weaponName+' · Πλήρης εξοπλισμός αυτού του σταδίου.':characterStats.weaponTier===0?'Μάζεψε ξύλο και μέταλλο. Κατασκεύασε καλύτερο όπλο στις Αναβαθμίσεις.':characterStats.weaponName+' · Μάζεψε υλικά για την επόμενη κατασκευή.',4.3);
 }
 function persistCharacter(){
-  if(testRun||phase==='menu')return;
-  save('ironfall.character',{character,levels});updateSavedCharacter();
+  if(testRun||['menu','rounds'].includes(phase)||phase==='settings'&&previousPhase==='menu')return;
+  save('ironfall.character',{character,levels,run:{round,sector}});updateSavedCharacter();
 }
 function updateSavedCharacter(){
-  const stored=restoreCharacterProgression(read('ironfall.character',null)?.character),button=$('resumeCharacterButton');
-  if(button){button.hidden=!stored;button.disabled=$('startButton').disabled;if(stored)button.textContent='ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ · LV '+stored.level;}
+  const saved=read('ironfall.character',null);
+  menuPresentation?.refresh(saved,gameReady,highestRound);
+  if(!menuPresentation&&$('resumeCharacterButton')){$('resumeCharacterButton').hidden=false;$('resumeCharacterButton').disabled=!gameReady||!restoreCharacterProgression(saved?.character);}
+}
+function openRounds(){
+  if(!gameReady)return;
+  const choices=$('roundChoices');choices.replaceChildren();
+  const savedRound=journeyInfo(read('ironfall.character',null)).round;
+  // Keep this panel finite even with a long-running save. Pagination uses the
+  // same earned range rather than creating thousands of DOM controls.
+  const current=Math.max(1,Math.min(highestRound,savedRound)),page=Math.floor((current-1)/24);
+  renderRoundPage(page);
+  setPhase('rounds');audio.play('menuPress');
+}
+function renderRoundPage(page=0){
+  const choices=$('roundChoices');choices.replaceChildren();
+  const lastPage=Math.floor((highestRound-1)/24);page=clamp(Math.floor(page),0,lastPage);
+  const first=page*24+1,last=Math.min(highestRound,first+23);
+  for(let n=first;n<=last;n++){
+    const button=document.createElement('button');button.type='button';button.className='round-choice';
+    const label=document.createElement('small');label.textContent='ΓΥΡΟΣ';const number=document.createElement('strong');number.textContent=String(n);button.appendChild(label);button.appendChild(number);button.setAttribute('aria-label','Ξεκίνα τον ξεκλειδωμένο γύρο '+n);
+    button.onclick=()=>startGame(1,{resume:!!restoreCharacterProgression(read('ironfall.character',null)?.character),round:n});choices.appendChild(button);
+  }
+  for(const [label,target]of [['← ΠΡΟΗΓΟΥΜΕΝΟΙ',page-1],['ΕΠΟΜΕΝΟΙ →',page+1]])if(target>=0&&target<=lastPage){
+    const button=document.createElement('button');button.type='button';button.className='round-page';button.textContent=label;button.onclick=()=>renderRoundPage(target);choices.appendChild(button);
+  }
+  $('roundUnlockNote').textContent='Ξεκλειδωμένοι: '+highestRound+' · Ο επόμενος ανοίγει όταν ολοκληρώσεις τον προηγούμενο. Ο γύρος ξεκινά από την αρχή με τη μόνιμη εξέλιξή σου.';
 }
 function syncCharacterModel(){
   const u=hero.userData;
@@ -756,17 +797,17 @@ function updateAim(){
   aimPreview={start,end:contact?{x:contact.x,y:start.y,z:contact.z}:end,contact};
   // Marks are a fresh proximity/visibility result, never a persistent aim lock.
   nearbyTargets=[];focusedTarget=null;let bestAlignment=Math.cos(Math.PI/10);
-  const origin={x:player.x,y:1.1,z:player.z};
+  const origin={x:player.x,y:player.y+1.1,z:player.z};
   for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
     const dx=e.x-player.x,dz=e.z-player.z,distance=Math.hypot(dx,dz);
     if(e.dead||distance>12||distance<.001)continue;
-    const endpoint={x:e.x,y:1.1,z:e.z};
+    const endpoint={x:e.x,y:(e.y||0)+Math.min(1.1,e.height*.6),z:e.z};
     if(firstHammerHit(origin,endpoint,segmentObjects(origin,endpoint,.06),.06))continue;
     nearbyTargets.push(e);const alignment=(dx*aim.x+dz*aim.z)/distance;
     if(alignment>bestAlignment){bestAlignment=alignment;focusedTarget=e;}
   }
   if(contact&&nearbyTargets.includes(contact.target))focusedTarget=contact.target;
-  throwLock=settings.throwAutoLock&&!throwFlight?chooseThrowLock(aim):null;
+  throwLock=settings.throwAutoLock&&!throwFlight&&(touchThrowAim||throwWindup)?chooseThrowLock(aim):null;
   if(throwLock){focusedTarget=throwLock;if(!nearbyTargets.includes(throwLock))nearbyTargets.push(throwLock);}
 
 }
@@ -794,11 +835,7 @@ function armAirSmash(){
 }
 const SUPPORT_EPSILON=1e-6;
 function supportHeight(x,z,ceiling=Infinity){
-  let height=0;
-  // The same footprint supports the feet and collides with the facade. A
-  // smaller support circle started a fall while still embedded in the wall.
-  for(const o of nearbyObjects(x,z,player.radius))if(o.h<=ceiling+SUPPORT_EPSILON&&circleOverlaps(x,z,player.radius,o))height=Math.max(height,o.h);
-  return height;
+  return geometrySupport(nearbyObjects(x,z,player.radius+.3),x,z,ceiling,player.radius);
 }
 function landLeap(){
   if(!leap)return;
@@ -1016,6 +1053,7 @@ function updateThrownHammer(dt){
 
 function beginWave(number=1){
   const plan=wavePlan(number);round=plan.number;
+  if(!testRun&&(phase==='playing'||phase==='victory')&&round>highestRound){highestRound=round;save('ironfall.rounds',highestRound);persistCharacter();}
   wave={number:round,total:plan.total,spawned:0,defeated:0,batch:0,timer:plan.firstDelay,state:'active',breakTimer:0};
 }
 function updateWaves(dt){
@@ -1142,11 +1180,11 @@ function updateEnemies(dt){
     const u=e.mesh.userData,i=e.impact;
     e.facingYaw??=e.mesh.rotation.y;
     e.mesh.position.set(e.x,e.y,e.z);e.mesh.rotation.set(0,e.facingYaw,0);
-    if(u.leftLeg){u.leftLeg.rotation.x=Math.sin(e.walk)*.5;u.leftLeg.rotation.z=0;}
-    if(u.rightLeg){u.rightLeg.rotation.x=-Math.sin(e.walk)*.5;u.rightLeg.rotation.z=0;}
+    if(u.leftLeg){u.leftLeg.rotation.x=Math.sin(e.walk)*.5;u.leftLeg.rotation.z=e.type==='crawler'?0:-.045;}
+    if(u.rightLeg){u.rightLeg.rotation.x=-Math.sin(e.walk)*.5;u.rightLeg.rotation.z=e.type==='crawler'?0:.045;}
     if(u.body){u.body.rotation.x=e.state==='windup'?-.22:Math.sin(e.walk*2)*.03;u.body.rotation.z=0;}
-    if(u.leftArm){u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;u.leftArm.rotation.z=0;}
-    if(u.rightArm){u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;u.rightArm.rotation.z=0;}
+    if(u.leftArm){u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;u.leftArm.rotation.z=-.10;}
+    if(u.rightArm){u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;u.rightArm.rotation.z=.10;}
     u.animate?.(e,dt,visualTime);
     if(!falling)poseEnemyReaction(e,visualTime);
     if(!i)return;
@@ -1237,7 +1275,7 @@ function updateEnemies(dt){
     const localObjects=segmentObjects(from,to,.13);
     const targets=b.reflected?[...localObjects,...enemies,...(boss&&!boss.dead?[boss]:[])]:localObjects;
     const hit=firstHammerHit(from,to,targets,.13);
-    const playerT=player.y<1.6?segmentCircleHit(from.x,from.z,to.x,to.z,player.x,player.z,.65):null;
+    const playerT=player.y<1.6?segmentCircleHit(from.x,from.z,to.x,to.z,player.x,player.z,player.radius+.13):null;
     const guardT=b.reflected?null:guardContact(from,to);
     if(guardT!==null&&(!hit||guardT<hit.t)&&(!playerT||guardT<=playerT)){
       b.x=lerp(from.x,to.x,guardT)+facing.x*.12;b.z=lerp(from.z,to.z,guardT)+facing.z*.12;b.vx=facing.x*14;b.vz=facing.z*14;b.damage=Math.round(stats.power*.8);b.reflected=true;b.life=1.5;b.mesh.material.color.setHex(0x8ce4d8);
@@ -1506,7 +1544,7 @@ function guardDimensions(){
   // very large head upgrades retain their actual larger physical clearance.
   const reach=Math.max(.35,Math.min(1.05,Math.sqrt(Math.max(0,1.3**2-h.x**2))-h.y-.43+gripCenter));
   const radius=Math.hypot(.43+reach-gripCenter+h.y,h.x);
-  return {reach,radius,height:radius+.08,forward:.73,gripCenter};
+  return {reach,radius,height:radius+.08,forward:.58,gripCenter};
 }
 const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
 function updatePlayer(dt){
@@ -1549,8 +1587,9 @@ function updatePlayer(dt){
     const inAirDash=dashTime>0;
     const leapSpeed=inAirDash?19:characterStats.canAirSmash?(l.diving?7.2:8.2):5.8;
     const travel=inAirDash?dashDirection:l.dir;
-    const obstacles=nearbyObjects(player.x,player.z,player.radius+leapSpeed*dt+.15).filter(o=>o.h>oldY+SUPPORT_EPSILON);
-    moveCircle(player,travel.x*leapSpeed*dt,travel.z*leapSpeed*dt,obstacles,player.radius);
+    const obstacles=nearbyObjects(player.x,player.z,player.radius+leapSpeed*dt+.3);
+    if(l.vy>0){const ceiling=geometryCeiling(obstacles,player.x,player.z,oldY+1.78,player.y+1.78,player.radius);if(Number.isFinite(ceiling)){player.y=Math.max(oldY,ceiling-1.78-.002);l.vy=0;}}
+    moveOnGeometry(player,travel.x*leapSpeed*dt,travel.z*leapSpeed*dt,obstacles,player.radius,1.78,{stepHeight:0});
     if(inAirDash){dashTime=Math.max(0,dashTime-dt);if(Math.random()<.5)fragments.add(player.x,player.y+.25,player.z,1,[0x7ac9bd],1,.055);}
     const floor=supportHeight(player.x,player.z,oldY);
     if(l.vy<0&&player.y<=floor){player.y=floor;landLeap();}
@@ -1559,7 +1598,7 @@ function updatePlayer(dt){
     if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*dt;dz=dashDirection.z*19*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
     else{const speed=stats.speed*movementStrength()*(kick?.28:guarding?.55:spin?.84:swing?.92:Math.abs(stance-stanceTarget)>.005?.55:landingRecovery>0?.25:1);dx=move.x*speed*dt;dz=move.z*speed*dt;}
     dx+=player.vx*dt;dz+=player.vz*dt;player.vx*=Math.exp(-9*dt);player.vz*=Math.exp(-9*dt);
-    const actual=moveCircle(player,dx,dz,nearbyObjects(player.x,player.z,player.radius+Math.hypot(dx,dz)+.1).filter(o=>o.h>player.y+SUPPORT_EPSILON),player.radius);player.walk+=Math.hypot(actual.x,actual.z)*6;
+    const actual=moveOnGeometry(player,dx,dz,nearbyObjects(player.x,player.z,player.radius+Math.hypot(dx,dz)+.3),player.radius,1.78,{stepHeight:player.vy<-.1?0:.28});player.walk+=Math.hypot(actual.x,actual.z)*6;
     const floor=supportHeight(player.x,player.z,player.y);
     if(player.y>floor){player.vy=(player.vy||0)-20*dt;player.y=Math.max(floor,player.y+player.vy*dt);}else{player.y=floor;player.vy=0;}
   }
@@ -1594,7 +1633,7 @@ function updatePlayer(dt){
     g.channeling=canThrow()&&!guardHeld;
     if(g.channeling){
       if(!g.channelFromRotation){g.channelFromRotation=hero.userData.weaponRig.quaternion.clone();g.channelFromPosition=hero.userData.weaponRig.position.clone();g.channelFromReach=hero.userData.reachScale;}
-      g.channelTime+=dt;g.channelAngle=-.7+g.channelTime*10;
+      g.channelTime+=dt;g.channelAngle=-.5;
     }
   }
   if(throwWindup)throwWindup.time+=dt;
@@ -1624,9 +1663,6 @@ function updatePlayer(dt){
   }else if(guarding){
     weaponTrail(headPrevious,headNow,.16,0x8ce4d8);
     for(const e of [...enemies])if((guardHits.get(e)||0)<elapsed&&facingCoverage(facing,e,player,Math.PI*.42)&&firstHammerHit(headPrevious,headNow,[e],.45*stats.size)){guardHits.set(e,elapsed+.38);hitEnemy(e,Math.round(stats.power*.3),normalize(e.x-player.x,e.z-player.z),6,1.5);}
-  }else if(touchThrowAim?.channeling&&touchThrowAim.channelTime>.10){
-    const g=touchThrowAim;
-    if(g.channelTime-g.trailTime>=1/45){weaponTrail(g.trailFrom||headPrevious,headNow,.13,0x8aeaff);g.trailTime=g.channelTime;g.trailFrom=headNow.clone();}
   }
   headPrevious.copy(headNow);
   updateThrownHammer(dt);
@@ -1659,11 +1695,11 @@ function poseHero(dt,moving=false){
   const spinPose=spin?sampleSpinMotion(spin.rotation,{twoHanded:stance>.9,recoil:spin.recoil}):null;
   const torque=spinPose?spinPose.bodyYaw:motion?motion.bodyYaw*settle:guarding?-.08:0;
   const spinStep=spin?Math.sin(-spin.rotation*2)*.12:0;
-  if(u.leftLeg){u.leftLeg.rotation.x=leap?-.55:spin?-.12+spinStep:motion?motion.leftLegPitch*settle+walk*.38:walk*.58;u.leftLeg.rotation.z=spin?-.18:motion?motion.leftLegRoll*settle:0;}
-  if(u.rightLeg){u.rightLeg.rotation.x=leap?.45:spin?.12-spinStep:motion?motion.rightLegPitch*settle-walk*.38:-walk*.58;u.rightLeg.rotation.z=spin?.18:motion?motion.rightLegRoll*settle:0;}
+  if(u.leftLeg){u.leftLeg.rotation.x=leap?-.55:spin?-.12+spinStep:motion?motion.leftLegPitch*settle+walk*.38:walk*.58;u.leftLeg.rotation.z=spin?-.18:motion?motion.leftLegRoll*settle:-.045;}
+  if(u.rightLeg){u.rightLeg.rotation.x=leap?.45:spin?.12-spinStep:motion?motion.rightLegPitch*settle-walk*.38:-walk*.58;u.rightLeg.rotation.z=spin?.18:motion?motion.rightLegRoll*settle:.045;}
   // Small alternating foot lifts form a pivot step, not legs bicycling in air.
   for(const [leg,side,lift] of [[u.leftLeg,-1,spinPose?.leftStep||0],[u.rightLeg,1,spinPose?.rightStep||0]])if(leg){
-    leg.position.set(side*(spin?.235:.205),.62+lift*.055,spin?side*Math.sin(spin.rotation)*.055:0);
+    leg.position.set(side*(spin?.30:.27),.62+lift*.055,spin?side*Math.sin(spin.rotation)*.055:0);
     leg.rotation.y=spin?side*.12+Math.sin(spin.rotation)*.10:0;
   }
   if(u.body){
@@ -1775,21 +1811,12 @@ function poseHero(dt,moving=false){
     rig.position.copy(wrist).addScaledVector(shaftDirection,-gripCenter);
   }
   else if(touchThrowAim?.channeling){
-    const g=touchThrowAim,relativeYaw=Math.atan2(aim.x,aim.z)-hero.rotation.y;
-    const turn=new THREE.Quaternion().setFromAxisAngle(shaftUp,relativeYaw),blend=smooth(g.channelTime/.12);
-    // Rotate in the vertical plane along the throw direction. The free arm
-    // and feet keep their normal ownership while the wrist winds the weapon.
-    const orbitReach=Math.max(.35,.8-(stats.size-1)*.55),twoHanded=stance>.9,gripCenter=twoHanded?.255:.43;
-    u.setReach?.(lerp(g.channelFromReach,orbitReach,blend));
-    const shaftDirection=new THREE.Vector3(0,Math.cos(g.channelAngle),Math.sin(g.channelAngle)).applyQuaternion(turn);
-    const headBounds=u.getHeadHalfExtents?.()||{y:.365*stats.size,z:.365*stats.size};
-    const orbitRadius=Math.hypot(.43+orbitReach-gripCenter+headBounds.y,headBounds.z);
-    // Turn around the gripping hand(s), not around the torso. This keeps the
-    // elbows within reach when the joystick and aiming thumb point apart.
-    const targetPosition=new THREE.Vector3(twoHanded?0:.59,Math.max(twoHanded?1.48:1.42,orbitRadius+.08),.22)
-      .addScaledVector(shaftDirection,-gripCenter);
-    rig.position.lerpVectors(g.channelFromPosition,targetPosition,blend);
-    const target=new THREE.Quaternion().setFromEuler(new THREE.Euler(g.channelAngle,0,0)).premultiply(turn);
+    const g=touchThrowAim,blend=smooth(g.channelTime/.18);
+    // A readable ready stance, not an endless propeller around the wrist.
+    // The throw wind-up takes ownership only after explicit confirmation.
+    u.setReach?.(lerp(g.channelFromReach,u.reachRest||1,blend));
+    const target=new THREE.Quaternion().setFromEuler(new THREE.Euler(u.weaponRest.x-.24,u.weaponRest.y,u.weaponRest.z-.12));
+    rig.position.lerpVectors(g.channelFromPosition,u.weaponRestPosition.clone().add(new THREE.Vector3(0,.12,.07)),blend);
     rig.quaternion.copy(g.channelFromRotation).slerp(target,blend);
   }
   else if(landingRecovery>0&&landingPose){
@@ -1805,8 +1832,9 @@ function poseHero(dt,moving=false){
   const markerDirection=touchThrowAim?.dragged||touchThrowQueued||throwWindup?aim:facing;
   directionMarker.position.set(player.x+markerDirection.x*1.15,player.y+.055,player.z+markerDirection.z*1.15);directionMarker.rotation.y=Math.atan2(markerDirection.x,markerDirection.z);directionMarker.visible=phase==='playing';
   if(guardRing){const g=guardDimensions();guardRing.visible=guarding;guardRing.position.set(player.x+facing.x*g.forward,player.y+g.height,player.z+facing.z*g.forward);guardRing.scale.setScalar(g.radius/1.72);guardRing.rotation.set(0,Math.atan2(facing.x,facing.z),0);guardRing.material.opacity=.12+Math.sin(guardAngle*2)*.035;}
-  if(groundShadow){groundShadow.position.set(player.x,.035,player.z);groundShadow.scale.setScalar(1+player.y*.035);groundShadow.material.opacity=clamp(.34-player.y*.018,.15,.34);groundShadow.visible=phase!=='menu';}
-  if(landingMarker){landingMarker.visible=!!leap;landingMarker.position.set(player.x,.09,player.z);landingMarker.scale.setScalar(leap?.slam?5.2+stats.quake*.7:leap?.strike?1.65:.9);landingMarker.material.color.setHex(leap?.slam?0xffbf6d:0x9edac9);}
+  const shadowFloor=supportHeight(player.x,player.z,player.y+SUPPORT_EPSILON),shadowDistance=Math.max(0,player.y-shadowFloor);
+  if(groundShadow){groundShadow.position.set(player.x,shadowFloor+.035,player.z);groundShadow.scale.setScalar(1+shadowDistance*.035);groundShadow.material.opacity=clamp(.34-shadowDistance*.018,.15,.34);groundShadow.visible=phase!=='menu';}
+  if(landingMarker){landingMarker.visible=!!leap;landingMarker.position.set(player.x,shadowFloor+.09,player.z);landingMarker.scale.setScalar(leap?.slam?5.2+stats.quake*.7:leap?.strike?1.65:.9);landingMarker.material.color.setHex(leap?.slam?0xffbf6d:0x9edac9);}
 }
 function updateDrops(dt){
   for(let i=drops.length-1;i>=0;i--){
@@ -1878,14 +1906,15 @@ function updateHUD(force=false){
   for(const id of ['stanceButton','mobileStanceButton'])$(id)?.setAttribute('aria-pressed',String(stanceTarget===1));
   if($('guardValue'))$('guardValue').textContent=guarding?'ΠΡΟΣΤΑΣΙΑ ΜΠΡΟΣΤΑ':throwFlight?'ΧΩΡΙΣ ΣΦΥΡΙ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
   if($('leapValue'))$('leapValue').textContent=leap?(throwFlight?'ΓΡΟΘΙΑ / DASH':leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΧΤΥΠΗΜΑ / DASH':'ΚΛΙΚ: SMASH · SHIFT: DASH'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
-  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.channeling?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.grounded?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount&&characterStats.canRicochet?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
+  if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?(settings.throwMode==='hold'?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':'ΞΑΝΑΠΑΤΑ ΓΙΑ ΡΙΨΗ'):throwFlight?(throwFlight.grounded?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount&&characterStats.canRicochet?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':settings.throwMode==='hold'?'ΚΡΑΤΑ ΓΙΑ ΣΤΟΧΟ':'ΠΑΤΑ ΓΙΑ ΣΤΟΧΟ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   updateAttackFeedback();
   $('guardButton')?.classList.toggle('active',guardHeld||guarding);
   $('leapButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
   $('leapButton')?.classList.toggle('airborne',!!leap);
   $('throwButton')?.classList.toggle('cooldown',!!(throwFlight||throwWindup)||throwCooldown>0);
-  $('throwButton')?.classList.toggle('aiming',!!touchThrowAim?.dragged);
+  $('throwButton')?.classList.toggle('aiming',!!touchThrowAim);
+  syncThrowLabel();
   $('throwButton')?.classList.toggle('returning',!!throwFlight?.returning);
   $('throwButton')?.classList.toggle('queued',!!touchThrowQueued);
   $('throwButton')?.classList.toggle('channeling',!!touchThrowAim?.channeling);
@@ -1956,7 +1985,7 @@ function drawBuildingHP(o,label,alpha){
   c.restore();
 }
 function drawAim(){
-  if(phase!=='playing')return;
+  if(phase!=='playing'||!touchThrowAim&&!throwWindup)return;
   const c=fxContext;
   for(const e of nearbyTargets){
     if(e.dead)continue;
@@ -1966,12 +1995,12 @@ function drawAim(){
     for(let quadrant=0;quadrant<4;quadrant++){
       const base=quadrant*Math.PI/2+Math.PI/12;c.beginPath();
       for(let step=0;step<=10;step++){
-        const angle=base+step/10*Math.PI/3,p=screenPoint(e.x+Math.sin(angle)*r,.065,e.z+Math.cos(angle)*r);
+        const angle=base+step/10*Math.PI/3,p=screenPoint(e.x+Math.sin(angle)*r,(e.y||0)+.065,e.z+Math.cos(angle)*r);
         if(step===0)c.moveTo(p.x,p.y);else c.lineTo(p.x,p.y);
       }c.stroke();
     }
     if(e===throwLock){const lock=screenPoint(e.x,(e.y||0)+e.height+.95,e.z);c.font='bold 11px Arial';c.textAlign='center';c.fillStyle='#ffe0a0';c.fillText('ΣΤΟΧΟΣ ΡΙΨΗΣ',lock.x,lock.y);}
-    if(focused){const p=screenPoint(e.x,.07,e.z);c.fillStyle='#ffd180';c.beginPath();c.moveTo(p.x,p.y-5);c.lineTo(p.x-3,p.y);c.lineTo(p.x+3,p.y);c.closePath();c.fill();}
+    if(focused){const p=screenPoint(e.x,(e.y||0)+.07,e.z);c.fillStyle='#ffd180';c.beginPath();c.moveTo(p.x,p.y-5);c.lineTo(p.x-3,p.y);c.lineTo(p.x+3,p.y);c.closePath();c.fill();}
   }
   if(pointer.active){
     c.globalAlpha=.85;c.strokeStyle=focusedTarget?'#ffd180':'#badbd2';c.lineWidth=1.35;
@@ -1984,7 +2013,7 @@ function drawFX(){
   const c=fxContext;c.clearRect(0,0,screenW,screenH);
   if(redFlash>0){const grad=c.createRadialGradient(screenW/2,screenH/2,screenH*.22,screenW/2,screenH/2,screenW*.66);grad.addColorStop(0,'rgba(201,62,42,0)');grad.addColorStop(1,'rgba(201,62,42,'+(redFlash*.5)+')');c.fillStyle=grad;c.fillRect(0,0,screenW,screenH);}
   updateComboDisplay();
-  if(phase==='menu')return;
+  if(phase==='menu'||phase==='rounds'||phase==='settings'&&previousPhase==='menu')return;
   drawAim();
   if(throwFlight?.grounded){const p=screenPoint(throwFlight.x,throwFlight.groundY+1.2,throwFlight.z);if(p.inside){c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#10201e';c.strokeText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);c.fillStyle='#ffe2a3';c.fillText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);}}
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
@@ -2008,6 +2037,13 @@ function drawFX(){
   }
 }
 
+function syncThrowLabel(){
+  const button=$('throwButton');if(!button)return;
+  const touchLabel=settings.throwMode==='hold'?'Κράτα για στόχευση, σύρε για κατεύθυνση και άφησε για ρίψη. Άλλη επίθεση ακυρώνει.':'Πάτησε για στόχευση, σύρε για κατεύθυνση και πάτησε ξανά για ρίψη. Άλλη επίθεση ακυρώνει.';
+  const desktopLabel=(settings.throwMode==='hold'?'Κράτα R ή το κουμπί ρίψης για στόχευση. Άφησε για ρίψη.':'Πάτησε R ή το κουμπί ρίψης για στόχευση. Πάτησε ξανά για ρίψη.')+' Esc ή άλλη επίθεση ακυρώνει.';
+  button.setAttribute('data-touch-label',touchLabel);button.setAttribute('data-desktop-label',desktopLabel);
+  const label=touchLayout?touchLabel:desktopLabel;button.setAttribute('aria-label',label);button.setAttribute('title',label);
+}
 function syncTouchControls(){
   touchLayout=matchMedia('(pointer:coarse)').matches||matchMedia('(any-pointer:coarse)').matches||screenW<=750||(screenW<=1100&&screenH<=500);
   document.body.dataset.touchControls=String(touchLayout);
@@ -2016,6 +2052,7 @@ function syncTouchControls(){
     const label=touchLayout?button.dataset.touchLabel:button.dataset.desktopLabel;
     if(label){button.setAttribute('aria-label',label);button.setAttribute('title',label);}
   }
+  syncThrowLabel();
 }
 function resize(){
   const viewport=window.visualViewport,nextWidth=Math.round(viewport?.width||innerWidth),nextHeight=Math.round(viewport?.height||innerHeight);
@@ -2081,16 +2118,18 @@ function updateSoundButtons(){
   const silent=audio.muted||audio.volume<=0;
   const blocked=!silent&&audio.ready===false;
   const label=silent?'Ήχος κλειστός — πάτησε για ενεργοποίηση':blocked?'Πάτησε για ενεργοποίηση ήχου':'Ήχος ενεργός — πάτησε για σίγαση';
-  for(const id of ['soundButton','muteButton']){
+  for(const id of ['soundButton','muteButton','menuAudioButton']){
     const button=$(id);if(!button)continue;
     button.setAttribute('data-audio-control','');
     button.classList.toggle('muted',silent);button.classList.toggle('audio-blocked',blocked);
     button.setAttribute('aria-pressed',String(silent));button.setAttribute('aria-label',label);button.setAttribute('title',label);
   }
   for(const id of ['muteIcon','soundIcon'])$(id)?.setAttribute('href',silent?'#a-sound-off':'#a-sound-on');
+  if($('menuSoundText'))$('menuSoundText').textContent=silent?'ΗΧΟΣ OFF':blocked?'ΕΝΕΡΓΟΠΟΙΗΣΗ ΗΧΟΥ':'ΗΧΟΣ ON';
   if($('muteValue'))$('muteValue').textContent=silent?'ΚΛΕΙΣΤΟΣ':blocked?'ΠΑΤΑ':'ΣΙΓΑΣΗ';
   const status=silent?'Ο ήχος είναι σε σίγαση.':blocked?'Πάτησε «Δοκιμή ήχου» για ενεργοποίηση.':audio.sampleCount>0?'Ηχογραφημένα εφέ και φωνές έτοιμα.':'Ήχος ενεργός · φόρτωση ηχογραφήσεων…';
-  for(const id of ['audioStatus','menuAudioStatus'])if($(id))$(id).textContent=status;
+  if($('audioStatus'))$('audioStatus').textContent=status;
+  if($('menuAudioStatus'))$('menuAudioStatus').textContent=silent?'Ο ήχος είναι κλειστός.':blocked?'Άγγιξε το σφυρί ή τον ήχο για να ζωντανέψει το εργαστήρι.':'Μουσική εργαστηρίου · Πάτησε το σφυρί για ένα χτύπημα.';
 }
 function enableGameAudio(){
   if(settings.volume<=0){settings.volume=.75;audio.setVolume(.75);$('volumeRange').value=75;}
@@ -2118,51 +2157,48 @@ function aimFromClient(e){
   pointer.x=(e.clientX-rect.left)*screenW/Math.max(1,rect.width);
   pointer.y=(e.clientY-rect.top)*screenH/Math.max(1,rect.height);pointer.active=true;
 }
-function beginTouchThrow(e){
-  if(!isTouchPointer(e)){startThrow();return;}
-  // A returning hammer or a short recovery must not discard the entire
-  // gesture. Aim can start now; only release commits an available throw.
-  if(phase!=='playing'||leap||Math.abs(stance-stanceTarget)>.005)return;
-  cancelAttack();guardHeld=false;guarding=false;pointer.active=false;
-  touchThrowAim={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,dx:0,dy:0,dragged:false,
-    time:0,channelTime:0,channelAngle:-.7,channeling:false,trailTime:0};
+function beginTouchThrow(e={}){
+  if(phase!=='playing'||leap||(throwFlight&&!characterStats.canReturn)||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
+  if(settings.throwMode==='tap'&&touchThrowAim){confirmThrowAim();return true;}
+  if(touchThrowAim)return false;
+  cancelAttack();guardHeld=false;guarding=false;
+  const touchInput=isTouchPointer(e);if(touchInput)pointer.active=false;
+  touchThrowAim={pointerId:e.pointerId??'keyboard-r',startX:e.clientX||0,startY:e.clientY||0,dx:0,dy:0,dragged:false,touchInput,
+    time:0,channelTime:0,channelAngle:-.5,channeling:false,trailTime:0};
+  updateAim();audio.play('menuHover');return true;
 }
 function moveTouchThrow(e){
-  const g=touchThrowAim;if(!g||g.pointerId!==e.pointerId||phase!=='playing')return;
+  const g=touchThrowAim;if(!g||!g.touchInput||g.pointerId!==e.pointerId||phase!=='playing')return;
   g.dx=e.clientX-g.startX;g.dy=e.clientY-g.startY;
-  // Crossing the threshold deliberately starts manual aim. Returning the
-  // thumb to the origin keeps its last useful direction, without a divide by 0.
   const distance=Math.hypot(g.dx,g.dy);
   if(distance>=10){g.dragged=true;g.lastX=g.dx;g.lastY=g.dy;}
   else if(g.dragged){g.dx=g.lastX;g.dy=g.lastY;}
   if(g.dragged)updateAim();
 }
+function confirmThrowAim(){
+  const g=touchThrowAim;if(!g)return false;
+  if(g.touchInput&&!g.dragged){pointer.active=false;const move=movementDirection();if(move.x||move.z)facing=move;}
+  updateAim();const direction={...aim};
+  touchThrowAim=null;throwLock=null;if(g.touchInput)pointer.active=false;
+  if(phase==='playing'&&!leap&&Math.abs(stance-stanceTarget)<=.005&&!startThrow(direction)){
+    touchThrowQueued={dir:direction,life:TOUCH_THROW_BUFFER_SECONDS};
+  }
+  return true;
+}
 function releaseTouchThrow(e){
   if(!touchThrowAim||touchThrowAim.pointerId!==e?.pointerId)return;
   moveTouchThrow(e);
-  const dragged=touchThrowAim.dragged;
-  if(dragged)updateAim();
-  else{
-    pointer.active=false;
-    const move=movementDirection();
-    if(move.x||move.z)facing=move;
-    updateAim();
-  }
-  const direction={...aim};
-  const channelAngle=touchThrowAim.channeling?touchThrowAim.channelAngle:null;
-  touchThrowAim=null;pointer.active=false;
-  if(phase==='playing'&&!leap&&Math.abs(stance-stanceTarget)<=.005&&!startThrow(direction,channelAngle)){
-    // Preserve a release made just before recovery ends, with its original
-    // direction. Never leave a delayed throw waiting indefinitely.
-    touchThrowQueued={dir:direction,life:TOUCH_THROW_BUFFER_SECONDS};
-  }
+  if(settings.throwMode==='hold')confirmThrowAim();
+  else touchThrowAim.pointerId=null; // Latched aim survives pointer capture release.
 }
 function cancelTouchThrow(){
   if(touchThrowAim?.channeling&&!swing&&!leap&&!throwFlight){const rig=hero.userData.weaponRig;spinRecovery={time:0,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};}
-  touchThrowAim=null;touchThrowQueued=null;pointer.active=false;$('throwButton')?.classList.remove('aiming','queued','channeling');
+  touchThrowAim=null;touchThrowQueued=null;throwLock=null;pointer.active=false;$('throwButton')?.classList.remove('aiming','queued','channeling');
 }
 function initInput(){
-  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?Number($('startingLevel').value):1,{test:testRun,resume:!testRun});
+  $('startButton').onclick=()=>startGame(1,{resume:!!restoreCharacterProgression(read('ironfall.character',null)?.character),round:1});
+  $('roundSelectButton').onclick=openRounds;$('closeRoundsButton').onclick=()=>setPhase('menu');
+  $('menuSettingsButton').onclick=()=>{previousPhase='menu';setPhase('settings');audio.play('menuPress');};$('retryButton').onclick=()=>startGame(testRun?Number($('startingLevel').value):1,{test:testRun,resume:!testRun});
   $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};
   $('resumeCharacterButton').onclick=()=>startGame(1,{resume:true});
   $('startingLevel').replaceChildren();for(let n=1;n<=MAX_CHARACTER_LEVEL;n++){const option=document.createElement('option');option.value=String(n);option.textContent=String(n);$('startingLevel').appendChild(option);}$('startingLevel').value='10';
@@ -2184,6 +2220,8 @@ function initInput(){
   $('qualitySelect').value=settings.quality;$('shakeToggle').checked=settings.shake;$('volumeRange').value=Math.round(settings.volume*100);
   $('qualitySelect').onchange=e=>{settings.quality=e.target.value;resize();save('ironfall.settings',settings);};
   $('shakeToggle').onchange=e=>{settings.shake=e.target.checked;save('ironfall.settings',settings);};
+  $('throwModeSelect').value=settings.throwMode;
+  $('throwModeSelect').onchange=e=>{cancelTouchThrow();settings.throwMode=e.target.value==='hold'?'hold':'tap';save('ironfall.settings',settings);};
   $('throwAutoLockToggle').checked=settings.throwAutoLock;
   $('throwAutoLockToggle').onchange=e=>{settings.throwAutoLock=!!e.target.checked;throwLock=null;if(!settings.throwAutoLock&&throwFlight){throwFlight.chainTarget=null;throwFlight.dir=normalize(throwFlight.dir.x,throwFlight.dir.z);}save('ironfall.settings',settings);};
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
@@ -2191,19 +2229,20 @@ function initInput(){
   window.addEventListener('keydown',e=>{
     const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyU','KeyE'];
     if(handled.includes(e.code)&&!['INPUT','SELECT'].includes(document.activeElement?.tagName))e.preventDefault();
-    if(e.code==='Escape'&&!e.repeat){if(phase==='playing'&&upgradePanelOpen)toggleUpgradePanel(false);else if(phase==='settings'){setPhase(previousPhase);}else pauseGame();return;}
-    if(phase==='menu'&&e.code==='Enter'&&!$('startButton').disabled){startGame();return;}
+    if(e.code==='Escape'&&!e.repeat){if(phase==='playing'&&(touchThrowAim||touchThrowQueued)){cancelTouchThrow();return;}if(phase==='rounds'){setPhase('menu');return;}if(phase==='playing'&&upgradePanelOpen)toggleUpgradePanel(false);else if(phase==='settings'){setPhase(previousPhase);}else pauseGame();return;}
+    if(phase==='menu'&&e.code==='Enter'&&!$('startButton').disabled&&!['BUTTON','SELECT','INPUT'].includes(document.activeElement?.tagName)){$('startButton').click();return;}
     if(phase==='playing'&&upgradePanelOpen&&upgradeTab==='powers'&&['Digit1','Digit2','Digit3'].includes(e.code)){if(!e.repeat)$('upgradeChoices').children[Number(e.code.slice(-1))-1]?.click();return;}
     if(phase!=='playing'||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
     if(e.code==='KeyU'&&!e.repeat){toggleUpgradePanel();return;}
     keys.add(e.code);document.querySelector('[data-key="'+e.code+'"]')?.classList.add('active');
     if(e.code==='Space'&&!e.repeat)startLeap();
     if(e.code==='KeyE'&&!e.repeat)startKick();
-    if(e.code==='KeyR'&&!e.repeat)startThrow();
+    if(e.code==='KeyR'&&!e.repeat)beginTouchThrow({pointerId:'keyboard-r',pointerType:'keyboard'});
     if(e.code==='KeyZ'&&!e.repeat)toggleStance();
     if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)dodge();
   });
   window.addEventListener('keyup',e=>{
+    if(e.code==='KeyR')releaseTouchThrow({pointerId:'keyboard-r'});
     keys.delete(e.code);document.querySelector('[data-key="'+e.code+'"]')?.classList.remove('active');
   });
   window.addEventListener('blur',()=>{if(phase==='playing')setPhase('paused');clearInput();});
@@ -2323,7 +2362,7 @@ function frame(now){
   const lightning=weather==='rain'&&Math.sin(visualTime*.47)> .998?Math.sin(visualTime*70)**8*.35:0;
   sun.intensity=2.25+lightning;fillLight.intensity=1.45+(weather==='snow'?.2:0);
   audio.update(realDt,phase==='playing'?Math.min(1,enemies.length/40+(boss&&!boss.dead?.4:0)):0,weather);
-  renderer.render(scene,camera);drawFX();
+  renderer.render(scene,camera);menuPresentation?.update(realDt);drawFX();
   hudTimer-=realDt;if(hudTimer<=0){updateHUD();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
   minimapTimer-=realDt;if(minimapTimer<=0){drawMinimap();minimapTimer=.18;}
 }
@@ -2346,11 +2385,12 @@ async function init(){
   landingMarker=makeTelegraph(0,0,1,0xffc371);landingMarker.visible=false;
   groundShadow=new THREE.Mesh(new THREE.CircleGeometry(.65,24),new THREE.MeshBasicMaterial({color:0x081719,transparent:true,opacity:.32,depthWrite:false}));groundShadow.rotation.x=-Math.PI/2;scene.add(groundShadow);
   fragments=new Fragments();impactClouds=new ImpactClouds();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
+  menuPresentation=new MenuPresentation({document,audio,rendererFactory:options=>new THREE.WebGLRenderer(options),reduceMotion:!!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches});
   initInput();resize();setPhase('menu');
   $('gameCanvas').setAttribute('tabindex','-1');
   // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync)await renderer.compileAsync(scene,camera);
-  $('startButton').disabled=false;$('testStartButton').disabled=false;updateSavedCharacter();$('loadingStatus').textContent='Από κούτσουρο σε σφυρί καταιγίδας. Η πόλη είναι έτοιμη.';
+  gameReady=true;$('startButton').disabled=false;$('testStartButton').disabled=false;$('roundSelectButton').disabled=false;updateSavedCharacter();$('loadingStatus').textContent='Από κούτσουρο σε σφυρί καταιγίδας. Η πόλη είναι έτοιμη.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');
   requestAnimationFrame(frame);
 }

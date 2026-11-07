@@ -21,6 +21,8 @@ import * as combatFeedback from '../combat-feedback.js';
 import * as occlusion from '../occlusion.js';
 import * as kickPhysics from '../kick-physics.js';
 import * as combatTools from '../combat-tools.js';
+import * as geometryCollision from '../geometry-collision.js';
+import * as menuModule from '../menu.js';
 import * as destructionModule from '../destruction.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
@@ -187,11 +189,14 @@ const imports = new Map([
   ['./kick-physics.js', synthetic(kickPhysics, 'real-kick-physics')],
   ['./combat-tools.js', synthetic(combatTools, 'real-combat-tools')],
   ['./destruction.js', synthetic(destructionModule, 'real-destruction')],
+  ['./geometry-collision.js', synthetic(geometryCollision, 'real-geometry-collision')],
+  ['./menu.js', synthetic(menuModule, 'real-menu')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get highestRound(){return highestRound;},get menuPresentation(){return menuPresentation;},openRounds,renderRoundPage,updateSavedCharacter,drawAim,
   get destruction(){return destruction;},
   get punch(){return punch;},get settings(){return settings;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,
@@ -303,7 +308,7 @@ function advance(seconds, step = 1 / 60) {
   }
 }
 function reset(startLevel = 15, options = {test: true}) {
-  heldMousePoint = null;api.settings.throwAutoLock=true;
+  heldMousePoint = null;api.settings.throwAutoLock=true;api.settings.throwMode='hold'; // Legacy release-to-throw regressions explicitly select the retained hold mode.
   // Existing combat regressions exercise the complete hammer kit. Ordinary
   // character progression is covered explicitly with reset(1, {test:false}).
   api.clearInput(); api.startGame(startLevel, options); advance(.1);
@@ -401,6 +406,13 @@ function placeObject(type, x, z, options = {}) {
   const object = api.world.objects.find(o => o.type === type);
   assert.ok(object, `Real world fixture has a ${type}`);
   Object.assign(object, { x, z }, options);
+  if(['w','d','h'].some(key=>Object.hasOwn(options,key))){
+    // These collision fixtures intentionally specify a box roof/wall. Author
+    // the same visible box instead of lying about an unchanged townhouse mesh.
+    api.scene.remove(object.mesh);
+    const root=new THREE.Group(),mesh=new THREE.Mesh(new THREE.BoxGeometry(object.w,object.h,object.d),new THREE.MeshLambertMaterial({color:0x889999}));
+    mesh.position.y=object.h/2;root.add(mesh);api.scene.add(root);object.mesh=root;object.baseY=0;object.baseRotation=new THREE.Euler();object.materials=[mesh.material];
+  }
   object.mesh.position.set(x, object.baseY, z);
   api.world.rebuildSpatialIndex();
   return object;
@@ -413,6 +425,7 @@ function headAzimuth() {
 
 test('game initializes using its actual HTML ids, world and warrior, and renders a frame', () => {
   assert.deepEqual(browserErrors, []);
+  assert.equal(api.settings.throwMode,'tap','New saves default to tap-aim / tap-confirm');
   assert.equal(api.phase, 'menu');
   assert.equal(elements.get('startButton').disabled, false);
   assert.equal(elements.get('fatalError').hidden, true);
@@ -1519,7 +1532,7 @@ test('a successful catch lights only the hammer, expires cleanly, and never expa
   assert.equal(aura.root.visible, false); assert.equal(elements.get('throwButton').classList.contains('lightning-ready'), false);
 });
 
-test('holding a mobile throw spins vertically along aim while walking and cancels without a stale release', () => {
+test('holding a mobile throw keeps a steady ready stance while walking and cancels without a stale release', () => {
   touchArena(() => {
     moveStick('pointerdown', 1, 0, 101);
     throwTouch('pointerdown'); throwTouch('pointermove', -60, 0);
@@ -1530,16 +1543,14 @@ test('holding a mobile throw spins vertically along aim while walking and cancel
       if (api.touchThrowAim.channelTime > .15) {
         const vector = worldPosition(u.hammerHead).sub(worldPosition(u.hammerPivot));
         samples.push({ y: vector.y, along: vector.x * direction.x + vector.z * direction.z });
-        close(vector.x * direction.z - vector.z * direction.x, 0, .0001);
+        assert.ok(vector.length()>1,'The complete weapon remains attached while aiming');
       }
       close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
     });
     assert.ok(api.touchThrowAim?.channeling);
     assert.ok(new THREE.Vector3(api.player.x, api.player.y, api.player.z).distanceTo(firstPosition) > 3);
-    assert.ok(Math.max(...samples.map(p => p.y)) > .9 && Math.min(...samples.map(p => p.y)) < -.9,
-      'The shaft must visibly pass both above and below the wrist');
-    assert.ok(Math.max(...samples.map(p => p.along)) > .9 && Math.min(...samples.map(p => p.along)) < -.9,
-      'Channeling must complete a vertical orbit instead of rocking between two poses');
+    assert.ok(Math.min(...samples.map(p => p.y)) > 0,'Ready stance does not spin through the legs');
+    assert.ok(Math.max(...samples.map(p => p.y))-Math.min(...samples.map(p => p.y)) < .15,'Aiming settles into a readable pose rather than an endless orbit');
     assert.equal(api.hammerAura.root.visible, true); assert.equal(api.hammerLightning, 0);
     throwTouch('pointercancel', -60, 0); playerSteps(.15);
     assert.equal(api.touchThrowAim, null); assert.equal(api.hammerAura.root.visible, false);
@@ -1777,7 +1788,7 @@ test('RMB, Space, R and Z cancel a held spin and carry out their own actions wit
   for (const action of ['RMB', 'Space', 'KeyR', 'KeyZ']) {
     arena(); mouseAttack(true); playerSteps(.3); assert.ok(api.spin);
     if (action === 'RMB') chordButtons(3, { button: 2 });
-    else key(action, true);
+    else {key(action, true);if(action==='KeyR')key(action,false);}
     api.updatePlayer(.01);
     assert.equal(api.spin, null, `${action} must cancel the old spin`);
     if (action === 'RMB') assert.equal(api.guarding, true);
@@ -3345,4 +3356,109 @@ test('actual low-damage car hits activate one alarm before any panel comes off; 
  assert.equal(car.destruction,undefined);assert.equal(api.destruction.alarms.size,1);
  api.destruction.update(.1,{x:car.x,z:car.z});assert.ok(audioEvents.some(e=>e.name==='carAlarm'));
  const old=api.destruction;reset(1,{test:false});assert.equal(old.disposed,true);assert.equal(old.alarms.size,0);assert.equal(old.debris.length,0);
+});
+
+
+// menu9: the default is a deliberately latched aim, not a double-click timer.
+test('tap mode R enters aim on first press and launches only on a second fresh press',()=>{
+ arena(1);api.settings.throwMode='tap';
+ key('KeyR',true);assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);
+ key('KeyR',false);playerSteps(.8);assert.ok(api.touchThrowAim);assert.equal(api.throwFlight,null);
+ emit('keydown',{code:'KeyR',repeat:true});assert.equal(api.throwWindup,null);
+ key('KeyR',true);assert.equal(api.touchThrowAim,null);assert.ok(api.throwWindup);key('KeyR',false);
+ playerSteps(.5);assert.ok(api.throwFlight);assert.equal(api.hero.userData.weaponHeld,false);
+});
+test('tap mode works on the actual touch tile and capture release cannot cancel the latched target',()=>{
+ touchArena(()=>{
+  api.settings.throwMode='tap';throwTouch('pointerdown');throwTouch('pointerup');
+  throwTouch('lostpointercapture');assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);
+  playerSteps(.4);throwTouch('pointerdown',0,0,303);assert.ok(api.throwWindup);throwTouch('pointerup',0,0,303);
+  assert.equal(api.touchThrowAim,null);playerSteps(.35);assert.ok(api.throwFlight);
+ });
+});
+test('the mouse control tile follows tap-confirm without duplicating the release',()=>{
+ arena();api.settings.throwMode='tap';
+ const p={pointerType:'mouse',pointerId:97,button:0,buttons:1};
+ pointerEvent('throwButton','pointerdown',p);pointerEvent('throwButton','pointerup',{...p,buttons:0});
+ assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);
+ pointerEvent('throwButton','pointerdown',p);const windup=api.throwWindup;assert.ok(windup);
+ pointerEvent('throwButton','pointerup',{...p,buttons:0});assert.equal(api.throwWindup,windup);
+});
+test('Escape cancels tap targeting before pausing and never releases a phantom weapon',()=>{
+ arena();api.settings.throwMode='tap';key('KeyR',true);key('KeyR',false);
+ key('Escape',true);key('Escape',false);assert.equal(api.phase,'playing');assert.equal(api.touchThrowAim,null);
+ playerSteps(.6);assert.equal(api.throwWindup,null);assert.equal(api.throwFlight,null);
+ key('Escape',true);key('Escape',false);assert.equal(api.phase,'paused');
+});
+test('switching throw mode persists and cancels an existing latched gesture',()=>{
+ arena();api.settings.throwMode='tap';key('KeyR',true);key('KeyR',false);
+ elements.get('throwModeSelect').onchange({target:{value:'hold'}});
+ assert.equal(api.settings.throwMode,'hold');assert.equal(api.touchThrowAim,null);
+ assert.equal(JSON.parse(storage.get('ironfall.settings')).throwMode,'hold');
+ key('KeyR',true);playerSteps(.2);assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);
+ key('KeyR',false);assert.ok(api.throwWindup);
+});
+test('an attack or loss of focus cancels latched aim without delayed throw',()=>{
+ arena();api.settings.throwMode='tap';key('KeyR',true);key('KeyR',false);api.startKick();
+ assert.equal(api.touchThrowAim,null);assert.ok(api.kick);playerSteps(.65);assert.equal(api.throwFlight,null);
+ key('KeyR',true);key('KeyR',false);emit('blur');assert.equal(api.phase,'paused');assert.equal(api.touchThrowAim,null);
+ api.setPhase('playing');playerSteps(.5);assert.equal(api.throwFlight,null);
+});
+test('a targeted enemy is marked only during aiming; switching auto-lock off leaves manual aiming',()=>{
+ arena();api.settings.throwMode='tap';const enemy=stationaryEnemy('raider',.7,5);
+ api.updateAim();assert.equal(api.throwLock,null);
+ key('KeyR',true);key('KeyR',false);api.updateAim();assert.equal(api.throwLock,enemy);
+ const ctx=elements.get('fxCanvas').context;ctx.textCalls.length=0;api.drawAim();
+ assert.ok(ctx.textCalls.some(call=>call.text==='ΣΤΟΧΟΣ ΡΙΨΗΣ'));
+ elements.get('throwAutoLockToggle').onchange({target:{checked:false}});api.updateAim();assert.equal(api.throwLock,null);
+ ctx.textCalls.length=0;api.drawAim();assert.ok(!ctx.textCalls.some(call=>call.text==='ΣΤΟΧΟΣ ΡΙΨΗΣ'));
+ assert.ok(api.touchThrowAim);key('Escape',true);key('Escape',false);
+ ctx.textCalls.length=0;api.drawAim();assert.equal(ctx.textCalls.length,0);
+});
+test('tap targeting refreshes a dead lock before confirmation',()=>{
+ arena();api.settings.throwMode='tap';const first=stationaryEnemy('raider',0,5),second=stationaryEnemy('raider',1.4,6);
+ key('KeyR',true);key('KeyR',false);assert.equal(api.throwLock,first);first.dead=true;first.hp=0;
+ api.updateAim();assert.equal(api.throwLock,second);key('KeyR',true);key('KeyR',false);assert.ok(api.throwWindup);
+ assert.ok(api.throwWindup.dir.x>0,'The committed direction follows the surviving visible target');
+});
+test('menu shows four real destinations and settings return without starting a run',()=>{
+ api.clearInput();api.setPhase('menu');api.updateSavedCharacter();
+ for(const id of ['startButton','resumeCharacterButton','roundSelectButton','menuSettingsButton'])assert.ok(elements.has(id));
+ assert.equal(elements.get('hud').hidden,true);elements.get('menuSettingsButton').click();
+ assert.equal(api.phase,'settings');assert.equal(elements.get('menu').hidden,false);assert.equal(elements.get('hud').hidden,true);
+ elements.get('closeSettingsButton').click();assert.equal(api.phase,'menu');
+ elements.get('roundSelectButton').click();assert.equal(api.phase,'rounds');assert.equal(elements.get('roundSelectMenu').hidden,false);
+ key('Escape',true);key('Escape',false);assert.equal(api.phase,'menu');
+});
+test('New Round and Continue retain earned stats but choose first and saved round respectively',()=>{
+ arena(1,{test:false});api.character.xp=3;api.beginWave(3);api.persistCharacter();
+ const before=JSON.parse(storage.get('ironfall.character'));assert.equal(before.run.round,3);
+ api.setPhase('menu');api.updateSavedCharacter();assert.equal(elements.get('resumeCharacterButton').disabled,false);
+ elements.get('resumeCharacterButton').click();assert.equal(api.round,3);assert.equal(api.character.xp,3);
+ api.setPhase('menu');elements.get('startButton').click();assert.equal(api.round,1);assert.equal(api.character.xp,3);
+ assert.equal(api.character.weaponTier,before.character.weaponTier);assert.ok(api.highestRound>=3);
+});
+test('round selection lists only earned rounds and survives returning from a boss victory',()=>{
+ arena(1,{test:false});const next=api.highestRound+1;api.setPhase('victory');api.beginWave(next);
+ assert.equal(api.highestRound,next);assert.equal(Number(JSON.parse(storage.get('ironfall.rounds'))),next);
+ api.setPhase('menu');api.openRounds();const choices=elements.get('roundChoices').children.filter(b=>b.className==='round-choice');
+ assert.ok(choices.length>0);for(const button of choices){const n=Number(button.children[1].textContent);assert.ok(n<=api.highestRound);}
+ choices[0].click();assert.equal(api.phase,'playing');assert.equal(api.round,1);
+});
+test('testing a character level cannot unlock rounds or overwrite the real menu checkpoint',()=>{
+ const before=storage.get('ironfall.character'),highest=api.highestRound;
+ arena(10,{test:true});api.beginWave(highest+20);api.gainXP(10);api.persistCharacter();
+ assert.equal(api.highestRound,highest);assert.equal(storage.get('ironfall.character'),before);
+});
+test('the production movement uses a real low roof and falls locally when its support is destroyed',()=>{
+ arena(1);const roof=placeObject('townhouse',0,0,{w:3,d:3,h:1.2,hp:1000,maxHp:1000});
+ Object.assign(api.player,{x:0,z:0,y:3,vy:-2,vx:0,vz:0});
+ playerSteps(.6);close(api.player.y,1.2,.001);
+ roof.dead=true;playerSteps(.6);assert.ok(api.player.y<.2);close(api.player.x,0,.001);close(api.player.z,0,.001);
+});
+test('a sign-like low ceiling stops a rising jump at its actual underside',()=>{
+ arena(1);const ceiling=placeObject('townhouse',0,0,{w:4,d:4,h:.2,hp:1000,maxHp:1000});
+ ceiling.mesh.children[0].position.y=2.4;api.startLeap();let max=0;
+ playerSteps(.65,1/120,()=>{max=Math.max(max,api.player.y);});
+ assert.ok(max<.7,`Head passed through the underside: feet reached ${max}`);assert.ok(api.player.y<.1);
 });
