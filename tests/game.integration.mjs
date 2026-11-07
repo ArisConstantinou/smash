@@ -21,6 +21,7 @@ import * as combatFeedback from '../combat-feedback.js';
 import * as occlusion from '../occlusion.js';
 import * as kickPhysics from '../kick-physics.js';
 import * as combatTools from '../combat-tools.js';
+import * as destructionModule from '../destruction.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -185,11 +186,13 @@ const imports = new Map([
   ['./occlusion.js', synthetic(occlusion, 'real-occlusion')],
   ['./kick-physics.js', synthetic(kickPhysics, 'real-kick-physics')],
   ['./combat-tools.js', synthetic(combatTools, 'real-combat-tools')],
+  ['./destruction.js', synthetic(destructionModule, 'real-destruction')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get destruction(){return destruction;},
   get punch(){return punch;},get settings(){return settings;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,
   get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
@@ -3322,4 +3325,24 @@ test('dash primes one normal blow rather than buffing every spin revolution',()=
  arena(1,{test:false});assert.ok(api.dodge());playerSteps(.25);api.primeSwing(0);api.beginSwing();
  assert.ok(api.swing?.dashBoost);assert.equal(api.dashFollowup,0);
  assert.equal(api.swing.damage,Math.round(Math.round(api.stats.power*1.25)*1.25));
+});
+
+test('actual weapon damage transitions building stages once, and collapse releases rendered chunks',()=>{
+ reset(1,{test:false});const o=api.world.objects.find(o=>o.isBuilding);const point={x:o.x+o.w/2,y:1.4,z:o.z};
+ api.hurtObject(o,o.maxHp*.21,0,point,'wood');assert.equal(o.destruction.stage,2);
+ assert.ok(api.destruction.debris.length>0);const removed=o.destruction.removedIds.length;
+ api.hurtObject(o,1,0,point,'wood');assert.equal(o.destruction.removedIds.length,removed);
+ api.hurtObject(o,o.maxHp*.31,0,point,'wood');assert.equal(o.destruction.stage,3);
+ assert.ok(audioEvents.some(e=>e.name==='buildingFracture'));
+ api.hurtObject(o,o.maxHp,0,point,'wood');assert.equal(o.dead,true);assert.equal(o.mesh.visible,false);
+ assert.equal(o.destruction.stage,6);assert.ok(audioEvents.some(e=>e.name==='buildingCollapse'));
+ assert.ok(!api.world.nearObjects(o.x,o.z,.1).includes(o));
+});
+
+test('actual low-damage car hits activate one alarm before any panel comes off; reset clears it',()=>{
+ reset(1,{test:false});const car=api.world.objects.find(o=>o.type==='car');
+ api.hurtObject(car,1,0,null,'fist');api.hurtObject(car,1,0,null,'foot');
+ assert.equal(car.destruction,undefined);assert.equal(api.destruction.alarms.size,1);
+ api.destruction.update(.1,{x:car.x,z:car.z});assert.ok(audioEvents.some(e=>e.name==='carAlarm'));
+ const old=api.destruction;reset(1,{test:false});assert.equal(old.disposed,true);assert.equal(old.alarms.size,0);assert.equal(old.debris.length,0);
 });

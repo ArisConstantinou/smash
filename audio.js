@@ -4,7 +4,8 @@ import { RecordedSounds } from './audio-samples.js?v=20261106-audio2';
 const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
 const MAX_SOURCES = 64;
 const METAL_VOICES = new Set(['robot', 'mech', 'siegeMech', 'boss']);
-const SPACING = { hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
+const ENVIRONMENT = new Set(['carAlarm','carTear','carWreck','buildingFracture','buildingCollapse','debrisLand']);
+const SPACING = { carAlarm:.10, carTear:.15, carWreck:.22, buildingFracture:.16, buildingCollapse:.35, debrisLand:.095, hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
 
 export class GameAudio {
   constructor() {
@@ -15,6 +16,7 @@ export class GameAudio {
     this.ready = false;
     this._ambient = null;
     this._sources = new Set();
+    this._environmentSources = new Map();
     this._cleanups = new Map();
     this._voices = new Set();
     this._recent = new Map();
@@ -193,6 +195,7 @@ export class GameAudio {
       if (!this._cleanups.has(source)) return;
       this._cleanups.delete(source);
       this._sources.delete(source);
+      this._environmentSources.delete(source);
       this._voices.delete(source);
       source.onended = null;
       for (const node of [source, ...nodes]) { try { node.disconnect(); } catch (_) {} }
@@ -365,9 +368,66 @@ export class GameAudio {
     if (!this._canAllocate()) return false;
     const p = clamp(power), d = details && typeof details === 'object' ? details : {};
     const material = d.material || (name === 'break' ? 'masonry' : 'flesh');
-    const key = name === 'hit' || name === 'break' ? name + ':' + material : name;
+    const key = name === 'carAlarm' ? name+':'+(d.id??0) : name === 'hit' || name === 'break' ? name + ':' + material : name;
     if (!this._allow(key, SPACING[name] ?? .04)) return false;
+    const existing = ENVIRONMENT.has(name) ? new Set(this._sources) : null;
     switch (name) {
+      case 'carAlarm': {
+        // Three recognizable automotive alarm patterns, not a generic hit beep.
+        // Finite pulses: the world owns lifetime, distance and emitter limits.
+        const variant=(d.variant||0)%3,v=p*.28;
+        if(variant===0){
+          this._tone('square',780,780,v,.14,0,.008);
+          this._tone('square',1120,1120,v*.82,.14,.17,.008);
+        } else if(variant===1){
+          this._tone('sawtooth',640,1500,v,.19,0,.015);
+          this._tone('sawtooth',1500,640,v*.8,.19,.22,.015);
+        } else {
+          this._tone('square',960,980,v,.11,0,.007);
+          this._tone('square',960,980,v,.11,.16,.007);
+          this._tone('sine',480,470,v*.55,.33,0,.015);
+        }
+        break;
+      }
+      case 'buildingFracture': {
+        const v=p*(.65+Math.min(5,d.stage||2)*.07);
+        this._sample('masonry',v,.79+Math.random()*.14);
+        this._sample('masonry',v*.43,.95+Math.random()*.15,.11);
+        this._noise(v*.24,.36,2100,'lowpass',.025,330);
+        this._tone('triangle',170,54,v*.16,.30);
+        this._glass(v*.42,.055);
+        break;
+      }
+      case 'buildingCollapse': {
+        // Recorded stone impacts plus mid-band grinding and a long settling
+        // tail. Include phone-audible crack/crunch, not only sub-bass rumble.
+        this._sample('masonry',p,.72);
+        this._sample('masonry',p*.73,.88,.20);
+        this._sample('masonry',p*.49,1.12,.48);
+        this._noise(p*.38,1.55,1250,'lowpass',.03,110,.08);
+        this._noise(p*.23,.65,2600,'bandpass',.15,380,.025);
+        this._noise(p*.14,.55,1900,'bandpass',.72,500);
+        this._tone('triangle',132,37,p*.24,.9,.01,.025);
+        this._glass(p*.55,.10);
+        break;
+      }
+      case 'carTear':
+      case 'carWreck': {
+        const wreck=name==='carWreck',v=p;
+        this._sample('metal',v,.77+Math.random()*.15);
+        this._sample('metal',v*.5,1.12,wreck?.21:.09);
+        this._noise(v*.25,wreck?.58:.23,2200,'bandpass',.02,420);
+        this._tone('triangle',196,47,v*.18,wreck?.5:.23);
+        this._glass(v*(wreck?.8:.5),.03);
+        if(wreck)this._noise(v*.17,.45,1100,'lowpass',.28,170);
+        break;
+      }
+      case 'debrisLand': {
+        const metal=d.material==='metal';
+        this._sample(metal?'metal':'masonry',p*.64,.88+Math.random()*.18);
+        this._noise(p*.14,.16,metal?2400:1200,'bandpass',.035,450);
+        break;
+      }
       case 'punch': {
         this._noise(.12,.065,1000,'bandpass',.012,2100,.008);
         if(d.exert!==false&&this._allow('exert'))this._vocal('exert',.12,'player',false,0);
@@ -469,7 +529,21 @@ export class GameAudio {
       case 'ui':
       default: this._tone('sine', 440, 660, .055, .09); break;
     }
+    if(existing)for(const source of this._sources)if(!existing.has(source))this._environmentSources.set(source,{name,id:d.id});
     return true;
+  }
+
+  _glass(volume,delay=0) {
+    this._noise(volume*.24,.075,5100,'highpass',delay,2200);
+    [1961,3137,4531].forEach((frequency,i)=>this._tone('sine',frequency,frequency*.92,volume*.075/(i+1),.10+i*.055,delay+i*.035));
+  }
+
+  stopEnvironment(id=null) {
+    for(const [source,event] of [...this._environmentSources]) {
+      if(id!==null && (event.name!=='carAlarm'||event.id!==id))continue;
+      try { source.stop(); } catch (_) {}
+      this._cleanups.get(source)?.();
+    }
   }
 
   _makeAmbience() {

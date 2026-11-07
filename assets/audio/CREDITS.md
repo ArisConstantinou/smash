@@ -31,3 +31,11 @@ The source hashes, output hashes and excerpt mapping are in `manifest.json`.
 `python3 tools/build-audio.py` reproduces the recorded bank using FFmpeg and
 verified source downloads. Existing procedural swing air, debris, ambience,
 robot reactions and reward stingers are original game effects, not recordings.
+
+## Progressive destruction and vehicle alarms (damage8)
+Car-panel tears, falling rubble and building-collapse events layer the existing
+CC0 Kenney metal/mining recordings with original procedural glass shards,
+structural rumble and settling debris. Three original synthesized automotive
+alarm patterns are selected per car and attenuated by distance. No additional
+recordings or third-party audio requests were introduced. These electronic
+sirens are synthesized effects, not recordings of a particular vehicle.

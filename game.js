@@ -1,10 +1,11 @@
+import {DestructionSystem} from './destruction.js?v=20261107-damage8';
 import {selectThrowLock,punchStats,samplePunchMotion,restSpotClear,nearestPickupPoint,findWeaponRest} from './combat-tools.js?v=20261107-combat7';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261106-kick6';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-combat7';
+import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-damage8';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-combat7';
-import {createWorld} from './world.js?v=20261106-kick6';
-import {GameAudio} from './audio.js?v=20261107-combat7';
+import {createWorld} from './world.js?v=20261107-damage8';
+import {GameAudio} from './audio.js?v=20261107-damage8';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261106-impact4';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
@@ -33,6 +34,7 @@ audio.bindUnlock?.(document);
 audio.preload?.();
 // Sound tests work even while the renderer is still loading.
 for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
+let destruction=null;
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
@@ -210,7 +212,7 @@ function setPhase(next){
   $('menu').hidden=next!=='menu';$('hud').hidden=next==='menu';
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
-  if(next!=='playing'){clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
+  if(next!=='playing'){audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
   syncTouchControls();
 }
@@ -346,9 +348,11 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   hammerLightning=0;if(hammerAura){hammerAura.root.visible=false;hammerAura.lastPattern=-1;}
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
+  destruction?.dispose();
   world?.dispose();
   world=createWorld(scene,{seed:1527+sector*173,round:sector});
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
+  destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size)});
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
@@ -578,7 +582,7 @@ function spinImpact(from,to){
   }
   if(wall&&ready(wall.target)){
     s.hitTimes.set(wall.target,s.time);hits++;
-    if(hurtObject(wall.target,s.damage,.15))breaks++;else s.recoil=1;
+    if(hurtObject(wall.target,s.damage,.15,wall))breaks++;else s.recoil=1;
   }
   if(hits){
     shake=Math.max(shake,breaks?.10:.065);
@@ -655,8 +659,10 @@ function killEnemy(e){
 }
 function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
   if(o.dead||!Number.isFinite(damage)||damage<=0)return false;o.hp-=damage;o.flash=.15;o.shudder=.22;flashMaterials(o,.85);showHitPoints(o,damage);
-  audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
-  const contact=impactPoint||nearestPoint(player.x,player.z,o);impactClouds?.emit(contact.x,impactPoint?.y??Math.min(player.y,o.h),contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7);
+  const nearest=impactPoint||nearestPoint(player.x,player.z,o),contact={x:nearest.x,y:nearest.y??Math.min(player.y+1,o.h),z:nearest.z};
+  const fracture=destruction?.hit(o,contact,player);
+  if(!fracture)audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
+  impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7);
   if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
   o.dead=true;o.mesh.visible=false;world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
@@ -704,7 +710,7 @@ function impact(from=headPrevious,to=headNow){
     const dir=normalize(e.x-player.x+s.fx*.3,e.z-player.z+s.fz*.3);s.hits.add(e);hits++;
     if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,headContact||shaftContact);
   }
-  if(wall){s.hits.add(wall.target);hits++;if(hurtObject(wall.target,s.damage,s.q))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
+  if(wall){s.hits.add(wall.target);hits++;if(hurtObject(wall.target,s.damage,s.q,wall))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
   if(hits){s.hit=true;shake=Math.max(shake,(.105+s.q*.14)*(breaks?1.2:1));if(!s.feedbackDone){s.feedbackDone=true;s.contactTime=s.time;hitStop=(s.variant==='two-overhead'?.032:s.variant==='two-cross'?.026:.022)+s.q*.006;}}
   if(hits&&s.charged&&!s.quakeDone){
     s.quakeDone=true;const radius=2.3+stats.quake*.7;pulse(to.x,to.z,radius,0xffd48b,.35);
@@ -985,7 +991,7 @@ function updateThrownHammer(dt){
       if(hit){
         const target=hit.target;h.hits.add(target);
         if(target===boss)hitBoss(h.damage,h.dir,11);
-        else if(target.w!==undefined)hurtObject(target,h.damage,.7);
+        else if(target.w!==undefined)hurtObject(target,h.damage,.7,hit);
         else hitEnemy(target,h.damage,h.dir,11,3.2);
         if(target.w===undefined){
           h.hitCount++;h.chainTarget=nextThrowTarget(h);h.legDistance=0;
@@ -1240,7 +1246,7 @@ function updateEnemies(dt){
       hurtPlayer(b.damage,b.vx/10,b.vz/10);b.life=0;
     }else if(hit){
       b.x=hit.x;b.z=hit.z;b.life=0;
-      if(b.reflected){const dir=normalize(b.vx,b.vz);if(hit.target===boss)hitBoss(b.damage,dir,5);else if(hit.target.w!==undefined)hurtObject(hit.target,b.damage,.1);else hitEnemy(hit.target,b.damage,dir,5,1.5);}
+      if(b.reflected){const dir=normalize(b.vx,b.vz);if(hit.target===boss)hitBoss(b.damage,dir,5);else if(hit.target.w!==undefined)hurtObject(hit.target,b.damage,.1,hit);else hitEnemy(hit.target,b.damage,dir,5,1.5);}
     }else{b.x=to.x;b.z=to.z;}
     b.mesh.position.set(b.x,1,b.z);b.mesh.rotation.y+=dt*12;
     if(b.life<=0){scene.remove(b.mesh);b.mesh.geometry.dispose();b.mesh.material.dispose();bolts.splice(i,1);}
@@ -2304,7 +2310,9 @@ function frame(now){
   }else if(phase==='menu'){player.walk+=realDt*.25;poseHero(realDt,false);updateObjects(realDt);}
   const weather=world.regionAt?.(player.x,player.z)?.weather||'rain';
   const environmentDt=phase==='playing'?simulated:phase==='menu'?realDt:0;
-  world.update(environmentDt,visualTime,player,weather);updateEffects(phase==='paused'||phase==='settings'?0:realDt);
+  world.update(environmentDt,visualTime,player,weather);
+  destruction?.update(environmentDt,player,{active:phase==='playing'});
+  updateEffects(phase==='paused'||phase==='settings'?0:realDt);
   const desired=phase==='menu'?new THREE.Vector3(-5,.6,3.5):new THREE.Vector3(player.x+facing.x*.8,.6+player.y*.25,player.z+facing.z*.8);
   cameraTarget.lerp(desired,1-Math.exp(-realDt*5.6));camera.position.copy(cameraTarget).add(cameraOffset);
   if(settings.shake&&shake>0){camera.position.x+=(Math.random()-.5)*shake;camera.position.y+=(Math.random()-.5)*shake*.5;camera.position.z+=(Math.random()-.5)*shake;}

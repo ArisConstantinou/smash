@@ -223,3 +223,25 @@ test('status changes distinguish blocked, playing, muted and background audio',a
   audio.setVolume(.7);document.hidden=true;document.emit('visibilitychange');await flush();
   assert.equal(audio.state,'background');assert.ok(states.includes('ready'));assert.ok(states.includes('muted'));assert.ok(states.includes('background'));
 });
+
+test('damage stages layer recorded foley and distinct bounded destruction sounds',async t=>{
+ const {audio}=environment(t);await audio.unlock();
+ for(const source of [...audio._sources])source.finish();
+ const stone={duration:.35},metal={duration:.28};audio.samples.buffers.set('masonry-1',stone);audio.samples.buffers.set('metal-1',metal);
+ for(const name of ['buildingFracture','buildingCollapse','carTear','carWreck','debrisLand']){
+  audio.ctx.currentTime+=1;assert.equal(audio.play(name,.7,{stage:3,material:'metal'}),true);
+  assert.ok([...audio._sources].some(s=>s.buffer===stone||s.buffer===metal));assert.ok(audio._sources.size<=64);
+  audio.stopEnvironment();assert.equal(audio._sources.size,0);assert.equal(audio._environmentSources.size,0);
+ }
+});
+
+test('alarm pulses differ by car and can stop individually without cancelling combat',async t=>{
+ const {audio}=environment(t);await audio.unlock();
+ audio.play('hit',.5,{material:'flesh'});const combat=new Set(audio._sources);
+ for(let variant=0;variant<3;variant++)assert.equal(audio.play('carAlarm',.4,{variant,id:variant+1}),true);
+ assert.equal(audio.play('carAlarm',.4,{variant:0,id:1}),false);
+ const before=audio._environmentSources.size;audio.stopEnvironment(2);
+ assert.ok(audio._environmentSources.size<before);assert.ok([...combat].every(s=>audio._sources.has(s)));
+ audio.stopEnvironment();assert.equal(audio._environmentSources.size,0);assert.ok([...combat].every(s=>audio._sources.has(s)));
+ audio.play('carAlarm',.4,{id:99});audio.toggle();assert.equal(audio._environmentSources.size,0);assert.equal(audio._sources.size,0);
+});
