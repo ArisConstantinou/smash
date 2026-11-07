@@ -2,7 +2,6 @@ name: Verify performance14
 on:
   push:
     branches: [feature/performance14-webgpu]
-    paths: [.delivery/performance14.b64, .github/workflows/performance14.yml]
   workflow_dispatch:
 permissions:
   contents: write
@@ -23,10 +22,11 @@ jobs:
           node-version: 22
       - name: Apply reviewed source patch
         run: |
-          if [ -f .delivery/performance14.b64 ]; then
+          if [ -f .delivery/performance14.part1 ]; then
             python3 - <<'PY'
           import base64,gzip,hashlib,pathlib,subprocess
-          patch=gzip.decompress(base64.b64decode(pathlib.Path('.delivery/performance14.b64').read_text()))
+          encoded=''.join(pathlib.Path(f'.delivery/performance14.part{i}').read_text() for i in range(1,5))
+          patch=gzip.decompress(base64.b64decode(encoded))
           assert hashlib.sha256(patch).hexdigest() == 'c96ae625cf3c452b7e2483f2375ec1d2c85a43287211d33ebf3b63195ec9a606'
           subprocess.run(['git','apply','--unidiff-zero','--check'],input=patch,check=True)
           subprocess.run(['git','apply','--unidiff-zero'],input=patch,check=True)
@@ -47,7 +47,7 @@ jobs:
           rm -f three-0.170.0.tgz
       - name: Commit source to the isolated feature branch only
         run: |
-          rm -f .delivery/performance14.b64
+          rm -f .delivery/performance14.part* .delivery/performance14.b64
           git add -A
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Implement strict WebGPU, exact WASM collision, FPS telemetry, car force and bounded damage effects' || test -z "$(git status --porcelain)"
           git push origin HEAD:feature/performance14-webgpu
