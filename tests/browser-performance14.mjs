@@ -23,8 +23,16 @@ armLengths(){const u=hero.userData;return [u.leftArm,u.rightArm].map(a=>[a.userD
 const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.png':'image/png','.wasm':'application/wasm','.mp3':'audio/mpeg','.wav':'audio/wav'};
 const server=createServer(async(req,res)=>{try{const path=resolve(root,'.'+(new URL(req.url,'http://localhost').pathname||'/'));const f=path===root.replace(/\/$/,'')?resolve(root,'index.html'):path;if(!f.startsWith(root.endsWith(sep)?root:root+sep)){res.writeHead(403);res.end();return;}let data=await readFile(f);if(f===resolve(root,'game.js'))data=Buffer.from(data.toString()+qa);res.writeHead(200,{'Content-Type':types[extname(f)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);}catch{res.writeHead(404);res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-webgpu','--enable-unsafe-swiftshader','--use-angle=swiftshader','--use-vulkan=swiftshader','--use-webgpu-adapter=swiftshader']});
+// The compositor and Dawn must share Vulkan. A mixed GL/Vulkan SwiftShader
+// configuration fails at swapchain creation and produces deceptive black frames.
+// These switches are CI-only; ordinary players do not need browser flags.
+const browser=await chromium.launch({headless:true,channel:'chromium',args:['--no-sandbox','--enable-gpu','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--use-vulkan=swiftshader','--use-webgpu-adapter=swiftshader','--disable-vulkan-surface']});
 const results=[];
+async function assertRendering(page){
+ const health=await page.evaluate(()=>({lost:!!__perf14.renderer._isDeviceLost,draws:__perf14.renderer.info.render.drawCalls,triangles:__perf14.renderer.info.render.triangles,frame:__perf14.renderer.info.frame}));
+ assert.equal(health.lost,false,'WebGPU device was lost; requestAnimationFrame is NOT proof of rendering');
+ assert.ok(health.draws>0&&health.triangles>1000,JSON.stringify(health));return health;
+}
 try{
  for(const size of [{name:'desktop',width:1440,height:900},{name:'phone',width:390,height:844}]){
   const context=await browser.newContext({viewport:{width:size.width,height:size.height},hasTouch:size.name==='phone',deviceScaleFactor:1});
@@ -39,7 +47,7 @@ try{
    await page.locator('#startButton').click();
    await page.waitForFunction(()=>document.querySelector('#performanceHud').textContent.includes('FPS · WebGPU · WASM'),null,{timeout:30000});
    const box=await page.locator('#performanceHud').boundingBox();assert.ok(box.x>size.width*.4&&box.y<35&&box.x+box.width<=size.width);
-   await page.screenshot({path:resolve(out,size.name+'-fps.png')});
+   await assertRendering(page);await page.screenshot({path:resolve(out,size.name+'-fps.png')});
    const measured=[];
    for(const percent of [0,38,45]){
     const actual=await page.evaluate(p=>{const a=__perf14.prepare(p);__perf14.large();__perf14.faceBuilding();return a;},percent);
@@ -51,12 +59,12 @@ try{
     await page.evaluate(()=>__perf14.releaseAttack());await page.waitForTimeout(800);
     measured.push(await page.evaluate(actual=>({destruction:actual,spin:__perf14.spinEvidence,frame:__perf14.telemetry.last,wasm:__perf14.wasm,arms:__perf14.armLengths()}),actual));
     for(const [upper,fore]of measured.at(-1).arms){assert.ok(upper<=.441&&fore<=.461,'Oversized weapon must not elongate arm bones');}
-    assert.equal(await page.evaluate(()=>window.__perf14.renderer.backend.isWebGPUBackend),true);
+    assert.equal(await page.evaluate(()=>window.__perf14.renderer.backend.isWebGPUBackend),true);measured.at(-1).renderHealth=await assertRendering(page);
     await page.screenshot({path:resolve(out,size.name+'-destruction-'+percent+'.png')});
    }
    await page.evaluate(()=>{__perf14.prepare(0);__perf14.vehicles();});await page.waitForTimeout(1800);
    const effect=await page.evaluate(()=>({smoke:__perf14.effects.smoke.count,fire:__perf14.effects.fire.count}));assert.ok(effect.smoke>0&&effect.fire>0);
-   await page.screenshot({path:resolve(out,size.name+'-vehicle-fire.png')});
+   await assertRendering(page);await page.screenshot({path:resolve(out,size.name+'-vehicle-fire.png')});
    const gpuErrors=await page.evaluate(()=>window.__gpuErrors);assert.deepEqual(gpuErrors,[]);assert.deepEqual(errors,[]);
    results.push({name:size.name,passed:true,backend:'WebGPU',adapter:'CI software SwiftShader; not user hardware',measured,effect});
   }catch(error){const debug=await page.evaluate(()=>({gpuErrors:window.__gpuErrors,spin:window.__perf14?.spinEvidence,frame:window.__perf14?.telemetry?.last})).catch(()=>null);results.push({name:size.name,passed:false,error:String(error.stack),errors,debug});await page.screenshot({path:resolve(out,size.name+'-failure.png')}).catch(()=>{});throw error;}
