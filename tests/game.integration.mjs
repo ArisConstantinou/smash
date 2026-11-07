@@ -2514,7 +2514,7 @@ test('60% destruction summons one boss and continuation retains upgrades and the
   assert.doesNotMatch(elements.get('waveStatus').textContent, /ΤΕΛΙΚΟΣ BOSS/);
 });
 
-test('boss fear and hit recoil stay bounded over many pose steps and its arm roll settles back to zero', () => {
+test('boss fear and hit recoil stay bounded over many pose steps and its arms return to their relaxed stance', () => {
   arena();
   api.spawnBoss();
   const boss = api.boss;
@@ -2525,12 +2525,13 @@ test('boss fear and hit recoil stay bounded over many pose steps and its arm rol
   assert.ok(boss.impact, 'The fixture must combine a real hammer recoil with the airborne threat');
   const {leftArm, rightArm, head} = boss.mesh.userData;
   assert.ok(leftArm && rightArm && head);
+  const leftRest = leftArm.userData.restRoll || 0, rightRest = rightArm.userData.restRoll || 0;
   let peakFear = 0, peakArmRoll = 0, peakLookUp = 0;
   for (let i = 0; i < 480; i++) {
     api.updateBoss(1 / 120);
     peakFear = Math.max(peakFear, boss.fear);
     peakLookUp = Math.max(peakLookUp, -head.rotation.x);
-    peakArmRoll = Math.max(peakArmRoll, Math.abs(leftArm.rotation.z), Math.abs(rightArm.rotation.z));
+    peakArmRoll = Math.max(peakArmRoll, Math.abs(leftArm.rotation.z - leftRest), Math.abs(rightArm.rotation.z - rightRest));
     assert.ok(Math.abs(leftArm.rotation.z) < .5 && Math.abs(rightArm.rotation.z) < .5,
       `Protective arm roll must not accumulate across frames; left=${leftArm.rotation.z}, right=${rightArm.rotation.z}`);
   }
@@ -2538,7 +2539,7 @@ test('boss fear and hit recoil stay bounded over many pose steps and its arm rol
   assert.ok(peakLookUp > .2, 'The articulated boss head must track the elevated player');
   assert.ok(peakArmRoll > .01, 'The arms must visibly react before settling');
   assert.equal(boss.fearTime, 0); assert.equal(boss.fear, 0);
-  close(leftArm.rotation.z, 0, 1e-8); close(rightArm.rotation.z, 0, 1e-8);
+  close(leftArm.rotation.z, leftRest, 1e-8); close(rightArm.rotation.z, rightRest, 1e-8);
   assert.equal(boss.impact, null, 'The physical hit recoil must also complete');
 });
 
