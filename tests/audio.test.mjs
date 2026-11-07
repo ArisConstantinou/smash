@@ -70,6 +70,36 @@ function environment(t, { supported = true, session = true } = {}) {
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 
+test('menu music waits for a gesture, follows mute and backgrounding, and exits without stopping the game cue', async t => {
+  const { audio, document } = environment(t);
+  audio.bindUnlock(document);audio.setMenuActive(true);audio.update(.1);
+  assert.equal(audio.ctx,null,'Entering the menu must not autoplay or create an audio context');
+  document.emit('pointerdown');await flush();
+  const ctx=audio.ctx;
+  const advance=()=>{for(let i=0;i<6;i++){ctx.currentTime+=.1;audio.update(.1);}};
+  advance();
+  assert.ok(audio._menuSources.size>0,'An unlocked active menu schedules its own score');
+  const firstScore=[...audio._menuSources];
+  audio.toggle();advance();
+  assert.equal(audio._menuSources.size,0);
+  assert.ok(firstScore.every(node=>node.disconnected),'Mute frees the score nodes');
+  const mutedNodes=ctx.nodes.length;advance();
+  assert.equal(ctx.nodes.length,mutedNodes,'Muted updates cannot keep allocating music');
+  audio.toggle();await flush();advance();
+  assert.ok(audio._menuSources.size>0,'Unmuting resumes the menu score');
+  document.hidden=true;document.emit('visibilitychange');await flush();
+  assert.equal(audio._menuSources.size,0);assert.equal(ctx.state,'suspended');
+  const backgroundNodes=ctx.nodes.length;advance();assert.equal(ctx.nodes.length,backgroundNodes);
+  document.hidden=false;document.emit('visibilitychange');await flush();advance();
+  const score=[...audio._menuSources];assert.ok(score.length>0);
+  const beforeStart=new Set(audio._sources);audio.play('start');
+  const gameCue=[...audio._sources].filter(node=>!beforeStart.has(node));assert.ok(gameCue.length>0);
+  audio.setMenuActive(false);
+  assert.equal(audio._menuSources.size,0);assert.ok(score.every(node=>node.disconnected));
+  assert.ok(gameCue.every(node=>!node.disconnected&&audio._sources.has(node)),'Leaving the menu preserves the already scheduled game-start sound');
+  const gameplayNodes=ctx.nodes.length;advance();assert.equal(ctx.nodes.length,gameplayNodes,'Gameplay does not schedule menu music');
+});
+
 test('menu wood, steel and mechanism feedback have distinct voices and respect mute and rate limits',async t=>{
   const {audio}=environment(t);await audio.unlock();const ctx=audio.ctx,signatures=[];
   for(const name of ['menuWood','menuMetal','menuFocus','menuOpen','menuClose','menuPress','targetLock']){

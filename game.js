@@ -1,13 +1,13 @@
 import {DestructionSystem} from './destruction.js?v=20261107-forge9';
-import {createForgeMenu} from './menu.js?v=20261107-forge9a';
+import {createForgeMenu} from './menu.js?v=20261107-forge9b';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261107-forge9';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-forge9';
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-forge9';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261107-forge9';
-import {GameAudio} from './audio.js?v=20261107-forge9';
+import {createWorld} from './world.js?v=20261107-forge9b';
+import {GameAudio} from './audio.js?v=20261107-forge9b';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-forge9';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
@@ -38,7 +38,7 @@ audio.preload?.();
 // Sound tests work even while the renderer is still loading.
 for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
 let destruction=null;
-let forgeMenu=null,gameReady=false;
+let forgeMenu=null,gameReady=false,menuBackdropReady=false;
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
@@ -216,6 +216,7 @@ function setPhase(next){
   const menuContext=next==='menu'||next==='settings'&&previousPhase==='menu';
   $('menu').hidden=!menuContext;$('menu').inert=next==='settings';$('hud').hidden=menuContext;
   forgeMenu?.setVisible(next==='menu');
+  audio.setMenuActive?.(next==='menu');menuBackdropReady=false;
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
   if(next!=='playing'){audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
@@ -744,7 +745,7 @@ function updateAim(){
     const reach=Math.min(screenW,screenH)*.31;
     pointer.x=origin.x+g.dx/d*reach;pointer.y=origin.y+g.dy/d*reach;pointer.active=true;
   }
-  const committedDirection=touchThrowAim?.confirming?touchThrowAim.confirmedDirection:!touchThrowAim?.dragged&&(touchThrowQueued?.dir||throwWindup?.dir);
+  const committedDirection=touchThrowAim?.confirming?touchThrowAim.confirmedDirection:!touchThrowAim?.dragged&&(touchThrowQueued?.dir||throwWindup?.dir||touchThrowAim?.manualDirection);
   if(committedDirection){
     // Guidance must show the direction the animation will actually release.
     // A stale screen coordinate drifts as the warrior and camera move.
@@ -2051,6 +2052,7 @@ function syncTouchControls(){
   }
 }
 function resize(){
+  menuBackdropReady=false;
   const viewport=window.visualViewport,nextWidth=Math.round(viewport?.width||innerWidth),nextHeight=Math.round(viewport?.height||innerHeight);
   if(screenW!==nextWidth||screenH!==nextHeight)clearInput();
   screenW=nextWidth;screenH=nextHeight;syncTouchControls();
@@ -2148,9 +2150,16 @@ async function testGameAudio(){
 }
 const isTouchPointer=e=>e?.pointerType==='touch'||e?.pointerType==='pen';
 function aimFromClient(e){
+  const gesture=touchThrowAim;
+  if(gesture&&!gesture.pressed)gesture.manualDirection=null;
   const rect=$('gameCanvas').getBoundingClientRect();
   pointer.x=(e.clientX-rect.left)*screenW/Math.max(1,rect.width);
   pointer.y=(e.clientY-rect.top)*screenH/Math.max(1,rect.height);pointer.active=true;
+  if(gesture&&!gesture.pressed&&isTouchPointer(e)){
+    // A canvas tap chooses a world direction. Keep it while the other thumb
+    // starts walking, even when the joystick releases the screen pointer.
+    updateAim();gesture.manualDirection={...aim};
+  }
 }
 function beginTouchThrow(e){
   if(phase!=='playing'||leap||Math.abs(stance-stanceTarget)>.005)return;
@@ -2250,11 +2259,13 @@ function initInput(){
   updateSoundButtons();
   window.addEventListener('keydown',e=>{
     const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyU','KeyE'];
-    if(handled.includes(e.code)&&!['INPUT','SELECT'].includes(document.activeElement?.tagName))e.preventDefault();
+    const focused=document.activeElement,editable=['INPUT','SELECT','TEXTAREA'].includes(focused?.tagName)||focused?.isContentEditable;
+    const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
+    if(phase==='playing'&&handled.includes(e.code)&&!editable&&!nativeActivation)e.preventDefault();
     if(e.code==='Escape'&&!e.repeat){if(phase==='menu'&&forgeMenu?.closePanels())return;if(phase==='playing'&&(touchThrowAim||touchThrowQueued)){cancelTouchThrow();audio.play('targetCancel');updateHUD();}else if(phase==='playing'&&upgradePanelOpen)toggleUpgradePanel(false);else if(phase==='settings'){setPhase(previousPhase);}else pauseGame();return;}
-    if(phase==='menu'&&e.code==='Enter'&&!e.repeat&&!$('startButton').disabled&&!forgeMenu?.panelOpen&&!['BUTTON','INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)){startGame();return;}
+    if(phase==='menu'&&e.code==='Enter'&&!e.repeat&&!$('startButton').disabled&&!forgeMenu?.panelOpen&&!editable&&!nativeActivation){startGame();return;}
     if(phase==='playing'&&upgradePanelOpen&&upgradeTab==='powers'&&['Digit1','Digit2','Digit3'].includes(e.code)){if(!e.repeat)$('upgradeChoices').children[Number(e.code.slice(-1))-1]?.click();return;}
-    if(phase!=='playing'||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
+    if(phase!=='playing'||editable||nativeActivation)return;
     if(e.code==='KeyU'&&!e.repeat){toggleUpgradePanel();return;}
     keys.add(e.code);document.querySelector('[data-key="'+e.code+'"]')?.classList.add('active');
     if(e.code==='Space'&&!e.repeat)startLeap();
@@ -2363,7 +2374,10 @@ function frame(now){
   requestAnimationFrame(frame);const realDt=clamp((now-lastFrame)/1000||1/60,0,.25);lastFrame=now;
   if(document.hidden)return;
   forgeMenu?.update(realDt);
-  if(!gameReady){audio.update(realDt,0,'wind');return;}
+  // Keep the workshop's own 3D hero animated while reusing the city backdrop.
+  // Drawing the hidden battlefield every frame needlessly taxes mobile GPUs.
+  const menuBackground=phase==='menu'||phase==='settings'&&previousPhase==='menu';
+  if(!gameReady||(menuBackground&&menuBackdropReady)){audio.update(realDt,0,'wind');return;}
   visualTime+=realDt;redFlash=Math.max(0,redFlash-realDt*1.4);shake=Math.max(0,shake-realDt*1.7);
   let simulated=0;
   if(phase==='playing'){
@@ -2392,11 +2406,13 @@ function frame(now){
   sun.intensity=2.25+lightning;fillLight.intensity=1.45+(weather==='snow'?.2:0);
   audio.update(realDt,phase==='playing'?Math.min(1,enemies.length/40+(boss&&!boss.dead?.4:0)):0,weather);
   renderer.render(scene,camera);drawFX();
+  if(menuBackground)menuBackdropReady=true;
   hudTimer-=realDt;if(hudTimer<=0){updateHUD();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
   minimapTimer-=realDt;if(minimapTimer<=0){drawMinimap();minimapTimer=.18;}
 }
 
 async function init(){
+  audio.setMenuActive?.(true);
   forgeMenu=createForgeMenu({THREE,makeWarrior,xpForNextLevel,getCharacterStats,maxLevel:MAX_CHARACTER_LEVEL,document,window,
     onSound:(name,details)=>{if(!settings.muted&&settings.volume>0)audio.unlock().then(()=>audio.play(name,.5,details));},
     onSettings:()=>{previousPhase='menu';setPhase('settings');}});

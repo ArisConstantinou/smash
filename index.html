@@ -9,7 +9,7 @@
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261106-audio2">
   <link rel="stylesheet" href="./controls.css?v=20261107-combat7">
-  <link rel="stylesheet" href="./menu.css?v=20261107-forge9">
+  <link rel="stylesheet" href="./menu.css?v=20261107-forge9b">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -144,7 +144,7 @@
             <path class="forge-anvil-rune" d="m220 148 12-3-5 12 9-2-17 20 5-15-9 2Z" fill="#ffb558"/>
             <circle cx="108" cy="192" r="3" fill="#b0ab83"/><circle cx="318" cy="191" r="3" fill="#b0ab83"/>
           </svg>
-          <button id="menuWoodProp" class="forge-prop forge-prop-wood" type="button" aria-label="Χτύπησε το ξύλο στο εργαστήρι" title="Δοκίμασε το κούτσουρο">
+          <button id="menuWoodProp" class="forge-prop forge-prop-wood" type="button" aria-label="Χτύπησε τον κορμό με το σφυρί" title="Χτύπησε τον κορμό">
             <svg viewBox="0 0 200 330" aria-hidden="true">
               <defs><linearGradient id="forgeLogBark" x2="1" y2=".2"><stop stop-color="#3e3026"/><stop offset=".3" stop-color="#846044"/><stop offset=".56" stop-color="#b68a55"/><stop offset=".8" stop-color="#6a4933"/><stop offset="1" stop-color="#392e27"/></linearGradient><linearGradient id="forgeLogCut" x2=".8" y2="1"><stop stop-color="#eed394"/><stop offset="1" stop-color="#a87d47"/></linearGradient></defs>
               <g class="forge-weapon-art" transform="rotate(-18 100 175)">
@@ -162,7 +162,7 @@
             </svg>
             <span class="forge-prop-tag">ΞΥΛΟ <i>01</i></span>
           </button>
-          <button id="menuMetalProp" class="forge-prop forge-prop-metal" type="button" aria-label="Χτύπησε το σφυρί στο αμόνι" title="Δοκίμασε το σφυρί">
+          <button id="menuMetalProp" class="forge-prop forge-prop-metal" type="button" aria-label="Χτύπησε τον κορμό με το σφυρί" title="Δοκίμασε το σφυρί">
             <svg viewBox="0 0 260 340" aria-hidden="true">
               <defs><linearGradient id="forgeSteel" x2=".8" y2="1"><stop stop-color="#9fb9bc"/><stop offset=".26" stop-color="#6b939b"/><stop offset=".62" stop-color="#365d69"/><stop offset="1" stop-color="#233e49"/></linearGradient><linearGradient id="forgeSteelCap" x2=".8" y2="1"><stop stop-color="#ecedce"/><stop offset=".3" stop-color="#b0c5bf"/><stop offset="1" stop-color="#526e75"/></linearGradient><linearGradient id="forgeHammerHandle" x2="1" y2="0"><stop stop-color="#422f26"/><stop offset=".5" stop-color="#b68b56"/><stop offset="1" stop-color="#5d4531"/></linearGradient></defs>
               <g class="forge-weapon-art" transform="rotate(26 130 195)">
@@ -185,7 +185,7 @@
           <div class="forge-impact-flash" aria-hidden="true"></div>
           <div class="forge-energy" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
         </div>
-        <p id="menuWorkshopHint" class="forge-play-hint"><svg aria-hidden="true"><use href="#i-range"/></svg> ΠΑΤΑ ΕΝΑ ΟΠΛΟ. <strong>ΑΚΟΥΣΕ ΤΗ ΔΥΝΑΜΗ.</strong></p>
+        <p id="menuWorkshopHint" class="forge-play-hint"><svg aria-hidden="true"><use href="#i-range"/></svg> ΠΑΤΑ ΣΦΥΡΙ Ή ΚΟΡΜΟ. <strong>ΔΩΣΕ ΤΟΝ ΡΥΘΜΟ.</strong></p>
       </aside>
 
       <nav class="forge-console" aria-label="Επιλογές παιχνιδιού">
@@ -423,7 +423,7 @@
       <label class="setting-row" for="throwAutoLockToggle"><span><b>Αυτόματη στόχευση ρίψης</b><small>Κοντινοί εχθροί προς τη στόχευση · χωρίς στόχους πίσω από εμπόδια. Επηρεάζει και τις αυτόματες αναπηδήσεις.</small></span><input id="throwAutoLockToggle" type="checkbox" checked></label>
       <label class="setting-row throw-mode-setting" for="throwModeSelect"><span><b>Τρόπος ρίψης</b><small>Δύο πατήματα: στόχευσε και πάτα ξανά για ρίψη. Κράτημα: στόχευσε όσο πατάς, άφησε για ρίψη.</small></span><select id="throwModeSelect"><option value="confirm" selected>Στόχευση → επιβεβαίωση</option><option value="hold">Κράτημα → άφημα</option></select></label>
       <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
-      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
+      <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Μουσική μενού, χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
       <div class="audio-check">
         <button id="testAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
         <p id="audioStatus" role="status" aria-live="polite">Πάτησε για χτυπήματα σε ξύλο, μέταλλο και εχθρό.</p>
@@ -449,6 +449,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button><button id="closeFatalButton" class="secondary-button" type="button">ΠΙΣΩ ΣΤΟ ΜΕΝΟΥ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261107-forge9a"></script>
+  <script type="module" src="./game.js?v=20261107-forge9b"></script>
 </body>
 </html>

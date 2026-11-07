@@ -67,6 +67,30 @@ test('sloping roof height is sampled from its triangles and can be followed uphi
   close(player.x,-1);close(player.y,initial);
 });
 
+test('a real townhouse roof crosses both pitched halves and its thin ridge fascia without snagging',()=>{
+  const {collision}=realObject('townhouse');
+  const player={x:-3,z:-.3,radius:.44};
+  player.y=collision.supportHeight(player.x,player.z,player.radius,20);
+  const initialY=player.y;let highest=initialY;
+  for(const direction of [1,-1])for(let frame=0;frame<100;frame++) {
+    const old={...player};
+    const result=collision.moveBody(player,direction*.06,0,{dy:-.002});
+    close(player.x-old.x,direction*.06);close(player.z,old.z);
+    assert.equal(result.grounded,true,'The low roof fascia is an actual step, not an airborne shortcut');
+    assert.equal(result.blocked,false,'The leading edge of the opposite roof half must not catch the feet');
+    assert.ok(Math.abs(player.y-old.y)<.13,'Ridge contact must remain a small local rise');
+    highest=Math.max(highest,player.y);
+  }
+  close(player.x,-3);close(player.y,initialY);assert.ok(highest>6.9);
+});
+
+test('the low-bevel step allowance does not make tall steep faces walkable',()=>{
+  const {collision,object}=fixture(root=>box(root,0,3,0,4,.14,4,Math.PI*70/180));
+  close(collision.supportHeight(0,0,.05,10),0);
+  assert.ok(collision.geometryHit(object,{x:-3,y:3,z:0},{x:3,y:3,z:0},.03),
+    'A steep face remains solid even though it cannot support walking');
+});
+
 test('stepping and jumping onto separate tiers obey real available headroom',()=>{
   const {collision}=fixture(root=>{
     box(root,-1.5,.075,0,1,.15,2);

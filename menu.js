@@ -40,7 +40,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
   let reduced = !!media?.matches, visible = !menu.hidden, ready = false, interacted = false;
   let snapshot = null, signature = '', visualRatio = 0, fromRatio = 0, progressTime = 0, progressDuration = 1;
   let time = 0, walkTime = 0, movement = 0, lastEquipment = -1, preview = null, previewAttempted = false, renderElapsed = 0;
-  let strikeTime = 0, strikeCount = 0, lastStrikeAt = -Infinity, lastFocusAt = -Infinity, disposed = false;
+  let strikeTime = 0, strikeCount = 0, strikePending = false, lastStrikeAt = -Infinity, lastFocusAt = -Infinity, disposed = false;
   const fire = (name, details) => {
     if (disposed) return;
     try { const result=onSound(name,details); result?.catch?.(() => {}); } catch { /* Audio failure must not disable navigation. */ }
@@ -162,7 +162,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
   }
   function setVisible(value) {
     const changed=visible!==!!value;visible=!!value;
-    if(!visible){closePanels(true);return;}
+    if(!visible){closePanels(true);stopStrike();return;}
     if(changed){
       fromRatio=0;visualRatio=reduced?(snapshot?.ratio||0):0;progressTime=0;progressDuration=.85+(snapshot?.ratio||0)*1.4;paintRatio();
       menu.classList.remove('arriving');void menu.offsetWidth;menu.classList.add('arriving');
@@ -183,13 +183,36 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     for(const node of [el.forgeLayout,header,footer])if(node)node.inert=true;
     fire('menuOpen');el.startingLevel?.focus?.();
   }
-  function strike(material) {
+  function stopStrike() {
+    strikeTime=0;strikePending=false;
+    el.menuWorkshop?.classList.remove('strike-metal','strike-wood','strike-contact','strike-align');
+    consolePanel?.classList.remove('workbench-hit');
+  }
+  function alignContact() {
+    const ws=el.menuWorkshop;
+    // Keep the existing SVG art/layout. Map its cut face and hammer corner to
+    // one contact point, including the different portrait/landscape SVG sizes.
+    const point=(node,x,y)=>{
+      const m=node?.querySelector?.('.forge-weapon-art')?.getScreenCTM?.();
+      return m?{x:m.a*x+m.c*y+m.e,y:m.b*x+m.d*y+m.f}:null;
+    };
+    ws.classList.add('strike-align');
+    const wood=point(el.menuWoodProp,99,76),hammer=point(el.menuMetalProp,84,155);
+    if(wood&&hammer){
+      const r=ws.getBoundingClientRect();
+      ws.style.setProperty('--hit-x',(wood.x-hammer.x).toFixed(2)+'px');
+      ws.style.setProperty('--hit-y',(wood.y-hammer.y).toFixed(2)+'px');
+      ws.style.setProperty('--impact-x',(wood.x-r.left).toFixed(2)+'px');
+      ws.style.setProperty('--impact-y',(wood.y-r.top).toFixed(2)+'px');
+    }
+    ws.classList.remove('strike-align');
+  }
+  function strike() {
     const now=win.performance?.now?.()??Date.now();
-    if(!visible||disposed||now-lastStrikeAt<190)return;
-    lastStrikeAt=now;interacted=true;strikeTime=.65;strikeCount++;
+    if(!visible||disposed||now-lastStrikeAt<250)return;
+    stopStrike();lastStrikeAt=now;interacted=true;strikeTime=.85;strikePending=true;strikeCount++;
     const ws=el.menuWorkshop;if(!ws)return;
-    ws.dataset.material=material;ws.dataset.hits=String(strikeCount);
-    ws.classList.remove('strike-metal','strike-wood');consolePanel?.classList.remove('workbench-hit');
+    ws.dataset.material='wood';ws.dataset.hits=String(strikeCount);
     const count=1+(strikeCount-1)%5;
     energy.forEach((e,i)=>e.classList.toggle('lit',i<count));
     for(let i=0;i<particles.length;i++){
@@ -198,16 +221,22 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
       p.style.setProperty('--dx',(Math.cos(angle)*reach).toFixed(1)+'px');
       p.style.setProperty('--dy',(Math.sin(angle)*reach+15).toFixed(1)+'px');
       p.style.setProperty('--rotate',(i*61+strikeCount*29)%360+'deg');
-      p.style.setProperty('--size',(material==='wood'?2.5+i%3:1.4+(i%3)*.65)+'px');
+      p.style.setProperty('--size',(2.5+i%3)+'px');
       p.style.setProperty('--life',(.4+(i%5)*.055)+'s');
     }
-    void ws.offsetWidth;ws.classList.add('strike-'+material);consolePanel?.classList.add('workbench-hit');
-    fire(material==='wood'?'menuWood':'menuMetal',{variant:strikeCount%3,strength:count===5?1:.75});
+    alignContact();void ws.offsetWidth;ws.classList.add('strike-wood');
   }
   function update(dt) {
     if(disposed||!visible||doc.hidden)return;
     dt=limit(Number(dt)||0,0,.1);time+=dt;
-    if(strikeTime>0){strikeTime-=dt;if(strikeTime<=0){el.menuWorkshop?.classList.remove('strike-metal','strike-wood');consolePanel?.classList.remove('workbench-hit');}}
+    if(strikeTime>0){
+      const elapsed=((win.performance?.now?.()??Date.now())-lastStrikeAt)/1000;
+      if(strikePending&&elapsed>=.2){
+        strikePending=false;el.menuWorkshop?.classList.add('strike-contact');consolePanel?.classList.add('workbench-hit');
+        fire('menuWood',{variant:strikeCount%3,strength:strikeCount%5===0?1:.75});
+      }
+      strikeTime=Math.max(0,.85-elapsed);if(!strikeTime)stopStrike();
+    }
     const previous=visualRatio;
     progressTime=Math.min(progressDuration,progressTime+dt);
     visualRatio=reduced?(snapshot?.ratio||0):fromRatio+((snapshot?.ratio||0)-fromRatio)*ease(progressTime/progressDuration);
@@ -220,8 +249,9 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
   listen(el.closeRoundPickerButton,'click',()=>closePanels());
   listen(el.roundPicker,'click',e=>{if(e.target===el.roundPicker)closePanels();});
   listen(el.menuSettingsButton,'click',()=>{interacted=true;fire('menuOpen');onSettings();});
-  listen(el.menuWoodProp,'click',()=>strike('wood'));
-  listen(el.menuMetalProp,'click',()=>strike('metal'));
+  listen(el.menuWoodProp,'click',strike);
+  listen(el.menuMetalProp,'click',strike);
+  listen(doc,'visibilitychange',()=>{if(doc.hidden)stopStrike();});
   listen(el.menuWorkshop,'pointermove',e=>{
     if(reduced||!visible||e.pointerType==='touch')return;
     const r=el.menuWorkshop.getBoundingClientRect();

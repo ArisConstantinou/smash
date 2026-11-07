@@ -95,14 +95,22 @@ test('round selection stays a separate dialog and returns focus without touching
   assert.equal(f.controller.progress.level,6);assert.equal(f.controller.progress.xp,19);
   f.controller.dispose();
 });
-test('no-WebGL menu still positions saved progress and supports repeated independent material sounds',()=>{
+test('both workshop buttons strike the wood at contact, without changing saved progress or sounding after menu exit',()=>{
   const f=fixture({gpu:false});const saved=createCharacterProgression(4);saved.xp=18;f.controller.updateProgress(saved);
   assert.equal(f.e('menuHeroCanvas').hidden,true);assert.equal(f.e('menuHeroFallback').getAttribute('hidden'),null,'The SVG attribute must be removed; assigning SVG.hidden does not reveal it');
   assert.equal(f.e('menuProgressHero').style.left,'75.0000%');assert.equal(f.e('startButton').disabled,true);
-  f.e('menuMetalProp').click();f.advance(.25);f.e('menuWoodProp').click();
-  assert.deepEqual(f.events.filter(e=>['menuMetal','menuWood'].includes(e.name)).map(e=>e.name),['menuMetal','menuWood']);
+  const impacts=()=>f.events.filter(e=>['menuMetal','menuWood'].includes(e.name)).map(e=>e.name);
+  f.e('menuMetalProp').click();assert.deepEqual(impacts(),[],'A click begins the backswing, not the impact');
+  f.advance(.1);assert.deepEqual(impacts(),[]);
+  f.advance(.1);assert.deepEqual(impacts(),['menuWood']);
+  assert.equal(f.e('menuWorkshop').classList.contains('strike-contact'),true);
+  f.advance(.05);f.e('menuWoodProp').click();assert.deepEqual(impacts(),['menuWood']);
+  f.advance(.2);assert.deepEqual(impacts(),['menuWood','menuWood'],'Either prop triggers the same hammer-to-wood contact');
   assert.equal(f.controller.progress.xp,18,'Workshop play grants no fake progression');
   f.e('menuSettingsButton').click();assert.ok(f.events.some(e=>e.name==='settings'));
+  f.advance(.1);f.e('menuMetalProp').click();f.controller.setVisible(false);f.advance(.3);
+  f.controller.setVisible(true);f.advance(.3);
+  assert.deepEqual(impacts(),['menuWood','menuWood'],'A cancelled menu swing cannot fire later in gameplay');
   f.controller.dispose();
 });
 test('reduced motion retains exact progress without a travel animation',()=>{

@@ -313,7 +313,16 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
     let result={height:0,object:null,normal:{x:0,y:1,z:0}};
     visitParts(x,z,radius,-EPS,ceiling+EPS,(part,object)=>{
       for(const tri of part.worldTriangles) {
-        if(tri.normal.y<WALKABLE_Y)continue;diagnostics.triangleTests++;
+        if(tri.normal.y<WALKABLE_Y) {
+          // The thin fascia of a pitched roof can reach the foot circle a
+          // few centimetres before its top face. Its real, low bevel is a
+          // step, even when steeper than a walkable roof. Without it moveBody
+          // catches the ridge indefinitely. Tall slopes and vertical walls
+          // retain the normal limit; neither the footprint nor mesh expands.
+          const rise=Math.max(tri.a.y,tri.b.y,tri.c.y)-Math.min(tri.a.y,tri.b.y,tri.c.y);
+          if(tri.normal.y<=.15||rise>STEP_HEIGHT+EPS)continue;
+        }
+        diagnostics.triangleTests++;
         const height=surfaceExtreme(tri,x,z,radius,true);
         if(height!==null&&height<=ceiling+EPS&&height>result.height+EPS)result={height,object,normal:tri.normal};
       }

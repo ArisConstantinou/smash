@@ -31,6 +31,10 @@ export class GameAudio {
     this.onStatusChange = null;
     this._preview = 0;
     this._previewTimers = new Set();
+    this._menuActive = false;
+    this._menuSources = new Set();
+    this._menuNextBeat = 0;
+    this._menuStep = 0;
   }
 
   preload() { return this.samples.preload(); }
@@ -196,6 +200,7 @@ export class GameAudio {
       this._cleanups.delete(source);
       this._sources.delete(source);
       this._environmentSources.delete(source);
+      this._menuSources.delete(source);
       this._voices.delete(source);
       source.onended = null;
       for (const node of [source, ...nodes]) { try { node.disconnect(); } catch (_) {} }
@@ -221,6 +226,7 @@ export class GameAudio {
     oscillator.connect(envelope); envelope.connect(this.master);
     this._register(oscillator, [envelope]);
     oscillator.start(t); oscillator.stop(t + duration + .015);
+    return oscillator;
   }
 
   _noise(volume, duration, frequency, type = 'lowpass', delay = 0, endFrequency = frequency, attack = .003) {
@@ -594,6 +600,48 @@ export class GameAudio {
     }
   }
 
+  setMenuActive(active) {
+    const next = !!active;
+    if (next === this._menuActive) return;
+    this._menuActive = next;
+    this._menuNextBeat = 0;
+    this._menuStep = 0;
+    if (!next) {
+      // Stop only the menu score. A game's start cue may already be playing.
+      for (const source of [...this._menuSources]) {
+        try { source.stop(); } catch (_) {}
+        this._cleanups.get(source)?.();
+      }
+    }
+  }
+
+  _updateMenuMusic(now) {
+    if (!this._menuActive || this.muted || this.volume <= 0) return;
+    if (!this._menuNextBeat || this._menuNextBeat < now - .3) this._menuNextBeat = now + .04;
+    // An original, quiet D-minor workshop motif: plucked strings, a soft
+    // sustained fifth, and alternating bass. No network or autoplay needed.
+    const melody = [146.83,0,220,293.66,261.63,0,220,196,146.83,0,174.61,220,196,0,164.81,146.83];
+    const note = (wave, frequency, volume, length, delay, attack) => {
+      const source = this._tone(wave, frequency, frequency * .999, volume, length, delay, attack);
+      if (source) this._menuSources.add(source);
+    };
+    while (this._menuNextBeat < now + .19) {
+      const step = this._menuStep++ % melody.length;
+      const delay = Math.max(0, this._menuNextBeat - now);
+      const pitch = melody[step];
+      if (pitch) {
+        note('triangle', pitch, .034, .73, delay, .006);
+        note('sine', pitch * 2, .009, .45, delay + .009, .006);
+      }
+      if (step % 4 === 0) {
+        const bass = step < 8 ? 73.415 : step < 12 ? 87.305 : 98;
+        note('sine', bass, .047, 1.5, delay, .035);
+        note('sine', bass * 3, .012, 1.35, delay, .09);
+      }
+      this._menuNextBeat += .42;
+    }
+  }
+
   _makeAmbience() {
     const ctx = this.ctx, nodes = [];
     const layer = (type, frequency, gain, rate) => {
@@ -609,14 +657,15 @@ export class GameAudio {
   }
 
   update(dt, danger = 0, weather = 'rain') {
-    if (!this.ready || !this._ambient || this._disposed || this._hidden || this.ctx?.state !== 'running') return;
+    if (!this.ready || !this._ambient || this._disposed || this._hidden || this.muted || this.volume <= 0 || this.ctx?.state !== 'running') return;
     this._time += clamp(dt, 0, .1);
     if (this._time - this._mixTime < .12) return;
     this._mixTime = this._time;
     const t = this.ctx.currentTime, d = clamp(danger);
-    this._ambient.wind.volume.gain.setTargetAtTime(.006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003, t, .3);
-    this._ambient.wind.filter.frequency.setTargetAtTime(190 + Math.sin(this._time * .2) * 60 + d * 70, t, .3);
-    this._ambient.rain.volume.gain.setTargetAtTime(weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002, t, .4);
+    this._updateMenuMusic(t);
+    this._ambient.wind.volume.gain.setTargetAtTime(this._menuActive ? .004 : .006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003, t, .3);
+    this._ambient.wind.filter.frequency.setTargetAtTime(this._menuActive ? 150 : 190 + Math.sin(this._time * .2) * 60 + d * 70, t, .3);
+    this._ambient.rain.volume.gain.setTargetAtTime(this._menuActive ? .0003 : weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002, t, .4);
   }
 
   _stopTransientSources() {
@@ -625,6 +674,7 @@ export class GameAudio {
       this._cleanups.get(source)?.();
     }
     this._recent.clear();
+    this._menuNextBeat = 0;
   }
 
   _dropGraph() {

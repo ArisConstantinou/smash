@@ -3396,6 +3396,53 @@ test('touch confirmation preserves walking and aim between two separate taps',()
   });
 });
 
+test('manual canvas throw aim survives starting the joystick before confirmation',()=>{
+  touchArena(()=>{
+    api.settings.throwMode='confirm';api.settings.throwAutoLock=false;
+    throwTouch('pointerdown');throwTouch('pointerup');
+    const point=api.screenPoint(-10,api.player.y+1.2,0);
+    const canvasTouch={pointerId:303,pointerType:'touch',clientX:point.x,clientY:point.y};
+    pointerEvent('gameCanvas','pointerdown',canvasTouch);pointerEvent('gameCanvas','pointerup',canvasTouch);
+    api.updateAim();const chosen={...api.aim},before={x:api.player.x,z:api.player.z};
+    assert.ok(chosen.x<-.99,'The canvas touch must choose the intended manual direction');
+    moveStick('pointerdown',1,0);playerSteps(.20);
+    assert.ok(Math.hypot(api.player.x-before.x,api.player.z-before.z)>.2,'The movement thumb must still move the warrior');
+    assert.ok(chosen.x*api.aim.x+chosen.z*api.aim.z>.999,'Walking must preserve the chosen direction instead of replacing it with facing');
+    throwTouch('pointerdown');throwTouch('pointerup');
+    assert.ok(api.throwWindup);assert.equal(api.throwWindup.target,null);
+    assert.ok(chosen.x*api.throwWindup.dir.x+chosen.z*api.throwWindup.dir.z>.999);
+    assert.ok(api.touch.x>.99,'Confirming the throw must not release the movement thumb');
+    moveStick('pointerup',1,0);
+  });
+});
+
+test('native menu and settings controls retain Space and Enter while gameplay keeps its shortcuts',()=>{
+  arena();
+  const editable=document.createElement('div');editable.isContentEditable=true;
+  const controls=[elements.get('closeSettingsButton'),document.createElement('a'),elements.get('throwAutoLockToggle'),elements.get('throwModeSelect'),document.createElement('textarea'),editable];
+  for(const phase of ['menu','settings','playing']){
+    api.setPhase(phase);
+    for(const control of controls)for(const code of ['Space','Enter']){
+      control.focus();let prevented=false;
+      emit('keydown',{code,preventDefault(){prevented=true;}});
+      assert.equal(prevented,false,`${phase}/${control.tagName}/${code} must retain its native action`);
+      assert.equal(api.phase,phase,'A focused control must not activate the global start shortcut');
+      assert.equal(api.leap,null,'Activating a focused control must not trigger a gameplay jump');
+      key(code,false);
+    }
+  }
+  for(const phase of ['menu','settings']){
+    api.setPhase(phase);document.body.focus();let prevented=false;
+    emit('keydown',{code:'ArrowDown',preventDefault(){prevented=true;}});
+    assert.equal(prevented,false,'Gameplay must not consume navigation keys outside a running game');
+    key('ArrowDown',false);
+  }
+  api.setPhase('playing');elements.get('gameCanvas').focus();let prevented=false;
+  emit('keydown',{code:'Space',preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);assert.ok(api.leap,'Space on the game canvas must still jump');
+  key('Space',false);
+});
+
 test('hold keyboard input previews, commits only on release, and manual mode does not select enemies',()=>{
   arena();api.settings.throwMode='hold';api.settings.throwAutoLock=false;
   stationaryEnemy('brute',2,6);aimAt(0,12);

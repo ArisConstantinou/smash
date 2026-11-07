@@ -3,7 +3,7 @@ import { makeProp } from './models.js?v=20261107-forge9';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
-import { createGeometryCollision } from './geometry-collision.js?v=20261107-forge9';
+import { createGeometryCollision } from './geometry-collision.js?v=20261107-forge9b';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
