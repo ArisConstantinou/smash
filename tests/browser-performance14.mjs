@@ -29,6 +29,9 @@ await new Promise(r=>server.listen(8000,'127.0.0.1',r));const origin='http://127
 // These switches are CI-only; ordinary players do not need browser flags.
 const browser=await chromium.launch({headless:false,channel:'chromium',args:['--no-sandbox','--enable-gpu','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--use-vulkan=swiftshader','--use-webgpu-adapter=swiftshader','--disable-vulkan-surface']});
 const results=[];
+// Existing players may have the old WebGL-only file cached at this URL.
+// The import map must fetch a fresh module URL for the whole graph.
+const cachedWebGL=await readFile(resolve(root,'vendor/three.webgl.js'),'utf8');
 async function assertRendering(page){
  const health=await page.evaluate(()=>({lost:!!__perf14.renderer._isDeviceLost,draws:__perf14.renderer.info.render.drawCalls,triangles:__perf14.renderer.info.render.triangles,frame:__perf14.renderer.info.frame}));
  assert.equal(health.lost,false,'WebGPU device was lost; requestAnimationFrame is NOT proof of rendering');
@@ -38,6 +41,7 @@ async function assertRendering(page){
 try{
  for(const size of [{name:'desktop',width:1440,height:900},{name:'phone',width:390,height:844}]){
   const context=await browser.newContext({viewport:{width:size.width,height:size.height},hasTouch:size.name==='phone',deviceScaleFactor:1});
+  await context.route('**/vendor/three.module.js',route=>route.fulfill({status:200,contentType:'text/javascript',body:cachedWebGL}));
   const page=await context.newPage(),errors=[];let closing=false;
   page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'&&!/404|Failed to load resource/.test(m.text())&&!(closing&&/Device was destroyed/.test(m.text())))errors.push(m.text());});
   try{

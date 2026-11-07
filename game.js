@@ -21,7 +21,7 @@ import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverl
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
-import {createThrowIndicator} from './throw-indicator.js?v=20261107-aim13';
+import {createThrowIndicator} from './throw-indicator.js?v=20261107-perf14-fix3';
 import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
 import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261107-combat7';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
