@@ -26,6 +26,7 @@ import * as menuModule from '../menu.js';
 import * as cityLevels from '../city-levels.js';
 import * as manualCombat from '../manual-combat.js';
 import * as weaponRest from '../weapon-rest.js';
+import * as throwIndicatorModule from '../throw-indicator.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -197,12 +198,14 @@ const imports = new Map([
   ['./menu.js', synthetic(menuModule, 'real-menu')],
   ['./city-levels.js', synthetic(cityLevels, 'real-city-levels')],
   ['./manual-combat.js', synthetic(manualCombat, 'real-manual-combat')],
+  ['./throw-indicator.js', synthetic(throwIndicatorModule, 'real-throw-indicator')],
   ['./weapon-rest.js', synthetic(weaponRest, 'real-weapon-rest')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
   get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
@@ -713,9 +716,9 @@ test('the wider near-body sweep still stops at a surviving wall before the enemy
   assert.equal(strike.blocked, true);
 });
 
-test('each hand mode keeps an independent six-move bag and a new run resets the opener', () => {
+test('each continuous hand-mode chain covers six strokes; switching stance resets its horizontal opener', () => {
   arena();const names=[[],[]];
-  for(let i=0;i<6;i++)for(const mode of [0,1]){
+  for(const mode of [0,1])for(let i=0;i<6;i++){
     if(api.stance!==mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
     mouseAttack(true);mouseAttack(false);assert.ok(api.swing);names[mode].push(api.swing.variant);
     assert.equal(api.swing.twoHanded,!!mode);playerSteps(api.swing.duration+.04);assert.equal(api.swing,null);
@@ -1263,28 +1266,22 @@ test('a tap throw reads the movement thumb immediately without waiting for a ren
   });
 });
 
-test('dragging the throw tile aims independently while walking and releases into a real enemy hit', () => {
+test('the throw tile never becomes a second joystick; left-stick facing owns its release', () => {
   touchArena(() => {
-    const walking = core.screenMovement(1, 0), throwing = core.screenMovement(-1, 0);
-    const enemy = stationaryEnemy('brute', throwing.x * 5, throwing.z * 5), hp = enemy.hp;
-    moveStick('pointerdown', 1, 0, 101); playerSteps(.05);
-    pointerEvent('throwButton', 'pointerdown', { pointerId: 202, clientX: 320, clientY: 740 });
-    pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 260, clientY: 740 });
-    playerSteps(.2);
-    assert.ok(api.touchThrowAim); assert.equal(api.throwWindup, null);
-    assert.ok(api.aim.x * throwing.x + api.aim.z * throwing.z > .99);
-    close(api.facing.x, walking.x); close(api.facing.z, walking.z);
-    const beforeReturn = { ...api.aim };
-    pointerEvent('throwButton', 'pointermove', { pointerId: 202, clientX: 320, clientY: 740 });
-    playerSteps(.03);
-    assert.ok(Number.isFinite(api.aim.x) && Number.isFinite(api.aim.z));
-    assert.ok(api.aim.x * beforeReturn.x + api.aim.z * beforeReturn.z > .99, 'Returning to the drag origin must retain the last useful aim');
-    emit('pointerup', { pointerId: 202, pointerType: 'touch', clientX: 320, clientY: 740, target: document.body });
-    assert.ok(api.throwWindup); assert.equal(api.touchThrowAim, null);
-    assert.ok(api.throwWindup.dir.x * throwing.x + api.throwWindup.dir.z * throwing.z > .99);
+    api.settings.throwAutoLock=false;
+    const direction=core.screenMovement(-1,0);
+    moveStick('pointerdown',-.28,0,101);
+    const enemy=stationaryEnemy('brute',direction.x*5,direction.z*5),hp=enemy.hp;
+    throwTouch('pointerdown');throwTouch('pointermove',90,65);playerSteps(.2);
+    assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);
+    close(api.aim.x,direction.x);close(api.aim.z,direction.z);
+    close(api.player.x,0);close(api.player.z,0);
+    assert.equal(api.pointer.active,false,'No dragged target cursor');
+    throwTouch('pointerup',90,65);
+    close(api.throwWindup.dir.x,direction.x);close(api.throwWindup.dir.z,direction.z);
     playerSteps(.75);
-    assert.equal(enemy.hp, hp - Math.round(api.stats.power * 2.2), 'The actual swept flying hammer must hit exactly once');
-    assert.ok(api.touch.x > .99); close(api.facing.x, walking.x); close(api.facing.z, walking.z);
+    assert.equal(enemy.hp,hp-Math.round(api.stats.power*2.2));
+    assert.ok(api.touch.turnOnly,'Releasing throw does not release the movement thumb');
   });
 });
 
@@ -1315,21 +1312,26 @@ test('mobile throws in vertical and diagonal screen directions hit once, return,
     [0, -60, 'still'], [0, 60, 'guard'], [-60, 0, 'moving'],
     [60, 0, 'spin'], [-50, -50, 'moving'], [50, 50, 'still'],
   ]) touchArena(() => {
+    api.settings.throwAutoLock=false;
     if (mode === 'moving') { moveStick('pointerdown', 1, 0); playerSteps(.05); }
     if (mode === 'spin') spinFuel(true);
     const priorAction = mode === 'guard' ? 'guardButton' : mode === 'spin' ? 'attackButton' : null;
     if (priorAction) { pointerEvent(priorAction, 'pointerdown', { pointerId: 303 }); playerSteps(.4); }
-    throwTouch('pointerdown'); throwTouch('pointermove', dx, dy);
+    throwTouch('pointerdown');
+    // Turn with the only stick; the action thumb can wobble without steering.
+    const length=Math.hypot(dx,dy);moveStick('pointerdown',dx/length*.28,dy/length*.28,101);moveStick('pointermove',dx/length*.28,dy/length*.28,101);
+    throwTouch('pointermove', -dx, -dy);
     assert.ok(api.touchThrowAim);
     assert.equal(api.spin, null); assert.equal(api.guarding, false);
     if (priorAction) pointerEvent(priorAction, 'pointerup', { pointerId: 303 });
+    // The fuel targets are only for entering spin; manual throws must not
+    // rely on auto-ricochet routing through this ring to hit the new target.
+    if(mode==='spin')for(const e of api.enemies){e.x+=100;e.z+=100;e.mesh.position.set(e.x,0,e.z);}
     playerSteps(.08);
     const direction = { ...api.aim };
-    const projectedOrigin = api.screenPoint(api.player.x, api.player.y + 1.2, api.player.z);
-    const projectedTarget = api.screenPoint(api.player.x + direction.x * 6, api.player.y + 1.2, api.player.z + direction.z * 6);
-    const screenDX = projectedTarget.x - projectedOrigin.x, screenDY = projectedTarget.y - projectedOrigin.y;
-    assert.ok((screenDX * dx + screenDY * dy) / (Math.hypot(screenDX, screenDY) * Math.hypot(dx, dy)) > .999,
-      'An off-center action thumb must aim along its drag, including vertical screen travel');
+    const intended=core.screenMovement(dx,dy);
+    assert.ok(direction.x*intended.x+direction.z*intended.z>.999,
+      'The left stick, not the action thumb, must own throw direction');
     const enemy = stationaryEnemy('brute', api.player.x + direction.x * 6.5, api.player.z + direction.z * 6.5), hp = enemy.hp;
     throwTouch('pointerup', dx, dy);
     throwTouch('lostpointercapture', dx, dy); // Native release also relinquishes pointer capture.
@@ -1350,7 +1352,7 @@ test('mobile throws in vertical and diagonal screen directions hit once, return,
     assert.equal(projectile.mesh.parent, null);
     assert.equal(api.hero.userData.weaponHeld, true); assert.equal(api.hero.userData.hammerPivot.visible, true);
     assert.equal(api.hero.userData.leftGrip.visible, true); assert.equal(api.hero.userData.rightGrip.visible, true);
-    if (mode === 'moving') assert.ok(api.touch.x > .99, 'Catching the hammer must not release the movement thumb');
+    assert.ok(api.touch.turnOnly, 'Catching the hammer must not release the turning thumb');
     throwTouch('pointerdown'); throwTouch('pointerup');
     assert.ok(api.throwWindup, 'The caught hammer must be available for another deliberate throw');
   });
@@ -3387,23 +3389,22 @@ test('touch confirmation preserves walking and aim between two separate taps',()
   });
 });
 
-test('manual canvas throw aim survives starting the joystick before confirmation',()=>{
+test('manual confirm throw follows the single left stick without a canvas reticle',()=>{
   touchArena(()=>{
     api.settings.throwMode='confirm';api.settings.throwAutoLock=false;
     throwTouch('pointerdown');throwTouch('pointerup');
-    const point=api.screenPoint(-10,api.player.y+1.2,0);
+    const point=api.screenPoint(-12,api.player.y+1.2,0);
     const canvasTouch={pointerId:303,pointerType:'touch',clientX:point.x,clientY:point.y};
     pointerEvent('gameCanvas','pointerdown',canvasTouch);pointerEvent('gameCanvas','pointerup',canvasTouch);
-    api.updateAim();const chosen={...api.aim},before={x:api.player.x,z:api.player.z};
-    assert.ok(chosen.x<-.99,'The canvas touch must choose the intended manual direction');
-    moveStick('pointerdown',1,0);playerSteps(.20);
-    assert.ok(Math.hypot(api.player.x-before.x,api.player.z-before.z)>.2,'The movement thumb must still move the warrior');
-    assert.ok(chosen.x*api.aim.x+chosen.z*api.aim.z>.999,'Walking must preserve the chosen direction instead of replacing it with facing');
+    assert.equal(api.pointer.active,false,'Touching the world during throw does not spawn a movable cursor');
+    moveStick('pointerdown',.28,0);playerSteps(.20);
+    const chosen={...api.aim},expected=core.screenMovement(1,0);
+    close(chosen.x,expected.x);close(chosen.z,expected.z);
+    moveStick('pointerup',.28,0);playerSteps(.1);
+    close(api.aim.x,chosen.x);close(api.aim.z,chosen.z);
     throwTouch('pointerdown');throwTouch('pointerup');
     assert.ok(api.throwWindup);assert.equal(api.throwWindup.target,null);
-    assert.ok(chosen.x*api.throwWindup.dir.x+chosen.z*api.throwWindup.dir.z>.999);
-    assert.ok(api.touch.x>.99,'Confirming the throw must not release the movement thumb');
-    moveStick('pointerup',1,0);
+    close(api.throwWindup.dir.x,chosen.x);close(api.throwWindup.dir.z,chosen.z);
   });
 });
 
@@ -3610,4 +3611,64 @@ test('aim11: sustained contact at low rendering frequency has a bounded effect l
   arena();spinFuel(true);mouseAttack(true);playerSteps(4);
   assert.ok(api.spin);assert.ok(api.arcs.length<=48,'Weapon ribbons cannot grow between rendered frames');
   mouseAttack(false);api.updateEffects(1);assert.equal(api.arcs.length,0);
+});
+
+
+test('aim12: pause after recovery always resets to the horizontal opener in both stances',()=>{
+  for(const mode of [0,1]){
+    arena();if(mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    const opener=mode?'two-broadside':'one-forehand';
+    for(let chain=0;chain<4;chain++){
+      mouseAttack(true);mouseAttack(false);assert.equal(api.swing.variant,opener);
+      playerSteps(api.swing.duration+.04);
+      mouseAttack(true);mouseAttack(false);assert.notEqual(api.swing.variant,opener);
+      playerSteps(api.swing.duration+.8);
+    }
+  }
+});
+test('aim12: interrupts, stance changes and thrown-weapon recovery reset the opening stroke',()=>{
+  for(const reason of ['guard','kick','jump','dash','hurt','throw','pause','stance']){
+    arena();api.settings.throwAutoLock=false;
+    for(let i=0;i<2;i++){mouseAttack(true);mouseAttack(false);playerSteps(api.swing.duration+.02);}
+    if(reason==='guard'){mouseGuard(true);mouseGuard(false);}
+    if(reason==='kick'){api.startKick();playerSteps(.5);}
+    if(reason==='jump'){api.startLeap();playerSteps(2);}
+    if(reason==='dash'){api.dodge();playerSteps(.3);}
+    if(reason==='hurt')api.hurtPlayer(1,1,0,false);
+    if(reason==='throw'){api.startThrow({x:0,z:1});playerSteps(3);}
+    if(reason==='pause'){api.pauseGame();api.pauseGame();}
+    if(reason==='stance'){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    mouseAttack(true);mouseAttack(false);
+    assert.equal(api.swing?.variant,reason==='stance'?'two-broadside':'one-forehand',reason);
+  }
+});
+test('aim12: both throw modes keep an arc and place the illustrated arrow beyond it until release',()=>{
+  for(const mode of ['confirm','hold'])touchArena(()=>{
+    api.settings.throwAutoLock=false;api.settings.throwMode=mode;
+    api.setFacing(0,1);throwTouch('pointerdown');
+    if(mode==='confirm')throwTouch('pointerup');
+    playerSteps(.15);api.updateAimPreview();api.updateThrowIndicator();
+    const arrow=api.throwIndicator.mesh;assert.equal(arrow.visible,true);
+    assert.ok(api.meleeHint);assert.equal(arrow.material.depthTest,true);
+    assert.equal(arrow.material.map.image,elements.get('throwArrowImage'));
+    assert.ok(arrow.userData.layout.start>api.stats.range);
+    assert.ok(arrow.userData.layout.width>=1.25,'A broad graphic, not a line');
+    close(arrow.userData.layout.dx,api.aim.x);close(arrow.userData.layout.dz,api.aim.z);
+    const initial={x:api.player.x,z:api.player.z};moveStick('pointerdown',-.28,0);playerSteps(.15);
+    api.updateThrowIndicator();close(api.player.x,initial.x);close(api.player.z,initial.z);
+    const shown={dx:arrow.userData.layout.dx,dz:arrow.userData.layout.dz};
+    if(mode==='confirm')throwTouch('pointerdown');throwTouch('pointerup');
+    api.updateThrowIndicator();assert.equal(arrow.visible,true,'Windup retains the arrow');
+    close(api.throwWindup.dir.x,shown.dx);close(api.throwWindup.dir.z,shown.dz);
+    playerSteps(.30);api.updateThrowIndicator();assert.equal(arrow.visible,false,'No ghost arrow after launch');
+  });
+});
+test('aim12: cancel/pause hides the throw picture and never leaves a reticle in the FX draw code',()=>{
+  arena();api.settings.throwMode='confirm';key('KeyR',true);key('KeyR',false);
+  api.updateThrowIndicator();assert.equal(api.throwIndicator.mesh.visible,true);
+  api.pauseGame();assert.equal(api.throwIndicator.mesh.visible,false);
+  api.pauseGame();api.updateThrowIndicator();assert.equal(api.throwIndicator.mesh.visible,false);
+  const draw=original.slice(original.indexOf('function drawAim(){'),original.indexOf('function drawFX(){'));
+  assert.doesNotMatch(draw,/c\.arc\(p\.x,p\.y,7|const x=pointer\.x,y=pointer\.y/);
+  assert.match(draw,/throwing\?throwGuidanceDirection/,'The close-range arc also follows the shown throw heading');
 });

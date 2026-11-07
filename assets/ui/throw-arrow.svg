@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="512" viewBox="0 0 256 512">
+  <defs>
+    <linearGradient id="steel" x1="0" y1="1" x2=".7" y2="0">
+      <stop offset="0" stop-color="#a86b32"/>
+      <stop offset=".3" stop-color="#e9b75e"/>
+      <stop offset=".63" stop-color="#ffe4a2"/>
+      <stop offset="1" stop-color="#fff4d1"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="1" x2="0" y2="0">
+      <stop stop-color="#e7a84d" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#fff8d5"/>
+    </linearGradient>
+  </defs>
+  <!-- Wide forged arrowhead, dark readability keyline and inset bevels.
+       Transparent canvas around the silhouette is intentional. -->
+  <path d="M128 16 240 168 172 155 172 423 150 450 106 450 84 423 84 155 16 168Z"
+        fill="#091e24" stroke="#091e24" stroke-width="18" stroke-linejoin="round" opacity=".85"/>
+  <path d="M128 16 240 168 172 155 172 423 150 450 106 450 84 423 84 155 16 168Z"
+        fill="url(#steel)" stroke="#ffe3a2" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M128 34 208 144 158 132 158 416 144 432 112 432 98 416 98 132 48 144Z"
+        fill="#84683d" stroke="#fff4c2" stroke-width="3" stroke-opacity=".65"/>
+  <path d="M128 42 194 132 144 120 144 409 128 426 112 409 112 120 62 132Z"
+        fill="url(#core)"/>
+  <path d="m100 248 28-25 28 25m-56 61 28-25 28 25m-56 61 28-25 28 25"
+        fill="none" stroke="#fff5cc" stroke-width="9" stroke-linejoin="miter"/>
+  <path d="m87 473 41-20 41 20-41 20Z" fill="#ffe7ae" stroke="#193237" stroke-width="6"/>
+  <path d="M128 42v83" stroke="#fff8db" stroke-width="4" opacity=".85"/>
+</svg>
