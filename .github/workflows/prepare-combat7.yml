@@ -17,47 +17,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Apply exact locally validated source changes
+      - name: Finalize unarmed HUD with exact source and output hashes
         shell: bash
         run: |
           python3 - <<'PY'
-          import base64, gzip, hashlib, json, pathlib, subprocess
-          base = '0f658521b1cfba19a7d10b61c03d35e212552a93'
-          assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip() == base, 'Unexpected source base'
-          packed = ''.join(pathlib.Path(f'.release-combat7/part{i}.txt').read_text().strip() for i in range(1,5))
-          raw = gzip.decompress(base64.b64decode(packed,validate=True))
-          assert hashlib.sha256(raw).hexdigest() == '0c7281133ec0d697f8157b7691788d93d99ee41a6073c6725871a4b5be2488cf', 'Payload mismatch'
-          changes = json.loads(raw)
-          allowed = {'RELEASE-combat7.md','audio.js','character-progression.js','combat-tools.js','controls.css','game.js','index.html','models.js','tests/combat-tools.test.mjs','tests/game.integration.mjs'}
-          assert set(changes) == allowed, 'Unexpected changed paths'
-          for name, change in changes.items():
-              p = pathlib.Path(name)
-              if change['base_sha256'] is None:
-                  assert not p.exists(), 'New path already exists: '+name
-                  lines = []
-              else:
-                  before = p.read_bytes()
-                  assert hashlib.sha256(before).hexdigest() == change['base_sha256'], 'Source mismatch: '+name
-                  lines = before.decode('utf-8').splitlines(keepends=True)
-              for start, end, replacement in reversed(change['edits']):
-                  assert 0 <= start <= end <= len(lines), 'Invalid edit range'
-                  lines[start:end] = [replacement]
-              result = ''.join(lines).encode('utf-8')
-              assert hashlib.sha256(result).hexdigest() == change['sha256'], 'Result mismatch: '+name
-              p.parent.mkdir(parents=True,exist_ok=True)
-              p.write_bytes(result)
-              print(change['sha256'], name)
+          import hashlib,json,pathlib,subprocess
+          assert subprocess.check_output(['git','rev-parse','HEAD^'],text=True).strip() == '1af0add0c2f651f1966f8f4c9cf45c453d998f58'
+          changes=json.loads(pathlib.Path('.release-combat7/hud.json').read_text())
+          assert set(changes)=={'game.js','tests/game.integration.mjs'}
+          for name,c in changes.items():
+              p=pathlib.Path(name);raw=p.read_bytes()
+              assert hashlib.sha256(raw).hexdigest()==c['before'], 'Unexpected source: '+name
+              text=raw.decode('utf-8')
+              for old,new in c['pairs']:
+                  assert text.count(old)==1, 'Ambiguous replacement: '+name
+                  text=text.replace(old,new)
+              raw=text.encode('utf-8')
+              assert hashlib.sha256(raw).hexdigest()==c['after'], 'Unexpected result: '+name
+              p.write_bytes(raw)
+              print(c['after'],name)
           PY
           git diff --check
-      - name: Run the full regression suite
+      - name: Run the full regression suite on the final source
         run: npm test
-      - name: Store validated candidate on preparation branch only
+      - name: Store final validated candidate on preparation branch only
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- RELEASE-combat7.md audio.js character-progression.js combat-tools.js controls.css game.js index.html models.js tests/combat-tools.test.mjs tests/game.integration.mjs
-          git commit -m 'Validated combat7: safe weapon pickup, saved level stats, throw assist and unarmed attacks'
+          git add -- game.js tests/game.integration.mjs
+          git commit -m 'Validate complete combat7 build with consistent unarmed HUD'
           git push origin HEAD:refs/heads/codex/prepare-combat7-20261107
           echo "VALIDATED_COMMIT=$(git rev-parse HEAD)"
           echo "VALIDATED_TREE=$(git rev-parse HEAD^{tree})"
