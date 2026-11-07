@@ -22,49 +22,49 @@ jobs:
           node-version: 22
       - name: Apply reviewed source patch
         run: |
-          if [ -f .delivery/performance14.part1 ]; then
+          if [ -f .delivery/performance14-fix.b64 ]; then
             python3 - <<'PY'
           import base64,gzip,hashlib,pathlib,subprocess
-          encoded=''.join(pathlib.Path(f'.delivery/performance14.part{i}').read_text() for i in range(1,5))
-          patch=gzip.decompress(base64.b64decode(encoded))
-          assert hashlib.sha256(patch).hexdigest() == 'c96ae625cf3c452b7e2483f2375ec1d2c85a43287211d33ebf3b63195ec9a606'
+          patch=gzip.decompress(base64.b64decode(pathlib.Path('.delivery/performance14-fix.b64').read_text()))
+          assert hashlib.sha256(patch).hexdigest() == '6336b00e711dce38c60b2e9ec379c6fee593220b757c7084b81f6c693c23f45d'
           subprocess.run(['git','apply','--unidiff-zero','--check'],input=patch,check=True)
           subprocess.run(['git','apply','--unidiff-zero'],input=patch,check=True)
           PY
           fi
       - name: Install exact official renderer and compile the numeric kernel
         run: |
-          if [ ! -f renderer-policy.js ]; then echo 'Source bundle not present yet'; exit 1; fi
           npm pack three@0.170.0 --silent
           mkdir -p /tmp/perf14-three
           tar -xzf three-0.170.0.tgz -C /tmp/perf14-three
-          if [ ! -f vendor/three.webgl.js ]; then cp vendor/three.module.js vendor/three.webgl.js; fi
           cp /tmp/perf14-three/package/build/three.webgpu.min.js vendor/three.webgpu.js
-          printf "// Official Three.js r170; explicit WebGL diagnostic/menu backend only.\nexport * from './three.webgpu.js';\nexport {WebGLRenderer} from './three.webgl.js';\n" > vendor/three.module.js
           sudo apt-get update -qq
           sudo apt-get install -y clang lld
           sh tools/build-wasm.sh
           rm -f three-0.170.0.tgz
       - name: Commit source to the isolated feature branch only
         run: |
-          rm -f .delivery/performance14.part* .delivery/performance14.b64
+          rm -f .delivery/performance14-fix.b64
           git add -A
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Implement strict WebGPU, exact WASM collision, FPS telemetry, car force and bounded damage effects' || test -z "$(git status --porcelain)"
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Reuse fixed GPU index buffers and verify each contact-earned spin transition' || test -z "$(git status --porcelain)"
           git push origin HEAD:feature/performance14-webgpu
           git rev-parse HEAD
       - name: Logic geometry audio and WASM equivalence
         run: npm test
       - name: Reproducible CPU collision benchmark
+        if: ${{ !cancelled() }}
         run: |
           mkdir -p browser-evidence/perf14
           node --import ./tools/node-environment.mjs tools/collision-benchmark.mjs | tee browser-evidence/perf14/collision-benchmark.json
       - name: Browser dependency
+        if: ${{ !cancelled() }}
         run: |
           npm install --no-save --package-lock=false playwright@1.62.1
           npx playwright install --with-deps chromium
       - name: Strict WebGPU and WASM real-browser validation
+        if: ${{ !cancelled() }}
         run: node tests/browser-performance14.mjs
       - name: Desktop and mobile compatibility regression
+        if: ${{ !cancelled() }}
         run: node tests/browser-smoke.mjs
       - name: Keep browser evidence
         if: always()
