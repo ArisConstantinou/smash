@@ -1,12 +1,13 @@
 import {DestructionSystem} from './destruction.js?v=20261107-forge9';
-import {createForgeMenu} from './menu.js?v=20261107-forge9b';
+import {createForgeMenu} from './menu.js?v=20261107-cities10';
+import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261107-forge9';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-forge9';
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-forge9';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261107-forge9b';
+import {createWorld} from './world.js?v=20261107-cities10';
 import {GameAudio} from './audio.js?v=20261107-forge9b';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-forge9';
@@ -44,6 +45,7 @@ let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
 let boss=null,bossSpawned=false,spawnCounter=0,lootCounter=0,announcementTimer=0;
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeTab='powers',upgradeFeedback='';
+let activeCity=null;
 let character=createCharacterProgression(),characterStats=getCharacterStats(character),testRun=false,checkpointTimer=0,forgeReadyAnnounced=false;
 const MATERIAL_LABELS={wood:'Ξύλο',scrap:'Μέταλλο',crystal:'Κρύσταλλοι'};
 let shake=0,hitStop=0,redFlash=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
@@ -360,7 +362,8 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
   destruction?.dispose();
   world?.dispose();
-  world=createWorld(scene,{seed:1527+sector*173,round:sector});
+  world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
+  scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
   destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size)});
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
@@ -373,7 +376,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
 }
 function startGame(startLevel=1,options={}){
   const requested=typeof startLevel==='number'?startLevel:1;
-  testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));resetWorld(false,requested);
+  activeCity=options.city??null;testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));resetWorld(false,requested);
   if(options.resume){
     const stored=read('ironfall.character',null),restored=restoreCharacterProgression(stored?.character);
     if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();}
@@ -2226,12 +2229,12 @@ function cancelTouchThrow(){
   if($('throwAimStatus'))$('throwAimStatus').hidden=true;
 }
 function initInput(){
-  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?Number($('startingLevel').value):1,{test:testRun,resume:!testRun});
+  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?Number($('startingLevel').value):1,{test:testRun,resume:!testRun,city:activeCity});
   $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};
   $('resumeCharacterButton').onclick=()=>startGame(1,{resume:true});
-  $('startingLevel').replaceChildren();for(let n=1;n<=MAX_CHARACTER_LEVEL;n++){const option=document.createElement('option');option.value=String(n);option.textContent=String(n);$('startingLevel').appendChild(option);}$('startingLevel').value='10';
+  $('startingLevel').value='1';
   const preview=()=>{const s=getCharacterStats(createCharacterProgression(Number($('startingLevel').value)));$('startingLoadout').textContent=s.weaponName+' · '+(s.canLightning?'Αναπηδήσεις και κεραυνοί':s.canReturn?'Αυτόματη επιστροφή':s.canAirSmash?'Εναέρια συντριβή':'Μικρό άλμα, ρίψη και συλλογή');};
-  $('startingLevel').onchange=preview;preview();$('testStartButton').onclick=()=>startGame(Number($('startingLevel').value),{test:true});$('forgeButton').onclick=forgeWeapon;
+  $('startingLevel').onchange=preview;preview();$('testStartButton').onclick=()=>startGame(Number($('startingLevel').value),{test:true,city:getLevelCity($('startingLevel').value)});$('forgeButton').onclick=forgeWeapon;
   window.addEventListener('pagehide',persistCharacter);
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
   $('continueButton').onclick=()=>{boss=null;$('bossHud').hidden=true;beginWave(round+1);setPhase('playing');audio.play('start');announce('Η ΠΟΛΗ ΑΝΤΕΧΕΙ ΑΚΟΜΑ','Συνέχισε να εξελίσσεσαι. Η επόμενη ορδή πλησιάζει.',3.2);};

@@ -45,7 +45,7 @@ function plotHash(seed, row, col) {
   return (n ^ (n >>> 16)) >>> 0;
 }
 
-export function createCityLayout(seed = 1) {
+export function createCityLayout(seed = 1, city = null) {
   const plots = [];
   for (let row = 0; row < 10; row++) for (let col = 0; col < 10; col++) {
     const x = (col - 4.5) * CITY_SPACING, z = (row - 4.5) * CITY_SPACING;
@@ -64,6 +64,12 @@ export function createCityLayout(seed = 1) {
   assign('office', 10, p => Math.hypot(p.x, p.z));
   assign('shop', 12, p => Math.min(Math.abs(p.x), Math.abs(p.z)) + Math.hypot(p.x,p.z) * .12);
   assign('apartment', 16, p => Math.hypot(p.x + 55, p.z + 44));
+  if(city?.mix?.length){
+    for(const p of plots)p.kind=city.mix[plotHash(seed,p.row,p.col)%city.mix.length];
+    // Keep all civic/interaction types available without a fixed skyline.
+    const kinds=['townhall','police','hospital','construction','skyscraper','warehouse','office','shop','apartment','townhouse'];
+    kinds.forEach((kind,i)=>{plots[((i*17+(seed%10))%100)].kind=kind;});
+  }
   plots.forEach(p => { p.kind ||= 'townhouse'; p.label = civicLabels[p.kind]; p.isLandmark = ['townhall','police','hospital','construction'].includes(p.kind); });
   return {
     bounds: CITY_BOUNDS, spacing: CITY_SPACING, roadWidth: CITY_ROAD_WIDTH,

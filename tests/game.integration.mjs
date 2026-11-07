@@ -23,6 +23,7 @@ import * as kickPhysics from '../kick-physics.js';
 import * as combatTools from '../combat-tools.js';
 import * as destructionModule from '../destruction.js';
 import * as menuModule from '../menu.js';
+import * as cityLevels from '../city-levels.js';
 import * as weaponRest from '../weapon-rest.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
@@ -193,6 +194,7 @@ const imports = new Map([
   ['./combat-tools.js', synthetic(combatTools, 'real-combat-tools')],
   ['./destruction.js', synthetic(destructionModule, 'real-destruction')],
   ['./menu.js', synthetic(menuModule, 'real-menu')],
+  ['./city-levels.js', synthetic(cityLevels, 'real-city-levels')],
   ['./weapon-rest.js', synthetic(weaponRest, 'real-weapon-rest')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
@@ -2682,7 +2684,7 @@ test('a normal new character wears starter gear, keeps movement, and makes only 
   assert.match(elements.get('characterXpText').textContent, /0\s*\/\s*8\s*XP/);
 });
 
-test('the level selector creates full war and storm presets in the same district without fake level labels', () => {
+test('city cards launch distinct pictured cities with full war and storm presets without fake level labels', () => {
   const descriptions = [];
   for (const [level, weaponId, returns, chains] of [[1, 'log', false, false], [10, 'war', true, false], [15, 'storm', true, true]]) {
     api.clearInput(); heldMousePoint = null;
@@ -2700,14 +2702,15 @@ test('the level selector creates full war and storm presets in the same district
     close(api.stats.power, api.characterStats.power);
     assert.equal(api.player.hp, api.characterStats.maxHp);
     assert.equal(api.round, 1, 'Character level must not masquerade as a different wave');
-    assert.equal(api.sector, 1, 'Character presets must not switch maps');
+    assert.equal(api.sector, 1, 'Selecting a city must not masquerade as a different wave/sector');
+    assert.equal(api.world.city,cityLevels.getLevelCity(level));
     assert.equal(api.testRun, true);
     if (level > 1) assert.ok(api.character.materials.wood > 0);
     api.renderCharacterProgress();
     assert.match(elements.get('characterHudLevel').textContent, /ΔΟΚΙΜΗ/);
   }
-  assert.deepEqual(descriptions[0], descriptions[1]);
-  assert.deepEqual(descriptions[1], descriptions[2]);
+  assert.notDeepEqual(descriptions[0], descriptions[1]);
+  assert.notDeepEqual(descriptions[1], descriptions[2]);
   assert.equal(elements.get('characterXpFill').style.width, '100%');
   assert.match(elements.get('characterXpText').textContent, /ΜΕΓΙΣΤΟ/);
 });
