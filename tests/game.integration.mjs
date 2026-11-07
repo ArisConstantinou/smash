@@ -3223,6 +3223,9 @@ test('unarmed LMB punches on contact with a real hand, not a hidden hammer',()=>
  assert.ok(audioEvents.slice(before).some(e=>e.name==='punch'));
  assert.equal(elements.get('attackIcon').getAttribute('href'),'#a-punch');
  assert.equal(elements.get('attackTouchIcon').getAttribute('href'),'#t-punch');
+ api.updateHUD();assert.match(elements.get('chargeText').textContent,/ΓΡΟΘΙΕΣ/);
+ assert.match(elements.get('stanceValue').textContent,/ΑΟΠΛΟΣ/);
+ assert.equal(elements.get('chargeFill').style.width,'0%');
 });
 test('holding unarmed attack alternates fists and releasing stops without an extra strike',()=>{
  unarmedArena();const e=resilientEnemy('zombie',0,1),hands=new Set(),start=audioEvents.length;
