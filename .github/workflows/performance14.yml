@@ -4,7 +4,7 @@ on:
     branches: [feature/performance14-webgpu]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: performance14
   cancel-in-progress: true
@@ -15,46 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: feature/performance14-webgpu
           fetch-depth: 2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Apply reviewed source patch
+      - name: Archive the exact source under test
         run: |
-          if [ -f .delivery/performance14-fix.b64 ]; then
-            python3 - <<'PY'
-          import base64,gzip,hashlib,pathlib,subprocess
-          patch=gzip.decompress(base64.b64decode(pathlib.Path('.delivery/performance14-fix.b64').read_text()))
-          assert hashlib.sha256(patch).hexdigest() == '6336b00e711dce38c60b2e9ec379c6fee593220b757c7084b81f6c693c23f45d'
-          subprocess.run(['git','apply','--unidiff-zero','--check'],input=patch,check=True)
-          subprocess.run(['git','apply','--unidiff-zero'],input=patch,check=True)
-          PY
-          fi
-      - name: Install exact official renderer and compile the numeric kernel
-        run: |
-          npm pack three@0.170.0 --silent
-          mkdir -p /tmp/perf14-three
-          tar -xzf three-0.170.0.tgz -C /tmp/perf14-three
-          cp /tmp/perf14-three/package/build/three.webgpu.min.js vendor/three.webgpu.js
-          sudo apt-get update -qq
-          sudo apt-get install -y clang lld
-          sh tools/build-wasm.sh
-          rm -f three-0.170.0.tgz
-      - name: Commit source to the isolated feature branch only
-        run: |
-          rm -f .delivery/performance14-fix.b64
-          git add -A
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Reuse fixed GPU index buffers and verify each contact-earned spin transition' || test -z "$(git status --porcelain)"
-          git push origin HEAD:feature/performance14-webgpu
-          git rev-parse HEAD
+          git archive --format=tar HEAD > /tmp/performance14-source.tar
+          mkdir -p browser-evidence/perf14
+          git rev-parse HEAD > browser-evidence/perf14/commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: performance14-source
+          path: /tmp/performance14-source.tar
+          retention-days: 3
       - name: Logic geometry audio and WASM equivalence
-        run: npm test
+        run: npm test | tee browser-evidence/unit-tests.log
       - name: Reproducible CPU collision benchmark
         if: ${{ !cancelled() }}
-        run: |
-          mkdir -p browser-evidence/perf14
-          node --import ./tools/node-environment.mjs tools/collision-benchmark.mjs | tee browser-evidence/perf14/collision-benchmark.json
+        run: node --import ./tools/node-environment.mjs tools/collision-benchmark.mjs | tee browser-evidence/perf14/collision-benchmark.json
       - name: Browser dependency
         if: ${{ !cancelled() }}
         run: |
@@ -62,7 +41,14 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Strict WebGPU and WASM real-browser validation
         if: ${{ !cancelled() }}
-        run: node tests/browser-performance14.mjs
+        run: node tests/browser-performance14.mjs 2>&1 | tee browser-evidence/perf14/browser-test.log
+      - name: Keep early WebGPU evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance14-webgpu-evidence
+          path: browser-evidence/perf14/
+          retention-days: 7
       - name: Desktop and mobile compatibility regression
         if: ${{ !cancelled() }}
         run: node tests/browser-smoke.mjs
