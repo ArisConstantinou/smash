@@ -132,6 +132,13 @@ export function firstHammerHit(start, end, targets, radius = 0.45) {
   let nearest = null;
   for (const target of targets || []) {
     if (!target || target.dead) continue;
+    // Architecture provides a cast against the very same surviving pieces
+    // used by locomotion. A miss is a real opening, not an enclosing box hit.
+    if(finite(start.y)&&finite(end.y)&&typeof target.geometryHit==='function'){
+      const hit=target.geometryHit(start,end,radius);
+      if(!hit||!finite(hit.t)||hit.t<0||hit.t>1||(nearest&&hit.t>=nearest.t-TIME_EPSILON))continue;
+      nearest={target,t:hit.t,x:hit.x,y:hit.y,z:hit.z};continue;
+    }
     let planar;
     if (finite(target.w) && finite(target.d)) {
       planar = boxInterval(start.x, start.z, end.x, end.z, target, radius);

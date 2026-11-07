@@ -22,6 +22,8 @@ import * as occlusion from '../occlusion.js';
 import * as kickPhysics from '../kick-physics.js';
 import * as combatTools from '../combat-tools.js';
 import * as destructionModule from '../destruction.js';
+import * as menuModule from '../menu.js';
+import * as weaponRest from '../weapon-rest.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -145,6 +147,9 @@ class FakeRenderer {
   setPixelRatio(value) { this.pixelRatio = value; }
   setSize(w, h) { this.width = w; this.height = h; }
   async compileAsync() {}
+  setClearColor() {}
+  dispose() {}
+  forceContextLoss() {}
   render(scene, camera) { scene.updateMatrixWorld(true); camera.updateMatrixWorld(true); renderedFrames++; }
 }
 class StubAudio {
@@ -187,14 +192,16 @@ const imports = new Map([
   ['./kick-physics.js', synthetic(kickPhysics, 'real-kick-physics')],
   ['./combat-tools.js', synthetic(combatTools, 'real-combat-tools')],
   ['./destruction.js', synthetic(destructionModule, 'real-destruction')],
+  ['./menu.js', synthetic(menuModule, 'real-menu')],
+  ['./weapon-rest.js', synthetic(weaponRest, 'real-weapon-rest')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
-  get destruction(){return destruction;},
-  get punch(){return punch;},get settings(){return settings;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
-  beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,
+  get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},
+  get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
+  beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,segmentObjects,
   get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
   get phase(){return phase;}, get combatCombo(){return combatCombo;}, get comboXpCarry(){return comboXpCarry;}, get battleOccluders(){return battleOccluders;}, get heroSilhouette(){return heroSilhouette;}, get upgradeTab(){return upgradeTab;}, get comicState(){return comicState;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
@@ -236,6 +243,7 @@ await game.link(specifier => {
 await game.evaluate();
 await Promise.resolve();
 const api = game.namespace.__integration;
+const initialThrowMode=api.settings.throwMode;
 function emit(name, props = {}) {
   const event = { repeat: false, preventDefault() {}, ...props };
   for (const fn of listeners.get(name) || []) fn(event);
@@ -303,7 +311,8 @@ function advance(seconds, step = 1 / 60) {
   }
 }
 function reset(startLevel = 15, options = {test: true}) {
-  heldMousePoint = null;api.settings.throwAutoLock=true;
+  heldMousePoint = null;api.settings.throwAutoLock=true;api.settings.throwMode='hold';
+  // Legacy combat fixtures opt into hold/release; confirm-mode input is tested explicitly below.
   // Existing combat regressions exercise the complete hammer kit. Ordinary
   // character progression is covered explicitly with reset(1, {test:false}).
   api.clearInput(); api.startGame(startLevel, options); advance(.1);
@@ -401,6 +410,14 @@ function placeObject(type, x, z, options = {}) {
   const object = api.world.objects.find(o => o.type === type);
   assert.ok(object, `Real world fixture has a ${type}`);
   Object.assign(object, { x, z }, options);
+  if(['w','d','h'].some(key=>Object.hasOwn(options,key))){
+    // Collision fixtures must have the same rendered dimensions as their
+    // declared bounds; production no longer collides with a fake outer box.
+    const parent=object.mesh.parent;object.mesh.removeFromParent();
+    const material=new THREE.MeshLambertMaterial({color:object.color});
+    object.mesh=new THREE.Mesh(new THREE.BoxGeometry(object.w,object.h,object.d).translate(0,object.h/2,0),material);
+    object.materials=[material];object.baseY=0;object.baseRotation=object.mesh.rotation.clone();object.collisionAnchor={y:0,quaternion:object.mesh.quaternion.clone()};parent?.add(object.mesh);
+  }
   object.mesh.position.set(x, object.baseY, z);
   api.world.rebuildSpatialIndex();
   return object;
@@ -412,6 +429,7 @@ function headAzimuth() {
 }
 
 test('game initializes using its actual HTML ids, world and warrior, and renders a frame', () => {
+  assert.equal(initialThrowMode,'confirm','Fresh and migrated settings default to two distinct presses');
   assert.deepEqual(browserErrors, []);
   assert.equal(api.phase, 'menu');
   assert.equal(elements.get('startButton').disabled, false);
@@ -942,6 +960,9 @@ test('touch controls and accessible labels follow phone, landscape, tablet and d
             'The action description must identify the actually equipped weapon');
           assert.match(dynamicLabel, /Χτύπημα.*Κράτα.*περιστροφή/);
           assert.equal(button.getAttribute('title'), dynamicLabel);
+        } else if(id==='throwButton'){
+          assert.match(button.getAttribute('aria-label'),/Κράτα.*στόχευση.*άφησε.*ρίψη/);
+          assert.equal(button.getAttribute('title'),button.getAttribute('aria-label'));
         } else {
           assert.equal(button.getAttribute('aria-label'), label);
           assert.equal(button.getAttribute('title'), label);
@@ -1782,7 +1803,7 @@ test('RMB, Space, R and Z cancel a held spin and carry out their own actions wit
     assert.equal(api.spin, null, `${action} must cancel the old spin`);
     if (action === 'RMB') assert.equal(api.guarding, true);
     if (action === 'Space') { assert.ok(api.leap); assert.equal(api.leap.slam, false, 'A spin held before take-off must not arm the jump impact'); }
-    if (action === 'KeyR') assert.ok(api.throwWindup || api.throwFlight);
+    if (action === 'KeyR') {assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null,'Hold mode aims until R is released');}
     if (action === 'KeyZ') assert.equal(api.stanceTarget, 1);
     if (action === 'RMB') chordButtons(1, { button: 2 });
     else key(action, false);
@@ -2506,7 +2527,7 @@ test('60% destruction summons one boss and continuation retains upgrades and the
   assert.doesNotMatch(elements.get('waveStatus').textContent, /ΤΕΛΙΚΟΣ BOSS/);
 });
 
-test('boss fear and hit recoil stay bounded over many pose steps and its arm roll settles back to zero', () => {
+test('boss fear and hit recoil stay bounded over many pose steps and its arm roll settles back to its anatomical rest', () => {
   arena();
   api.spawnBoss();
   const boss = api.boss;
@@ -2530,7 +2551,7 @@ test('boss fear and hit recoil stay bounded over many pose steps and its arm rol
   assert.ok(peakLookUp > .2, 'The articulated boss head must track the elevated player');
   assert.ok(peakArmRoll > .01, 'The arms must visibly react before settling');
   assert.equal(boss.fearTime, 0); assert.equal(boss.fear, 0);
-  close(leftArm.rotation.z, 0, 1e-8); close(rightArm.rotation.z, 0, 1e-8);
+  close(leftArm.rotation.z, leftArm.userData.restRoll||0, 1e-8); close(rightArm.rotation.z, rightArm.userData.restRoll||0, 1e-8);
   assert.equal(boss.impact, null, 'The physical hit recoil must also complete');
 });
 
@@ -3099,11 +3120,10 @@ test('the held spin continues the opening leftward cut instead of reversing the 
 
 test('a building cannot fade only to reveal a nearby enemy or the idle weapon',()=>{
   arena(1,{test:false});api.camera.position.set(13,23,18);
-  const building=api.world.buildingObjects.find(o=>o.h>20);
-  Object.assign(building,{x:5,z:0,w:2,d:2,h:24,renderActive:true});
+  const building=placeObject('townhouse',5,0,{w:2,d:2,h:24,renderActive:true,isBuilding:true});
   // Put an enemy behind this wall while all body sight rays miss it.
-  building.mesh.position.set(5,building.baseY,0);
-  stationaryEnemy('brute',4,-2.0);
+  const enemy=stationaryEnemy('brute',4,-2.0);
+  assert.ok(occlusion.occludesBattlePoint(building,{x:enemy.x,y:1.1,z:enemy.z},{x:13,y:22.4,z:18}));
   for(let i=0;i<8;i++)api.updateBattleVisibility(.06);
   assert.equal(api.battleOccluders.has(building),false);
   assert.ok(!building.occlusionFade);
@@ -3345,4 +3365,129 @@ test('actual low-damage car hits activate one alarm before any panel comes off; 
  assert.equal(car.destruction,undefined);assert.equal(api.destruction.alarms.size,1);
  api.destruction.update(.1,{x:car.x,z:car.z});assert.ok(audioEvents.some(e=>e.name==='carAlarm'));
  const old=api.destruction;reset(1,{test:false});assert.equal(old.disposed,true);assert.equal(old.alarms.size,0);assert.equal(old.debris.length,0);
+});
+
+// forge9 controls: production handlers, not a simulated alternate state machine.
+test('default two-press keyboard targeting stays armed until the second completed press',()=>{
+  arena();api.settings.throwMode='confirm';
+  const enemy=stationaryEnemy('brute',1,6);enemy.hp=enemy.maxHp=1000;aimAt(0,12);
+  key('KeyR',true);key('KeyR',false);
+  assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);assert.equal(api.throwFlight,null);
+  assert.equal(api.throwLock,enemy);assert.equal(api.throwPreviewTargets[0],enemy);
+  playerSteps(.7);assert.equal(api.throwWindup,null,'Aiming does not time out into an unexpected throw');
+  emit('keydown',{code:'KeyR',repeat:true});assert.equal(api.throwWindup,null);
+  key('KeyR',true);key('KeyR',false);
+  assert.equal(api.touchThrowAim,null);assert.ok(api.throwWindup);assert.equal(api.throwWindup.target,enemy);
+  playerSteps(.29);assert.ok(api.throwFlight);
+});
+
+test('touch confirmation preserves walking and aim between two separate taps',()=>{
+  touchArena(()=>{
+    api.settings.throwMode='confirm';
+    const enemy=stationaryEnemy('brute',0,6);enemy.hp=enemy.maxHp=1000;
+    api.setFacing(0,1);throwTouch('pointerdown');throwTouch('pointerup');
+    assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);assert.equal(api.throwLock,enemy);
+    moveStick('pointerdown',1,0);playerSteps(.20);
+    assert.ok(api.touch.x>.99);assert.equal(api.throwLock,enemy,'Walking alone does not discard the visible lock');
+    throwTouch('pointerdown');throwTouch('pointerup');
+    assert.ok(api.throwWindup);assert.equal(api.throwWindup.target,enemy);assert.ok(api.touch.x>.99);
+    throwTouch('lostpointercapture');assert.ok(api.throwWindup,'The successful confirmation is not replayed or cancelled by capture cleanup');
+    moveStick('pointerup',1,0);
+  });
+});
+
+test('hold keyboard input previews, commits only on release, and manual mode does not select enemies',()=>{
+  arena();api.settings.throwMode='hold';api.settings.throwAutoLock=false;
+  stationaryEnemy('brute',2,6);aimAt(0,12);
+  key('KeyR',true);playerSteps(.25);
+  assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null);assert.equal(api.throwLock,null);
+  assert.equal(api.throwPreviewTargets.length,0);
+  key('KeyR',false);assert.ok(api.throwWindup);assert.equal(api.throwWindup.target,null);
+  close(api.throwWindup.dir.x,0,.01);assert.ok(api.throwWindup.dir.z>.99);
+});
+
+test('slow deliberate mouse movement can retarget a latched throw without a large pointer event',()=>{
+  arena();api.settings.throwMode='confirm';
+  const left=stationaryEnemy('brute',-3,6),right=stationaryEnemy('brute',3,6);
+  aimAt(left.x,left.z);key('KeyR',true);key('KeyR',false);assert.equal(api.throwLock,left);
+  const from={x:api.pointer.x,y:api.pointer.y},to=api.screenPoint(right.x,api.player.y+1.2,right.z);
+  const steps=Math.ceil(Math.hypot(to.x-from.x,to.y-from.y)/2);
+  for(let i=1;i<=steps;i++){emit('pointermove',{pointerType:'mouse',clientX:from.x+(to.x-from.x)*i/steps,clientY:from.y+(to.y-from.y)*i/steps});api.updateAim();}
+  assert.equal(api.throwLock,right);key('KeyR',true);key('KeyR',false);assert.equal(api.throwWindup.target,right);
+});
+
+test('target loss, Escape, pause and settings changes cannot leave an invisible armed throw',()=>{
+  for(const reason of ['escape','pause','mode','assist','death','dash']){
+    arena();api.settings.throwMode='confirm';
+    const enemy=stationaryEnemy('brute',0,6);aimAt(0,12);key('KeyR',true);key('KeyR',false);
+    enemy.dead=true;api.updateAim();assert.equal(api.throwLock,null);assert.equal(api.throwPreviewTargets.length,0);
+    if(reason==='escape'){key('Escape',true);key('Escape',false);assert.equal(api.phase,'playing');}
+    if(reason==='pause')api.setPhase('paused');
+    if(reason==='mode')elements.get('throwModeSelect').onchange({target:{value:'hold'}});
+    if(reason==='assist')elements.get('throwAutoLockToggle').onchange({target:{checked:false}});
+    if(reason==='death')api.setPhase('dead');
+    if(reason==='dash')api.dodge();
+    assert.equal(api.touchThrowAim,null,reason);assert.equal(api.throwPreviewTargets.length,0,reason);
+    key('KeyR',false);assert.equal(api.throwWindup,null,reason);assert.equal(api.throwFlight,null,reason);
+  }
+  assert.equal(JSON.parse(storage.get('ironfall.settings')).throwMode,'confirm');
+});
+
+test('throw mode is persisted independently from auto-lock',()=>{
+  arena();
+  elements.get('throwModeSelect').onchange({target:{value:'confirm'}});
+  elements.get('throwAutoLockToggle').onchange({target:{checked:false}});
+  let saved=JSON.parse(storage.get('ironfall.settings'));assert.equal(saved.throwMode,'confirm');assert.equal(saved.throwAutoLock,false);
+  elements.get('throwModeSelect').onchange({target:{value:'hold'}});
+  saved=JSON.parse(storage.get('ironfall.settings'));assert.equal(saved.throwMode,'hold');assert.equal(saved.throwAutoLock,false);
+});
+
+test('confirming a target that disappears before release cancels instead of silently throwing at a replacement',()=>{
+  arena();api.settings.throwMode='confirm';
+  const shown=stationaryEnemy('brute',0,6),replacement=stationaryEnemy('brute',2,6);
+  aimAt(0,12);key('KeyR',true);key('KeyR',false);assert.equal(api.throwLock,shown);
+  key('KeyR',true);shown.dead=true;api.updateAim();key('KeyR',false);
+  assert.equal(api.throwWindup,null);assert.equal(api.throwFlight,null);assert.equal(api.touchThrowAim,null);
+  assert.ok(replacement.hp>0);
+});
+
+test('an assisted first throw reaches a marked enemy beyond the shorter ricochet-hop distance',()=>{
+  arena(15);api.settings.throwMode='confirm';
+  const far=stationaryEnemy('brute',0,18);far.hp=far.maxHp=1000;
+  aimAt(0,18);key('KeyR',true);key('KeyR',false);assert.equal(api.throwLock,far);
+  key('KeyR',true);key('KeyR',false);playerSteps(1.5);
+  assert.ok(far.hp<1000,'A marked in-range target must not be abandoned at the shorter bounce-leg limit');
+});
+
+test('opening settings from the main menu cannot overwrite an existing earned save on pagehide',()=>{
+  reset(1,{test:false});api.setPhase('menu');
+  const saved=JSON.stringify({character:characterProgression.createCharacterProgression(6),levels:{power:3,size:1,range:2,speed:2,vitality:1,quake:0,kick:2}});
+  storage.set('ironfall.character',saved);
+  const settingsButton=elements.get('menuSettingsButton');
+  for(const handler of settingsButton.events.get('click')||[])handler({target:settingsButton,preventDefault(){},stopPropagation(){}});
+  assert.equal(api.phase,'settings');
+  emit('pagehide');assert.equal(storage.get('ironfall.character'),saved);
+  elements.get('closeSettingsButton').click();assert.equal(api.phase,'menu');
+  emit('pagehide');assert.equal(storage.get('ironfall.character'),saved);
+});
+
+test('projectile candidate search includes a real lamp head beyond its narrow navigation pole',()=>{
+  arena();const lamp=placeObject('lamp',0,0);lamp.mesh.updateMatrixWorld(true);
+  const from=new THREE.Vector3(.76,3.19,-.3).applyMatrix4(lamp.mesh.matrixWorld);
+  const to=new THREE.Vector3(.76,3.19,-.1).applyMatrix4(lamp.mesh.matrixWorld);
+  assert.equal(combat.firstHammerHit(from,to,[lamp],.1)?.target,lamp,'The actual authored lamp head crosses this segment');
+  const candidates=api.segmentObjects(from,to,.1);
+  assert.ok(candidates.includes(lamp));
+  assert.equal(combat.firstHammerHit(from,to,candidates,.1)?.target,lamp);
+});
+
+test('numbered stationary ricochet preview agrees with real swept contact hit order',()=>{
+  arena(15);api.settings.throwMode='confirm';
+  const a=stationaryEnemy('zombie',0,7),b=stationaryEnemy('zombie',3,8),c=stationaryEnemy('zombie',-3,5);
+  for(const enemy of [a,b,c])enemy.hp=enemy.maxHp=10000;
+  aimAt(0,12);key('KeyR',true);key('KeyR',false);
+  const shown=[...api.throwPreviewTargets];assert.equal(shown.length,3);
+  key('KeyR',true);key('KeyR',false);playerSteps(.29);const h=api.throwFlight;assert.ok(h);
+  playerSteps(1.5);
+  assert.deepEqual([...h.hits].filter(target=>[a,b,c].includes(target)),shown);
 });

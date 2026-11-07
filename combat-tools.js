@@ -1,5 +1,5 @@
 // Pure, bounded helpers shared by production combat and regression tests.
-import {firstHammerHit} from './combat.js';
+import {firstHammerHit} from './combat.js?v=20261107-forge9';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const smooth=v=>{const t=clamp(v,0,1);return t*t*(3-2*t);};
 
@@ -20,6 +20,34 @@ export function selectThrowLock(origin,direction,targets,objects,{range=14,radiu
     if(value>score){score=value;best=target;}
   }
   return best;
+}
+
+// Predict each swept contact before choosing the next nearest visible enemy.
+// A large weapon reaches a body's outer surface well before its centre, so
+// selecting the next hop from enemy centres can show a different hit order
+// even when every enemy is stationary. Moving enemies can change later hops.
+export function previewThrowChain(first,targets,objects,{maxHits=1,radius=.2,chainRadius=9,origin=null}={}){
+  if(!first||first.dead)return [];
+  const result=[],seen=new Set(),actors=targets.includes(first)?targets:[first,...targets];
+  const point=t=>({x:t.x,y:(t.y||0)+Math.min(1.35,(t.height||t.h||2)*.6),z:t.z});
+  let from=origin||point(first),destination=first;
+  while(destination&&result.length<Math.min(5,Math.max(1,maxHits))){
+    // Keep scene-first tie ordering and intervening enemies identical to the
+    // projectile update. A scenery hit ends the outward flight immediately.
+    const hit=firstHammerHit(from,point(destination),[...objects,...actors].filter(t=>!seen.has(t)),radius);
+    if(!hit||!actors.includes(hit.target)||hit.target.w!==undefined)break;
+    result.push(hit.target);seen.add(hit.target);
+    if(result.length>=Math.min(5,Math.max(1,maxHits)))break;
+    from={x:hit.x,y:hit.y,z:hit.z};destination=null;
+    let distance=chainRadius;
+    for(const target of actors){
+      if(!target||target.dead||seen.has(target))continue;
+      const to=point(target),d=Math.hypot(to.x-from.x,to.y-from.y,to.z-from.z);
+      if(d<.001||d>distance||firstHammerHit(from,to,objects,radius))continue;
+      destination=target;distance=d;
+    }
+  }
+  return result;
 }
 
 export function punchStats(level=1,powerUpgrades=0,variant=0){

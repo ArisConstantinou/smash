@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from '../vendor/three.module.js';
+import {createGeometryCollision} from '../geometry-collision.js';
 import {
   segmentCircleHit, segmentBoxHit, firstHammerHit,
   facingCoverage, jumpY, swingCurve,
@@ -106,6 +108,41 @@ test('height bands respect a raised target base and explicit minY/maxY', () => {
   assert.equal(firstHammerHit({ x: -3, y: 1, z: 0 }, { x: 3, y: 1, z: 0 }, [raised], .3), null);
   const band = { x: 0, z: 0, w: 2, d: 2, minY: 3, maxY: 4 };
   assert.equal(firstHammerHit({ x: -3, y: 3.5, z: 0 }, { x: 3, y: 3.5, z: 0 }, [band], .3).target, band);
+});
+
+test('combat uses surviving architecture faces for elevated openings and descending roof contacts', () => {
+  const mesh=new THREE.Group(),material=new THREE.MeshBasicMaterial();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(8,3,6),material);body.position.y=1.5;mesh.add(body);
+  const chimney=new THREE.Mesh(new THREE.BoxGeometry(1,4,1),material);chimney.position.set(3,5,0);mesh.add(chimney);
+  const building={mesh,x:0,z:0,w:8,d:6,h:7},collision=createGeometryCollision({nearObjects:()=>[building]});
+  building.geometryHit=(a,b,r)=>collision.geometryHit(building,a,b,r);
+  const enemy={x:1,z:0,y:3,height:2,radius:.4};
+  const from={x:-3,y:4,z:0},to={x:5,y:4,z:0};
+  assert.equal(firstHammerHit(from,to,[building,enemy],.3).target,enemy,
+    'An empty region inside the building envelope cannot mask the elevated enemy');
+  const hit=firstHammerHit(from,to,[building],.3);
+  assert.equal(hit.target,building);close(hit.x,2.2);close(hit.y,4);
+  const roof=firstHammerHit({x:0,y:6,z:0},{x:0,y:0,z:0},[building],.3);
+  close(roof.y,3.3);close(roof.t,.45);
+  chimney.geometry.setIndex([]);
+  assert.equal(firstHammerHit(from,to,[building],.3),null,'Removed render faces must immediately open the throw path');
+  assert.equal(firstHammerHit({x:-3,z:0},{x:5,z:0},[building],.3).target,building,
+    'A deliberately planar query still uses the documented footprint contract');
+  body.geometry.dispose();chimney.geometry.dispose();material.dispose();
+});
+
+test('architecture and enemy contacts preserve nearest-hit and scene-first tie ordering', () => {
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(1,3,3),new THREE.MeshBasicMaterial());mesh.position.y=1.5;
+  const wall={mesh,x:0,z:0,w:1,d:3,h:3},collision=createGeometryCollision({nearObjects:()=>[wall]});
+  wall.geometryHit=(a,b,r)=>collision.geometryHit(wall,a,b,r);
+  const enemy={x:0,z:0,y:0,height:3,radius:.5},from={x:-4,y:1,z:0},to={x:4,y:1,z:0};
+  assert.equal(firstHammerHit(from,to,[wall,enemy],.5).target,wall);
+  assert.equal(firstHammerHit(from,to,[enemy,wall],.5).target,enemy);
+  const near={...enemy,x:-2};
+  assert.equal(firstHammerHit(from,to,[wall,near],.5).target,near);
+  wall.dead=true;
+  assert.equal(firstHammerHit(from,to,[wall,enemy],.5).target,enemy);
+  mesh.geometry.dispose();mesh.material.dispose();
 });
 
 test('guard follows mouse-facing direction and never protects the rear', () => {

@@ -106,6 +106,9 @@ function fractureBatch(mesh, root, cellSize, seed) {
   geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));
   geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+  // Collision follows these newly subdivided solids and the same live render
+  // index rewritten below. It must not keep the intact building envelope.
+  geometry.userData.collisionParts=parts.map(part=>({start:part.start,count:part.count}));
   geometry.computeBoundingBox(); geometry.computeBoundingSphere();
   mesh.geometry = geometry; original.dispose();
   return {mesh,parts,baseColors:new Float32Array(geometry.attributes.color.array)};

@@ -1,10 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {selectThrowLock,punchStats,samplePunchMotion,restSpotClear,findWeaponRest,nearestPickupPoint} from '../combat-tools.js';
+import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,restSpotClear,findWeaponRest,nearestPickupPoint} from '../combat-tools.js';
 import {createCharacterProgression,getCharacterStats,awardCharacterXp,xpForNextLevel,serializeCharacterProgression,restoreCharacterProgression} from '../character-progression.js';
 const origin={x:0,y:1.2,z:0},dir={x:0,z:1},foot={minX:-.4,maxX:.4,minZ:-1.1,maxZ:1.1};
 const foe=(x,z)=>({x,z,y:0,height:1.8,radius:.4});
 const box=(x,z,w=3,d=2,h=2)=>({x,z,w,d,h});
+
+test('ricochet preview respects available hits, real visibility, range and unique targets',()=>{
+ const a=foe(0,4),b=foe(3,4),blocked=foe(3,8),far=foe(50,50),dead={...foe(1,4),dead:true};
+ const targets=[a,b,blocked,far,dead],wall=box(3,6,5,1,4);
+ assert.deepEqual(previewThrowChain(a,targets,[wall],{maxHits:5}),[a,b]);
+ assert.deepEqual(previewThrowChain(a,targets,[],{maxHits:1}),[a]);
+ assert.deepEqual(previewThrowChain(a,targets,[],{maxHits:3}),[a,b,blocked]);
+ assert.deepEqual(previewThrowChain(dead,targets,[],{maxHits:5}),[]);
+});
+
+test('ricochet preview selects the next enemy from the physical hit point, not the previous enemy centre',()=>{
+ const a=foe(0,7),b=foe(3,8),c=foe(-3,5);
+ // B is closer to A's centre. The real first impact lies over two metres
+ // before A, where C is closer; none of these actors moves during the throw.
+ assert.ok(Math.hypot(b.x-a.x,b.z-a.z)<Math.hypot(c.x-a.x,c.z-a.z));
+ assert.deepEqual(previewThrowChain(a,[a,b,c],[],{origin:{x:0,y:1.2,z:1.4},radius:1.917,maxHits:5}),[a,c,b]);
+});
+
+test('ricochet preview accounts for intervening enemies and a scenery impact ends the flight',()=>{
+ const chosen=foe(0,10),intervening=foe(1,4),targets=[chosen,intervening];
+ const options={origin,maxHits:5,radius:1,chainRadius:9};
+ assert.deepEqual(previewThrowChain(chosen,targets,[],options),[intervening,chosen]);
+ assert.deepEqual(previewThrowChain(chosen,targets,[box(0,2,4,.2,3)],options),[]);
+});
+
+test('ricochet preview checks elevated scenery visibility from the contact point',()=>{
+ const a={...foe(0,5),y:3},b={...foe(4,8),y:3},wall={...box(1,5.9,.2,.2,3),y:3};
+ const options={origin:{x:0,y:4.2,z:0},maxHits:5,radius:.2};
+ // The line from A's centre clips the wall. The earlier sphere contact has
+ // a clear route past its corner, just as nextThrowTarget sees in flight.
+ assert.deepEqual(previewThrowChain(a,[a,b],[wall],options),[a,b]);
+ const lower={...wall,y:0,h:2};
+ assert.deepEqual(previewThrowChain(a,[a,b],[lower],options),[a,b]);
+});
 
 test('throw assist selects a visible enemy in the intended sector, not behind the player',()=>{
  const near=foe(2,5),back=foe(0,-1),far=foe(0,40);

@@ -5,7 +5,7 @@ const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
 const MAX_SOURCES = 64;
 const METAL_VOICES = new Set(['robot', 'mech', 'siegeMech', 'boss']);
 const ENVIRONMENT = new Set(['carAlarm','carTear','carWreck','buildingFracture','buildingCollapse','debrisLand']);
-const SPACING = { carAlarm:.10, carTear:.15, carWreck:.22, buildingFracture:.16, buildingCollapse:.35, debrisLand:.095, hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
+const SPACING = { menuFocus:.09,menuPress:.08,menuWood:.18,menuMetal:.18,menuOpen:.12,menuClose:.12,menuReady:.5,targetLock:.20,targetCancel:.1,carAlarm:.10, carTear:.15, carWreck:.22, buildingFracture:.16, buildingCollapse:.35, debrisLand:.095, hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
 
 export class GameAudio {
   constructor() {
@@ -372,6 +372,54 @@ export class GameAudio {
     if (!this._allow(key, SPACING[name] ?? .04)) return false;
     const existing = ENVIRONMENT.has(name) ? new Set(this._sources) : null;
     switch (name) {
+      case 'menuFocus': {
+        // A small mechanical catch, kept quiet for keyboard navigation.
+        const pitch=.94+Math.random()*.12;
+        this._noise(.024,.025,2600,'bandpass');
+        this._tone('triangle',620*pitch,380*pitch,.025,.045);
+        break;
+      }
+      case 'menuPress':
+        this._sample(d.material==='wood'?'wood':'metal',.24,.92+Math.random()*.12);
+        this._tone('sine',168,66,.095,.13);
+        this._noise(.035,.065,1700,'bandpass',.012,650);
+        break;
+      case 'menuWood': {
+        const pitch=.87+Math.random()*.22;
+        this._sample('wood',.60,pitch);
+        this._tone('triangle',290*pitch,102,.15,.18);
+        this._noise(.09,.08,1900,'bandpass',.012,500);
+        this._noise(.035,.06,2900,'highpass',.09,1200);
+        break;
+      }
+      case 'menuMetal': {
+        const pitch=.92+Math.random()*.16;
+        this._sample('metal',.55,pitch);
+        this._tone('sine',152,62,.13,.24);
+        [547,823,1379].forEach((note,i)=>this._tone('sine',note*pitch,note*pitch*.98,.065/(i+1),.36+i*.08,.01+i*.014));
+        this._noise(.04,.10,4200,'highpass',.04,2100);
+        break;
+      }
+      case 'menuOpen':
+        this._noise(.045,.19,1150,'bandpass',0,2800);
+        this._tone('triangle',180,245,.04,.18);
+        this._tone('sine',440,440,.035,.12,.10);
+        break;
+      case 'menuClose':
+        this._noise(.035,.12,2400,'bandpass',0,600);
+        this._tone('triangle',245,160,.045,.12);
+        break;
+      case 'menuReady':
+        this._sample('metal',.17,1.13);
+        [220,330,440].forEach((note,i)=>this._tone('triangle',note,note,.045,.25,i*.075));
+        break;
+      case 'targetLock':
+        this._tone('sine',740,740,.045,.065);
+        this._tone('triangle',1110,1110,.03,.085,.055);
+        break;
+      case 'targetCancel':
+        this._tone('triangle',440,220,.035,.095);
+        break;
       case 'carAlarm': {
         // Three recognizable automotive alarm patterns, not a generic hit beep.
         // Finite pulses: the world owns lifetime, distance and emitter limits.

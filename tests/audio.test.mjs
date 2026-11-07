@@ -70,6 +70,20 @@ function environment(t, { supported = true, session = true } = {}) {
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 
+test('menu wood, steel and mechanism feedback have distinct voices and respect mute and rate limits',async t=>{
+  const {audio}=environment(t);await audio.unlock();const ctx=audio.ctx,signatures=[];
+  for(const name of ['menuWood','menuMetal','menuFocus','menuOpen','menuClose','menuPress','targetLock']){
+    const start=ctx.nodes.length;ctx.currentTime+=1;
+    assert.equal(audio.play(name,.5),true);
+    assert.equal(audio.play(name,.5),false,'Rapid repeated interactions are bounded');
+    signatures.push(ctx.nodes.slice(start).filter(n=>n.kind==='oscillator').map(n=>n.frequency.calls[0]?.value).join(','));
+  }
+  assert.equal(new Set(signatures).size,signatures.length,'Different physical interactions must not all use the same beep');
+  audio.toggle();const nodes=ctx.nodes.length;
+  for(const name of ['menuWood','menuMetal','menuPress','targetLock'])assert.equal(audio.play(name,.5),false);
+  assert.equal(ctx.nodes.length,nodes,'Menu interactions cannot override mute');
+});
+
 test('audio waits for a gesture and recovers the same context from interrupted state', async t => {
   const { audio, document, audioSession } = environment(t);
   audio.bindUnlock(document); audio.bindUnlock(document);

@@ -37,6 +37,14 @@ class Part {
   }
 }
 function node(parent,name,x=0,y=0,z=0){const n=new THREE.Group();n.name=name;n.position.set(x,y,z);parent.add(n);return n;}
+// Keep the small outward joint angles when the game's walk/hit animation
+// resets a pose. The authored joints stay attached; only limbs clear the ribs.
+function restLimb(joint,side,roll=0,yaw=0){
+  joint.userData.restPosition={x:joint.position.x,y:joint.position.y,z:joint.position.z};
+  joint.userData.restRoll=side*roll;joint.userData.restYaw=side*yaw;
+  joint.rotation.set(0,joint.userData.restYaw,joint.userData.restRoll);
+  return joint;
+}
 function eyes(b,x,y,z,separation=.12,size=.07,hex=P.hot){for(const side of [-1,1]){b.box(P.dark,x+side*separation,y,z,size*2,size*1.45,.045);b.box(hex,x+side*separation,y,z+.03,size,size*.63,.028,0,0,0,.65);}}
 function claw(b,x,y,z,size=.3,side=1){b.segment(P.bone,[x,y,z],[x+side*.025,y-.12*size,z+.6*size],.09*size,.7);b.segment(P.bone,[x+side*.025,y-.12*size,z+.6*size],[x+side*.035,y-.35*size,z+.9*size],.065*size,.04);}
 
@@ -97,7 +105,7 @@ function mutant(){
     leg.ico(shadow,0,-.19,0,.21,.34,.24);leg.ico(skin,0,-.4,.07,.24,.25,.23);
     leg.ico(shadow,0,-.58,.19,.24,.13,.35);
     for(const x of [-.13,0,.13])claw(leg,x,-.55,.36,.3,side);
-    leg.finish(root,side*.27,.70,-.02);
+    restLimb(leg.finish(root,side*.33,.70,-.02),side,.05,.04);
     const arm=new Part(side<0?'leftArm':'rightArm'),big=side<0?1.23:1;
     arm.ico(shadow,side*.02,-.02,0,.37*big,.35*big,.36*big);
     arm.ico(skin,side*.06,-.33,.03,.27*big,.46,.27*big);
@@ -105,7 +113,7 @@ function mutant(){
     arm.ico(0x486058,side*.09,-.86,.22,.33*big,.20,.28*big);
     for(const x of [-.19,0,.19])claw(arm,x,-.92,.30,.7,side);
     for(const z of [-.17,.13])arm.segment(P.bone,[side*.22,.13,z],[side*.47,.43,z-.12],.13,.025);
-    arm.finish(root,side*.68,1.74,0);
+    restLimb(arm.finish(root,side*.78,1.74,0),side,.12);
   }
   root.userData={color:skin,fragments:[skin,shadow,P.bone,P.cloth],palette:'organic',heightTarget:2.6};return root;
 }
@@ -139,16 +147,16 @@ function mech(){
     leg.box(P.steel,0,-.73,.02,.40,.40,.48);leg.box(P.dark,0,-.97,.15,.49,.22,.78);
     leg.box(armor,0,-.77,.30,.30,.30,.10);
     leg.box(edge,0,-.94,.55,.47,.12,.11);
-    leg.finish(root,side*.32,1.09,0);
+    restLimb(leg.finish(root,side*.38,1.10,0),side,.045,.035);
     const arm=new Part(side<0?'leftArm':'rightArm');
-    arm.cyl(P.steel,0,0,0,.23,.43,8,0,0,Math.PI/2);
+    arm.cyl(P.steel,-side*.03,0,0,.23,.49,8,0,0,Math.PI/2);
     arm.box(armor,side*.03,.08,.01,.64,.36,.77,0,0,side*.06);
     arm.box(edge,side*.03,.29,.01,.60,.09,.72);
     for(const z of [-.20,.20])arm.cyl(P.dark,side*.36,.08,z,.06,.04,6,0,0,Math.PI/2);
     arm.box(P.dark,0,-.36,0,.27,.60,.31);arm.cyl(edge,side*.16,-.37,.07,.05,.51,6);
     arm.box(armor,0,-.63,.11,.47,.38,.46);
     if(side<0){for(const x of [-.15,.15]){arm.box(edge,x,-.88,.19,.11,.29,.23);arm.box(P.dark,x,-1.02,.29,.12,.10,.21);}}
-    const g=arm.finish(root,side*.77,1.88,0);
+    const g=restLimb(arm.finish(root,side*.82,1.88,0),side,.11);
     if(side>0){
       const barrel=new Part('rotaryBarrel');
       barrel.cyl(P.dark,0,0,0,.26,.72,10,Math.PI/2);
@@ -194,7 +202,7 @@ function titan(){
     leg.ico(shadow,0,-.26,0,.43,.61,.43);leg.ico(skin,side*.03,-.62,.08,.45,.45,.44);
     leg.ico(rock,0,-.91,.28,.48,.24,.63);
     for(const x of [-.25,0,.25])claw(leg,x,-.92,.61,.6,side);
-    leg.finish(root,side*.54,1.18,0);
+    restLimb(leg.finish(root,side*.65,1.18,0),side,.04,.04);
     const arm=new Part(side<0?'leftArm':'rightArm');
     arm.ico(rock,side*.06,0,-.03,.59,.57,.60,side*.17);
     arm.ico(skin,side*.09,-.57,.06,.45,.69,.44);
@@ -203,7 +211,7 @@ function titan(){
     for(const x of [-.3,0,.3])arm.ico(skin,x,-1.61,.62,.19,.22,.20);
     for(const z of [-.30,.10])arm.segment(P.bone,[side*.34,.20,z],[side*.67,.64,z-.09],.18,.02);
     for(const x of [-.25,.16])arm.box(P.hot,x,-1.40,.79,.07,.28,.04,0,0,x*.8,.32);
-    arm.finish(root,side*1.12,2.91,-.03);
+    restLimb(arm.finish(root,side*1.22,2.91,-.03),side,.10);
   }
   root.userData={color:skin,fragments:[skin,shadow,rock,P.bone],palette:'organic',miniBoss:true,heightTarget:4.35};return root;
 }
@@ -239,9 +247,9 @@ function siegeMech(){
     for(const x of [-.31,.31])leg.cyl(edge,x,-1.06,.10,.075,.61,6);
     leg.box(P.dark,0,-1.45,.33,.91,.32,1.31);leg.box(edge,0,-1.35,.94,.87,.15,.18);
     for(const x of [-.26,0,.26])leg.box(armor,x,-1.49,1.04,.16,.22,.11);
-    leg.finish(root,side*.67,1.62,-.03);
+    restLimb(leg.finish(root,side*.80,1.64,-.03),side,.04,.035);
     const arm=new Part(side<0?'leftArm':'rightArm');
-    arm.cyl(P.dark,0,-.03,0,.34,.67,8,0,0,Math.PI/2);
+    arm.cyl(P.dark,-side*.06,-.03,0,.34,.80,8,0,0,Math.PI/2);
     arm.box(armor,side*.08,.10,.03,.93,.49,1.02);
     arm.box(edge,side*.08,.38,.03,.95,.13,1.08);
     arm.box(warning,side*.08,.48,.07,.72,.08,.86);
@@ -249,7 +257,7 @@ function siegeMech(){
     arm.cyl(edge,side*.27,-.58,.03,.075,.82,6);
     arm.box(armor,0,-1.10,.13,.70,.53,.76);
     for(const x of [-.22,0,.22]){arm.box(edge,x,-1.48,.31,.16,.33,.26);arm.box(P.dark,x,-1.64,.42,.17,.10,.26);}
-    arm.finish(root,side*1.35,2.98,-.06);
+    restLimb(arm.finish(root,side*1.46,2.98,-.06),side,.10);
     const cannon=new Part(side<0?'leftSiegeGun':'rightSiegeGun');
     cannon.box(P.dark,0,.01,-.22,.78,.62,1.12);cannon.box(armor,0,.28,-.24,.88,.24,1.18);
     cannon.box(warning,0,.43,-.24,.65,.07,.9);

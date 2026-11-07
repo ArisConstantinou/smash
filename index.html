@@ -9,6 +9,7 @@
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261106-audio2">
   <link rel="stylesheet" href="./controls.css?v=20261107-combat7">
+  <link rel="stylesheet" href="./menu.css?v=20261107-forge9">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -107,65 +108,124 @@
   <canvas id="fxCanvas" aria-hidden="true"></canvas>
   <div class="world-vignette" aria-hidden="true"></div>
 
-  <section id="menu" class="landing" aria-label="Κεντρικό μενού">
-    <div class="landing-grain" aria-hidden="true"></div>
-    <header class="landing-header">
-      <div class="wordmark"><svg><use href="#i-hammer"/></svg><span>IRONFALL</span></div>
-      <div class="edition"><i></i> RETRO ARCADE SURVIVAL <span>FAST COMBAT</span></div>
+  <section id="menu" class="landing forge-menu" aria-label="Κεντρικό μενού IRONFALL" data-ready="false">
+    <div class="forge-atmosphere" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="forge-grain" aria-hidden="true"></div>
+    <header class="forge-header">
+      <span class="forge-header-brand"><svg aria-hidden="true"><use href="#i-hammer"/></svg> IRONFALL <small>HAMMER THE HORDE</small></span>
+      <button id="menuSoundButton" class="forge-sound" data-audio-control type="button" aria-pressed="false" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Ήχος"><svg viewBox="0 0 48 48" aria-hidden="true"><use id="menuSoundIcon" href="#a-sound-on"/></svg></button>
     </header>
 
-    <div class="hero-content">
-      <div class="eyebrow"><span class="tiny-cross">✚</span> HAMMER THE HORDE</div>
-      <h1>IRON<span>FALL</span><sup>01</sup></h1>
-      <div class="hero-rule"><span></span><b>ΚΑΝΕ ΘΟΡΥΒΟ. ΑΦΗΣΕ ΕΡΕΙΠΙΑ.</b></div>
-      <h2>Ο κόσμος είναι<br>για σπάσιμο.</h2>
-      <p class="hero-description">Ένα κούτσουρο. Μια ολόκληρη ορδή.<br>Μάζεψε υλικά. Κατασκεύασε τη δύναμή σου.</p>
+    <div class="forge-layout" id="forgeLayout">
+      <section class="forge-identity" aria-labelledby="menuTitle">
+        <div class="forge-eyebrow"><i></i> ΑΠΟ ΞΥΛΟ ΣΕ ΚΑΤΑΙΓΙΔΑ <i></i></div>
+        <h1 id="menuTitle" class="forge-title"><span>IRON</span><span>FALL</span></h1>
+        <p class="forge-motto">ΣΠΑΣΕ. <span>ΜΑΖΕΨΕ.</span> ΕΞΕΛΙΞΟΥ.</p>
+      </section>
 
-      <button id="startButton" class="primary-button start-button" type="button" disabled>
-        <svg><use href="#i-hammer"/></svg>
-        <span>ΝΕΑ ΕΞΕΛΙΞΗ · LEVEL 1</span>
-        <svg class="button-arrow"><use href="#i-arrow"/></svg>
-      </button>
-      <button id="resumeCharacterButton" class="resume-character" type="button" hidden disabled>ΣΥΝΕΧΕΙΑ ΕΞΕΛΙΞΗΣ</button>
-      <div class="menu-audio-check">
-        <button id="menuAudioButton" class="audio-test-button" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> ΔΟΚΙΜΗ ΗΧΟΥ</button>
-        <span id="menuAudioStatus" role="status" aria-live="polite">Χτυπήματα · μέταλλο · φωνές</span>
-      </div>
-      <details class="character-testing">
-        <summary>ΔΟΚΙΜΗ ΧΑΡΑΚΤΗΡΑ <span>Διάλεξε αρχικό επίπεδο</span></summary>
-        <div class="test-level-row"><label for="startingLevel">ΕΠΙΠΕΔΟ</label><select id="startingLevel" aria-describedby="startingLoadout"><option value="10">10</option></select><button id="testStartButton" type="button" disabled>ΔΟΚΙΜΗ</button></div>
-        <p id="startingLoadout">Πολεμικό σφυρί · αυτόματη επιστροφή</p>
-        <small>Ίδια πόλη, έτοιμος εξοπλισμός. Η δοκιμή κρατά χωριστά την αποθηκευμένη εξέλιξή σου.</small>
-      </details>
-      <div id="loadingStatus" class="loading-status" role="status">Το σφυρί ετοιμάζεται…</div>
+      <aside class="forge-showcase" aria-label="Διαδραστικό εργαστήρι όπλων">
+        <div class="forge-showcase-caption"><span>ΤΟ ΕΡΓΑΣΤΗΡΙ ΣΟΥ</span><i></i><small>ΞΥΛΟ + ΑΤΣΑΛΙ</small></div>
+        <div id="menuWorkshop" class="forge-workshop" data-material="metal">
+          <div class="forge-orbit forge-orbit-one" aria-hidden="true"></div><div class="forge-orbit forge-orbit-two" aria-hidden="true"></div>
+          <div class="forge-halo" aria-hidden="true"></div>
+          <svg class="forge-anvil" viewBox="0 0 440 240" aria-hidden="true">
+            <defs><linearGradient id="forgeAnvilTop" x2=".8" y2="1"><stop stop-color="#aec0b8"/><stop offset=".45" stop-color="#657a78"/><stop offset="1" stop-color="#334e53"/></linearGradient><linearGradient id="forgeAnvilSide" x2="0" y2="1"><stop stop-color="#3b555c"/><stop offset="1" stop-color="#18292e"/></linearGradient><linearGradient id="forgeAnvilEdge" x2="0" y2="1"><stop stop-color="#e5e4c4"/><stop offset=".2" stop-color="#8a9c94"/><stop offset="1" stop-color="#536d6d"/></linearGradient></defs>
+            <ellipse cx="224" cy="211" rx="176" ry="18" fill="#030b0d" opacity=".6"/>
+            <path d="m70 174 145-31 150 27-10 32-142 28-149-26Z" fill="#292b22" stroke="#141e1b" stroke-width="3"/>
+            <path d="m70 174 145-31 150 27-149 31Z" fill="#65543b"/><path d="m78 177 135 24 144-30M213 202v21M130 188l-3 25m179-30-5 32M189 153l154 26" fill="none" stroke="#a88a57" stroke-width="2" opacity=".65"/>
+            <path d="m94 183 7 29m227-34-7 34M174 154l-12 8 153 25 16-12" fill="none" stroke="#344541" stroke-width="9"/>
+            <path d="m151 177 30-30 85-3 33 29-68 14Z" fill="#172b30" stroke="#90a196" stroke-width="2"/>
+            <path d="m174 145 17-27 72-9-9 33 25 27-67 14-44-8Z" fill="url(#forgeAnvilSide)"/><path d="m190 120 15 5-6 30 13 28-44-8 24-33Z" fill="#263f45"/>
+            <path d="m67 99 60-23 132-30 95 27 20 22-89 35-119 5-64-14Z" fill="url(#forgeAnvilTop)" stroke="#293e42" stroke-width="3"/>
+            <path d="m67 99 35 22 64 14 119-5 89-35-1 17-89 37-119-3-66-18Z" fill="url(#forgeAnvilSide)"/>
+            <path d="m127 76 132-30 95 27-134 37Z" fill="url(#forgeAnvilEdge)"/><path d="m67 99 100 23 53-12 134-37M167 122v24m118-16v19" fill="none" stroke="#a1b0a5" stroke-width="2"/>
+            <path d="m226 75 25-7m-5 16 39-10m-19 16 28-8m-113 25 11-3" stroke="#263d42" stroke-width="2" opacity=".7"/>
+            <path d="m213 75 8 2 15-4-8-2Z" fill="#f3b363"/>
+            <path class="forge-anvil-rune" d="m220 148 12-3-5 12 9-2-17 20 5-15-9 2Z" fill="#ffb558"/>
+            <circle cx="108" cy="192" r="3" fill="#b0ab83"/><circle cx="318" cy="191" r="3" fill="#b0ab83"/>
+          </svg>
+          <button id="menuWoodProp" class="forge-prop forge-prop-wood" type="button" aria-label="Χτύπησε το ξύλο στο εργαστήρι" title="Δοκίμασε το κούτσουρο">
+            <svg viewBox="0 0 200 330" aria-hidden="true">
+              <defs><linearGradient id="forgeLogBark" x2="1" y2=".2"><stop stop-color="#3e3026"/><stop offset=".3" stop-color="#846044"/><stop offset=".56" stop-color="#b68a55"/><stop offset=".8" stop-color="#6a4933"/><stop offset="1" stop-color="#392e27"/></linearGradient><linearGradient id="forgeLogCut" x2=".8" y2="1"><stop stop-color="#eed394"/><stop offset="1" stop-color="#a87d47"/></linearGradient></defs>
+              <g class="forge-weapon-art" transform="rotate(-18 100 175)">
+                <path d="m80 154-8 134 12 18 20 2 15-17-4-140Z" fill="#573d2d" stroke="#1a2324" stroke-width="4"/>
+                <path d="m83 183-5 103 9 13 9-4 6-119" fill="#b3824c"/><path d="m80 237 32-3m-34 19 33-4m-34 19 34-4m-33 18 30-5" stroke="#322d27" stroke-width="7"/>
+                <path d="m49 54 20-13 53-3 26 17 10 29-13 119-21 19-56-2-26-19-2-111Z" fill="url(#forgeLogBark)" stroke="#202c2d" stroke-width="5"/>
+                <path d="m50 65 10 65-6 39 6 31m20-141-7 51 4 54-8 39m29-149 5 67-11 32 4 60m27-144-10 47 9 30-8 62m25-127-7 40 1 68" fill="none" stroke="#3c3026" stroke-width="6"/>
+                <path d="m62 69 8 30-5 40m21-65-1 75 4 34m30-102-8 43 5 40m19-38-8 60" fill="none" stroke="#d7a368" stroke-width="3" opacity=".65"/>
+                <path d="m44 79 22-22 60-5 26 22-25 22-59 5Z" fill="url(#forgeLogCut)" stroke="#4e3d29" stroke-width="4"/>
+                <path d="m59 78 16-12 42-5 20 12-18 14-43 5Z" fill="none" stroke="#9b743f" stroke-width="3"/><path d="m77 77 12-6 23 1 8 4-10 6-24 3Z" fill="none" stroke="#ad8449" stroke-width="3"/><path d="m99 76 28 20" stroke="#745333" stroke-width="3"/>
+                <path d="m47 137 22 9 57-4 24-12-3 20-24 13-56 2-21-8Z" fill="#344b4c" stroke="#1d2d30" stroke-width="3"/><path d="m47 138 20 11 58-5 24-12" fill="none" stroke="#8da396" stroke-width="3"/>
+                <circle cx="75" cy="155" r="4" fill="#b6b78d"/><circle cx="118" cy="153" r="4" fill="#b6b78d"/>
+                <path d="m44 108-15-13 7-9 13 7" fill="#816047" stroke="#45372c" stroke-width="3"/>
+              </g>
+            </svg>
+            <span class="forge-prop-tag">ΞΥΛΟ <i>01</i></span>
+          </button>
+          <button id="menuMetalProp" class="forge-prop forge-prop-metal" type="button" aria-label="Χτύπησε το σφυρί στο αμόνι" title="Δοκίμασε το σφυρί">
+            <svg viewBox="0 0 260 340" aria-hidden="true">
+              <defs><linearGradient id="forgeSteel" x2=".8" y2="1"><stop stop-color="#9fb9bc"/><stop offset=".26" stop-color="#6b939b"/><stop offset=".62" stop-color="#365d69"/><stop offset="1" stop-color="#233e49"/></linearGradient><linearGradient id="forgeSteelCap" x2=".8" y2="1"><stop stop-color="#ecedce"/><stop offset=".3" stop-color="#b0c5bf"/><stop offset="1" stop-color="#526e75"/></linearGradient><linearGradient id="forgeHammerHandle" x2="1" y2="0"><stop stop-color="#422f26"/><stop offset=".5" stop-color="#b68b56"/><stop offset="1" stop-color="#5d4531"/></linearGradient></defs>
+              <g class="forge-weapon-art" transform="rotate(26 130 195)">
+                <path d="m117 112-1 182 13 18 20-8 5-190Z" fill="url(#forgeHammerHandle)" stroke="#162f38" stroke-width="4"/>
+                <path d="m121 162 29-2m-29 16 28-1m-28 16 27-1m-27 17 27-2m-27 17 26-2m-26 17 25-2m-25 17 25-3m-25 18 25-3" stroke="#283a3b" stroke-width="6"/><path d="m122 158 6 134" stroke="#d4aa68" stroke-width="2" opacity=".65"/>
+                <path d="m116 279 34-3-1 18-20 13-13-13Z" fill="#e0ad60" stroke="#2e3b38" stroke-width="3"/><path d="m122 284 22-3-1 10-14 8-5-8Z" fill="#668989"/>
+                <path d="m35 60 152-32 43 30 1 66-147 31-49-32Z" fill="url(#forgeSteel)" stroke="#152f3a" stroke-width="5"/>
+                <path d="m35 60 152-32 43 30-148 33Z" fill="#b8d0ca"/><path d="m35 60 47 31 2 64-49-32Z" fill="#78999f"/><path d="m82 91 148-33 1 66-147 31Z" fill="url(#forgeSteel)"/>
+                <path d="m35 60 27-5 45 31 0 64-23 5-49-32Z" fill="url(#forgeSteelCap)" stroke="#354f58" stroke-width="3"/><path d="m192 31 38 27 1 66-26 6-1-65-36-28Z" fill="url(#forgeSteelCap)" stroke="#354f58" stroke-width="3"/>
+                <path d="m62 58 124-26m-78 56 96-21m-97 78 96-20M42 67l36 26 2 49" fill="none" stroke="#f1efcf" stroke-width="2" opacity=".8"/>
+                <path d="m135 78 26-5 2 66-27 5Z" fill="#ad8b52" stroke="#334746" stroke-width="3"/><path d="m143 89 11-3-2 17 10-3-18 25 3-18-9 3Z" fill="#ffe4a2"/>
+                <path d="m51 87 18 11 0 25-18-11Z" fill="#607f86"/><path d="m55 91 10 6v18l-10-5Z" fill="#d0d3b7"/>
+                <circle cx="117" cy="102" r="4" fill="#d7d8b8"/><circle cx="180" cy="88" r="4" fill="#d7d8b8"/><circle cx="119" cy="129" r="4" fill="#d7d8b8"/><circle cx="181" cy="116" r="4" fill="#d7d8b8"/>
+                <path d="m169 56 12-4m-49 8 18-5M112 118l15-5" stroke="#244855" stroke-width="2" opacity=".7"/>
+              </g>
+            </svg>
+            <span class="forge-prop-tag">ΑΤΣΑΛΙ <i>02</i></span>
+          </button>
+          <div id="menuForgeSparks" class="forge-sparks" aria-hidden="true"></div>
+          <div class="forge-impact-flash" aria-hidden="true"></div>
+          <div class="forge-energy" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <p id="menuWorkshopHint" class="forge-play-hint"><svg aria-hidden="true"><use href="#i-range"/></svg> ΠΑΤΑ ΕΝΑ ΟΠΛΟ. <strong>ΑΚΟΥΣΕ ΤΗ ΔΥΝΑΜΗ.</strong></p>
+      </aside>
 
-      <div class="landing-controls desktop-only">
-        <div class="legend-movement"><span class="key-set"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Ελεύθερη κίνηση</span></div>
-        <div><kbd class="mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg><span>LMB</span></kbd><span>Κλικ: σφυριά<br><em>Κράτα: περιστροφή 360°</em></span></div>
-      </div>
-      <p class="direction-note desktop-only">Ο πολεμιστής κοιτάζει εκεί που κινείται με WASD.<br>Όταν στέκεσαι, στρέφεται προς το ποντίκι.</p>
-      <div class="combat-hints desktop-only" aria-label="Κινήσεις πολεμιστή"><span><kbd>SPACE</kbd> Άλμα · LMB για smash</span><span><kbd class="mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-right"/></svg>RMB</kbd> Κράτα για άμυνα</span><span><kbd>E</kbd> Κλωτσιά</span><span><kbd>R</kbd> Ρίψη</span><span><kbd>Z</kbd> Δύο χέρια</span><span><kbd>U</kbd> Αναβαθμίσεις</span></div>
-      <p class="air-hint desktop-only">Στον αέρα, πάτησε <b>αριστερό κλικ</b> για συντριβή στην προσγείωση.</p>
-      <div class="touch-intro touch-only" aria-label="Χειρισμός στο κινητό">
-        <span><svg viewBox="0 0 48 48" aria-hidden="true"><use href="#i-joystick"/></svg><b>ΣΥΡΕ ΓΙΑ ΚΙΝΗΣΗ</b></span>
-        <span><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-swing"/></svg><b>ΠΑΤΑ ΓΙΑ ΣΦΥΡΙΑ</b></span>
-      </div>
-      <p class="touch-intro-note touch-only">Κράτα τον μοχλό και πάτα τις εικόνες με το άλλο χέρι. Για στόχευση: κράτα τη <b>ΡΙΨΗ</b>, σύρε και άφησε.</p>
+      <nav class="forge-console" aria-label="Επιλογές παιχνιδιού">
+        <section id="menuProgress" class="forge-progress" aria-label="Πρόοδος τρέχοντος επιπέδου">
+          <div class="forge-progress-heading"><span id="menuLevelLabel">ΕΠΙΠΕΔΟ <b id="menuLevelValue">01</b></span><span id="menuXpLabel">0 / 8 XP</span><strong id="menuProgressPercent">0%</strong></div>
+          <div id="menuProgressTrack" class="forge-progress-track" role="progressbar" aria-label="Εμπειρία προς το επόμενο επίπεδο" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="forge-track-scale" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="forge-track-rail" aria-hidden="true"><div id="menuProgressFill"></div></div>
+            <div id="menuProgressHero" class="forge-progress-hero" aria-hidden="true"><div class="forge-hero-shadow"></div><canvas id="menuHeroCanvas" width="168" height="160"></canvas><svg id="menuHeroFallback" class="forge-hero-fallback" viewBox="0 0 96 100" hidden><use href="#a-warrior" transform="translate(46 51) scale(1.12)"/><use href="#a-hammer" transform="translate(71 28) rotate(12) scale(.62)"/></svg><i class="forge-hero-marker"></i></div>
+            <div class="forge-track-endcaps" aria-hidden="true"><i></i><i></i></div>
+          </div>
+          <div class="forge-progress-foot"><span id="menuProgressOrigin">Η ΔΙΑΔΡΟΜΗ ΣΟΥ</span><span id="menuNextLevel">ΕΠΟΜΕΝΟ · LV 02 <svg aria-hidden="true"><use href="#i-arrow"/></svg></span></div>
+        </section>
+        <div class="forge-primary-actions">
+          <button id="startButton" class="forge-action forge-action-new" type="button" disabled><i class="forge-rivet forge-rivet-a" aria-hidden="true"></i><i class="forge-rivet forge-rivet-b" aria-hidden="true"></i><span class="forge-action-symbol"><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-swing"/></svg></span><span class="forge-action-copy"><b>ΝΕΟΣ ΓΥΡΟΣ</b><small>ΑΠΟ ΤΗΝ ΑΡΧΗ</small></span><span class="forge-action-arrow" aria-hidden="true">↗</span></button>
+          <button id="resumeCharacterButton" class="forge-action forge-action-resume" type="button" disabled><i class="forge-rivet forge-rivet-a" aria-hidden="true"></i><i class="forge-rivet forge-rivet-b" aria-hidden="true"></i><span class="forge-action-symbol"><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg></span><span class="forge-action-copy"><b>ΣΥΝΕΧΕΙΑ</b><small id="menuResumeDetail">ΧΩΡΙΣ ΑΠΟΘΗΚΕΥΣΗ</small></span><span class="forge-action-arrow" aria-hidden="true">→</span></button>
+        </div>
+        <div class="forge-secondary-actions">
+          <button id="chooseRoundButton" class="forge-secondary forge-round-button" type="button" aria-haspopup="dialog" aria-controls="roundPicker" aria-expanded="false"><svg aria-hidden="true"><use href="#i-skull"/></svg><span>ΕΠΙΛΟΓΗ ΓΥΡΟΥ</span><small>LEVEL 01—15</small><svg class="forge-secondary-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+          <button id="menuSettingsButton" class="forge-secondary forge-settings-button" type="button"><svg aria-hidden="true"><use href="#i-settings"/></svg><span>ΡΥΘΜΙΣΕΙΣ</span><small>ΗΧΟΣ · ΧΕΙΡΙΣΜΟΣ</small><svg class="forge-secondary-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+        </div>
+        <div id="loadingStatus" class="forge-loading" role="status">Το εργαστήρι ετοιμάζεται…</div>
+      </nav>
     </div>
 
-    <aside class="world-label" aria-hidden="true">
-      <span class="coordinate-lines">SECTOR 07 / 34.9° N</span>
-      <div class="label-line"></div>
-      <strong>Η ΠΟΛΗ<br>ΔΕΝ ΘΑ ΑΝΤΕΞΕΙ.</strong>
-      <span class="world-label-bottom"><i></i> LIVE WORLD · FULL DESTRUCTION</span>
-    </aside>
+    <footer class="forge-footer"><span><i></i> Ο ΚΟΣΜΟΣ ΕΙΝΑΙ ΓΙΑ ΣΠΑΣΙΜΟ.</span><div class="forge-audio-check"><button id="menuAudioButton" data-audio-control type="button"><svg aria-hidden="true"><use href="#i-sound"/></svg> Δοκιμή ήχου</button><span id="menuAudioStatus" role="status">Πάτα ένα όπλο για να το ακούσεις.</span></div></footer>
 
-    <footer class="landing-footer">
-      <div class="landing-step"><span>01</span><div><b>ΣΠΑΣΕ ΤΑ ΠΑΝΤΑ</b><small>Σπίτια, αμάξια, τοίχους & ορδές</small></div></div>
-      <div class="landing-step"><span>02</span><div><b>ΒΡΕΣ ΘΗΣΑΥΡΟΥΣ</b><small>Περισσότερη δύναμη σε κάθε εύρημα</small></div></div>
-      <div class="landing-step"><span>03</span><div><b>ΞΥΠΝΑ ΤΟΝ BOSS</b><small>Φτάσε στο 60% καταστροφής</small></div></div>
-      <div class="footer-stamp">BUILT TO<br><b>BREAK.</b></div>
-    </footer>
+    <div id="roundPicker" class="forge-dialog-overlay" hidden>
+      <section class="forge-dialog" role="dialog" aria-modal="true" aria-labelledby="roundPickerTitle" aria-describedby="roundPickerDescription">
+        <button id="closeRoundPickerButton" class="forge-dialog-close" type="button" aria-label="Κλείσιμο επιλογής γύρου"><svg aria-hidden="true"><use href="#i-cross"/></svg></button>
+        <span class="forge-dialog-kicker"><svg aria-hidden="true"><use href="#i-skull"/></svg> ΔΙΑΛΕΞΕ ΤΗ ΔΥΝΑΜΗ ΣΟΥ</span>
+        <h2 id="roundPickerTitle">ΕΠΙΛΟΓΗ <em>ΓΥΡΟΥ</em></h2>
+        <p id="roundPickerDescription">Μπες στην πόλη με τον εξοπλισμό και τις κινήσεις του επιπέδου που θέλεις να δοκιμάσεις.</p>
+        <div class="forge-level-emblem" aria-hidden="true"><svg viewBox="0 0 96 80"><use href="#a-stance"/></svg></div>
+        <label class="forge-level-select" for="startingLevel"><span>ΑΡΧΙΚΟ ΕΠΙΠΕΔΟ</span><select id="startingLevel" aria-describedby="startingLoadout"><option value="10">10</option></select></label>
+        <p id="startingLoadout" class="forge-loadout">Πολεμικό σφυρί · αυτόματη επιστροφή</p>
+        <p class="forge-save-note"><svg aria-hidden="true"><use href="#i-shield"/></svg><span>Η δοκιμή κρατά χωριστά την αποθηκευμένη εξέλιξή σου. Η «Συνέχεια» επιστρέφει στον δικό σου χαρακτήρα.</span></p>
+        <button id="testStartButton" class="forge-test-start" type="button" disabled><span>ΜΠΕΣ ΣΤΗ ΜΑΧΗ</span><svg aria-hidden="true"><use href="#i-arrow"/></svg></button>
+      </section>
+    </div>
   </section>
 
   <section id="hud" class="hud" aria-label="Στοιχεία παιχνιδιού" hidden>
@@ -257,6 +317,7 @@
       <div class="map-legend"><span><i class="player-dot"></i> ΕΣΥ</span><span><i class="enemy-dot"></i> ΟΡΔΗ</span></div>
     </aside>
 
+    <div id="throwAimStatus" class="throw-aim-status" role="status" aria-live="polite" hidden></div>
     <section id="combatDock" class="combat-dock" aria-label="Εικονογραφημένο πάνελ χειρισμού">
       <div class="dock-main">
         <div class="movement-pad" role="group" aria-label="Πλήκτρα κίνησης W A S D">
@@ -360,6 +421,7 @@
       <h2>ΡΥΘΜΙΣΕΙΣ<span>.</span></h2>
       <label class="setting-row" for="qualitySelect"><span><b>Γραφικά</b><small>Ποιότητα εικόνας & εφέ</small></span><select id="qualitySelect"><option value="high" selected>Υψηλά</option><option value="medium">Μεσαία</option><option value="low">Χαμηλά</option></select></label>
       <label class="setting-row" for="throwAutoLockToggle"><span><b>Αυτόματη στόχευση ρίψης</b><small>Κοντινοί εχθροί προς τη στόχευση · χωρίς στόχους πίσω από εμπόδια. Επηρεάζει και τις αυτόματες αναπηδήσεις.</small></span><input id="throwAutoLockToggle" type="checkbox" checked></label>
+      <label class="setting-row throw-mode-setting" for="throwModeSelect"><span><b>Τρόπος ρίψης</b><small>Δύο πατήματα: στόχευσε και πάτα ξανά για ρίψη. Κράτημα: στόχευσε όσο πατάς, άφησε για ρίψη.</small></span><select id="throwModeSelect"><option value="confirm" selected>Στόχευση → επιβεβαίωση</option><option value="hold">Κράτημα → άφημα</option></select></label>
       <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
       <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
       <div class="audio-check">
@@ -385,8 +447,8 @@
   </section>
 
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
-    <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
+    <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button><button id="closeFatalButton" class="secondary-button" type="button">ΠΙΣΩ ΣΤΟ ΜΕΝΟΥ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261107-damage8"></script>
+  <script type="module" src="./game.js?v=20261107-forge9"></script>
 </body>
 </html>

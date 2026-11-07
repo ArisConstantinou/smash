@@ -2,7 +2,7 @@
 // Momentum transfer is resolved along the contact normal; restitution never
 // creates energy. Buildings are static; the car-moving gate belongs to the
 // kick upgrade rather than to the equipped weapon.
-import {segmentBoxHit} from './combat.js';
+import {segmentBoxHit} from './combat.js?v=20261107-forge9';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const safe=(v,f=0)=>Number.isFinite(v)?v:f;
 const MASSES=Object.freeze({zombie:1,crawler:.75,robot:1.65,brute:3.5,mutant:2.7,mech:5,titan:9,siegeMech:12,boss:24,car:14,policecar:16,ambulance:22});

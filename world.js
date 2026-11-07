@@ -1,8 +1,9 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js?v=20261107-damage8';
+import { makeProp } from './models.js?v=20261107-forge9';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
-import { createCityNavigation } from './city-navigation.js';
+import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
+import { createGeometryCollision } from './geometry-collision.js?v=20261107-forge9';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
@@ -156,6 +157,8 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     const u=mesh.userData,dim=fallbackDimensions[type]||[12,12,8],swap=Math.abs(Math.sin(rotation))>.5;
     const width=u.width||dim[0],depth=u.depth||dim[1],h=u.height||dim[2],hp=stats[type][0]*(1+(round-1)*.08);
     const o={mesh,type,x,z,w:swap?depth:width,d:swap?width:depth,h,hp,maxHp:hp,weight:stats[type][1],color:u.color||0x6b9b9a,dead:false,seed:random()*999,isBuilding:!!plot,buildingKind:plot?.kind,districtId:plot?.districtId||regionAt(x,z).id,plotId:plot?.id,label:plot?.label};
+    o.collisionAnchor={y:mesh.position.y,quaternion:mesh.quaternion.clone()};
+    o.geometryHit=(start,end,radius=0)=>collision.geometryHit(o,start,end,radius);
     mesh.userData.worldObjectIndex=objects.length;objects.push(o);group.add(mesh);indexObject(o);
     if(type==='tree')trees.push(o);
     if(u.crane)cranes.push(o);
@@ -236,6 +239,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     geo.translate(.7,0,0);
     const m=material(clothColors[i%3],{side:THREE.DoubleSide});
     const cloth=new THREE.Mesh(geo,m); cloth.position.set(.1,2.75,0);
+    cloth.userData.noCollision=true;
     o.mesh.add(cloth);
     flags.push({object:o,mesh:cloth,base:geo.attributes.position.array.slice(),phase:random()*6});
   }
@@ -325,6 +329,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   }
   flushBatches();
   const navigation=createCityNavigation({objects,nearObjects,bounds:CITY_BOUNDS});
+  const collision=createGeometryCollision({nearObjects,bounds:CITY_BOUNDS});
   function updateVisibility(player,camera) {
     const px=player?.x??player?.position?.x??0,pz=player?.z??player?.position?.z??0;
     // The camera looks over the player: keep enough skyline beyond the view.
@@ -456,6 +461,8 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   update(0,0,{x:0,z:0},'rain');
   return {
     group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
+    supportHeight:collision.supportHeight,supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,
+    moveBody:collision.moveBody,clearBody:collision.clearBody,collisionDiagnostics:collision.diagnostics,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,
     buildingCount:buildingObjects.length,buildingObjects,
     getChaseDirection:navigation.getChaseDirection,
@@ -472,7 +479,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
         if(node.material)for(const mat of Array.isArray(node.material)?node.material:[node.material])if(!sharedModelMaterials.has(mat))resources.add(mat);
       });
       for(const resource of resources)resource.dispose?.();
-      group.clear();spatial.clear();sharedModelMaterials.clear();navigation.invalidateNavigation();
+      group.clear();spatial.clear();sharedModelMaterials.clear();navigation.invalidateNavigation();collision.clear();
     },
   };
 }

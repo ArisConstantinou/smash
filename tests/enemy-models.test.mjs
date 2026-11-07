@@ -101,3 +101,21 @@ test('extra legs and weapons animate continuously without touching combat state 
     if(type==='mech')assert.ok(model.userData.barrel.rotation.z>1);
   }
 });
+
+test('humanoid enemies have separated planted legs and a modest outward arm rest at every body size',()=>{
+ for(const type of ['zombie','robot','brute','boss','mutant','mech','titan','siegeMech']){
+  const root=type==='boss'?makeBoss():CITY_ENEMY_TYPES.includes(type)?makeCityEnemy(type):makeEnemy(type),u=root.userData;
+  root.updateMatrixWorld(true);
+  const left=new THREE.Box3().setFromObject(u.leftLeg),right=new THREE.Box3().setFromObject(u.rightLeg);
+  assert.ok(right.min.x-left.max.x>u.height*.065,`${type} needs visible negative space between the legs`);
+  assert.ok(Math.min(left.min.y,right.min.y)>=-.001,`${type} wide stance must keep both feet above ground`);
+  assert.ok(Math.max(left.min.y,right.min.y)<.06,`${type} feet must remain planted`);
+  for(const [side,arm]of[[-1,u.leftArm],[1,u.rightArm]]){
+   const shoulder=arm.getWorldPosition(new THREE.Vector3());
+   const lower=arm.localToWorld(new THREE.Vector3(0,-u.height*.25,0));
+   assert.ok((lower.x-shoulder.x)*side>u.height*.018,`${type} lower arm must clear its torso instead of hanging against it`);
+   assert.ok(Math.abs(arm.rotation.z)<.20,`${type} relaxed arms must not become a T pose`);
+   assert.ok(Math.abs(arm.rotation.z-arm.userData.restRoll)<1e-8,`${type} animation must be able to restore this pose`);
+  }
+ }
+});

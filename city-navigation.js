@@ -1,4 +1,4 @@
-import { segmentBoxHit } from './combat.js';
+import { segmentBoxHit } from './combat.js?v=20261107-forge9';
 
 // One flow field per enemy-size class is shared by the entire horde. Changing
 // the target cell rebuilds only a small integer grid; destruction invalidates

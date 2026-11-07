@@ -79,7 +79,7 @@ function compact(root, destructible = false) {
     if (!bucket) { bucket = { mat, positions: [], normals: [], colors: [], parts: [] }; buckets.set(key, bucket); }
     const geo = node.geometry.index ? node.geometry.toNonIndexed() : node.geometry.clone();
     transform.multiplyMatrices(inverse, node.matrixWorld);
-    if(destructible)bucket.parts.push({start:bucket.positions.length/3,count:geo.attributes.position.count,box:node.geometry===UNIT_BOX,matrix:transform.toArray(),tint:original.color.getHex(),glow:glowing?original.emissiveIntensity:0});
+    bucket.parts.push({start:bucket.positions.length/3,count:geo.attributes.position.count,box:node.geometry===UNIT_BOX,matrix:transform.toArray(),tint:original.color.getHex(),glow:glowing?original.emissiveIntensity:0});
     geo.applyMatrix4(transform);
     const p = geo.getAttribute('position');
     let n = geo.getAttribute('normal');
@@ -103,6 +103,7 @@ function compact(root, destructible = false) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(bucket.positions, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(bucket.normals, 3));
     if (bucket.colors.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(bucket.colors, 3));
+    geometry.userData.collisionParts = bucket.parts;
     if(destructible)geometry.userData.fractureParts = bucket.parts;
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, bucket.mat);
@@ -119,6 +120,17 @@ function limb(root, name, x, y, z, upper, lower, boot, scale = 1) {
   box(g, lower, 0, -.39 * scale, .035 * scale, .29 * scale, .24 * scale, .31 * scale);
   box(g, boot, 0, -.51 * scale, .075 * scale, .32 * scale, .17 * scale, .45 * scale);
   return compact(g);
+}
+
+// Animation is additive to these joint rests. Keeping the hips apart and the
+// elbows slightly away from the ribs preserves a readable body silhouette
+// while the existing knee and weapon-contact chains continue to articulate.
+function restLimb(joint, side, roll = 0, yaw = 0) {
+  joint.userData.restPosition = { x: joint.position.x, y: joint.position.y, z: joint.position.z };
+  joint.userData.restRoll = side * roll;
+  joint.userData.restYaw = side * yaw;
+  joint.rotation.set(0, joint.userData.restYaw, joint.userData.restRoll);
+  return joint;
 }
 
 // Beveled edges keep small equipment silhouettes readable in the overhead
@@ -245,8 +257,9 @@ export function makeWarrior() {
   box(body, P.gold, 0, 1.96, -.025, .06, .12, .29);
   compact(body);
 
-  const leftLeg = limb(root, 'leftLeg', -.205, .62, 0, P.blueDark, P.steel, P.ink);
-  const rightLeg = limb(root, 'rightLeg', .205, .62, 0, P.blueDark, P.steel, P.ink);
+  const legRest = Object.freeze({ spread: .25, height: .62, splay: .055, turnOut: .055 });
+  const leftLeg = restLimb(limb(root, 'leftLeg', -legRest.spread, legRest.height, 0, P.blueDark, P.steel, P.ink), -1, legRest.splay, legRest.turnOut);
+  const rightLeg = restLimb(limb(root, 'rightLeg', legRest.spread, legRest.height, 0, P.blueDark, P.steel, P.ink), 1, legRest.splay, legRest.turnOut);
   // Preserve the leg roots used by walking, but give kicks an actual knee.
   for(const leg of [leftLeg,rightLeg]){
     // Existing storm-tier geometry remains the reference for normal walking;
@@ -258,7 +271,7 @@ export function makeWarrior() {
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .49, 1.28, .015);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .51, 1.28, .015);
     const pauldron = group(arm, 'pauldron');
     box(pauldron, P.steel, side * .025, -.015, 0, .36, .23, .44, 0, 0, side * .13);
     box(pauldron, P.pale, side * .03, .095, .025, .29, .065, .35, 0, 0, side * .13);
@@ -272,8 +285,9 @@ export function makeWarrior() {
     box(fore, P.timberDark, 0, 0, 0, .205, 1, .225);
     box(fore, P.steel, 0, .22, .015, .26, .49, .27);
     compact(fore);
-    const elbowPole = new THREE.Vector3(side * .85, -1, .20).normalize();
-    arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone() };
+    const elbowPole = new THREE.Vector3(side * 1.1, -.9, .20).normalize();
+    arm.userData = { upper, fore, side, elbowPole, elbowBend: elbowPole.clone(),
+      restPosition: { x: arm.position.x, y: arm.position.y, z: arm.position.z } };
     return arm;
   }
   const leftArm = grippingArm(-1);
@@ -380,7 +394,7 @@ export function makeWarrior() {
   const shieldBackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.07, Math.PI, .04));
   const leftJoinControl = new THREE.Vector3(-.75, 1.43, .16);
   const emptyRight = new THREE.Vector3(.61, 1.22, .66);
-  const emptyLeft = new THREE.Vector3(-.37, 1.01, .4);
+  const emptyLeft = new THREE.Vector3(-.48, 1.06, .43);
   const emptyRightQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.8, -.1, -.3));
   const emptyLeftQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.3, 0, .2));
   const shieldContact = new THREE.Vector3(), hammerContact = new THREE.Vector3();
@@ -758,7 +772,7 @@ export function makeWarrior() {
   for(const leg of [leftLeg,rightLeg]){
     for(const child of leg.children.slice())if(child.isMesh){child.removeFromParent();child.geometry?.dispose();}
     const {thigh,shin}=leg.userData;
-    box(thigh,P.blueDark,0,-.15,0,.25,.30,.28);compact(thigh);
+    box(thigh,P.blueDark,0,-.13,0,.25,.34,.28);compact(thigh);
     box(shin,P.steel,0,-.12,.035,.29,.24,.31);
     box(shin,P.ink,0,-.21,.075,.32,.17,.45);compact(shin);
     // compact consumes meshes only; retain the zero-geometry contact marker.
@@ -864,7 +878,7 @@ export function makeWarrior() {
     });
     for (const [side, leg] of [[-1, leftLeg], [1, rightLeg]]) {
       draw(leg.userData.thigh,g=>{
-        beveledBox(g,cloth,0,-.15,0,.25,.30,.28,.02);
+        beveledBox(g,cloth,0,-.13,0,.25,.34,.28,.02);
         box(g,0x7c8678,side*.127,-.15,.035,.018,.24,.035);
       });
       draw(leg.userData.shin,g=>{
@@ -879,7 +893,7 @@ export function makeWarrior() {
     for (const arm of [leftArm, rightArm]) {
       const side = arm.userData.side;
       draw(arm.getObjectByName('pauldron'), g => {
-        crystal(g, skin, side * .005, -.025, 0, .16, .14, .17);
+        crystal(g, skin, -side * .015, -.025, 0, .20, .15, .18);
         if (tier) {
           beveledBox(g, tier === 1 ? 0x795a3d : iron, side * .025, 0, 0,
             tier === 3 ? .35 : .29, tier === 3 ? .23 : .17, tier === 3 ? .40 : .33, .03);
@@ -1004,7 +1018,7 @@ export function makeWarrior() {
   const getWeaponMaterials = () => equipmentCache.get(equipmentTier).weaponMaterials;
 
   root.userData = {
-    body, leftLeg, rightLeg, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
+    body, leftLeg, rightLeg, legRest, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, cape,
     leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
     shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach, setUnarmedPose,
     setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld, getThrowMetrics,
@@ -1040,17 +1054,17 @@ function robot() {
   crystal(body, P.hot, .242, 2.04, -.06, .055, .055, .055, 0, .7);
   box(body, P.shadow, 0, 1.01, -.3, .42, .4, .2);
   compact(body);
-  const leftLeg = limb(root, 'leftLeg', -.22, .64, 0, P.shadow, P.steel, P.ink);
-  const rightLeg = limb(root, 'rightLeg', .22, .64, 0, P.shadow, P.steel, P.ink);
+  const leftLeg = restLimb(limb(root, 'leftLeg', -.27, .64, 0, P.shadow, P.steel, P.ink), -1, .05, .045);
+  const rightLeg = restLimb(limb(root, 'rightLeg', .27, .64, 0, P.shadow, P.steel, P.ink), 1, .05, .045);
   const arms = [];
   for (const side of [-1, 1]) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .52, 1.27, 0);
-    cylinder(arm, P.steel, 0, -.03, 0, .17, .17, .22, 6, 0, 0, Math.PI / 2);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .55, 1.27, 0);
+    cylinder(arm, P.steel, -side * .045, -.03, 0, .17, .17, .34, 6, 0, 0, Math.PI / 2);
     box(arm, P.blueDark, 0, -.25, 0, .23, .4, .25);
     box(arm, P.steel, 0, -.47, .025, .3, .23, .3);
     box(arm, P.hot, 0, -.46, .19, .17, .06, .035, 0, 0, 0, .7);
     for (const finger of [-1, 1]) box(arm, P.ink, finger * .1, -.62, .08, .07, .16, .16);
-    compact(arm); arms.push(arm);
+    compact(arm); restLimb(arm, side, .13); arms.push(arm);
   }
   root.userData = { body, leftLeg, rightLeg, leftArm: arms[0], rightArm: arms[1], width: 1.05, depth: .7, height: 2.08, color: P.steel, fragments: [P.steel, P.blueDark, P.hot] };
   return root;
@@ -1085,17 +1099,18 @@ function zombie(brute = false) {
     box(body, 0xbbb79a, -.29, 1.68, -.02, .13, .16, .39, 0, 0, -.22);
   }
   compact(body);
-  const leftLeg = limb(root, 'leftLeg', -.19, .6, 0, pants, darkSkin, 0x302f30);
-  const rightLeg = limb(root, 'rightLeg', .19, .6, 0, pants, pants, 0x302f30);
+  const leftLeg = restLimb(limb(root, 'leftLeg', -.245, .61, 0, pants, darkSkin, 0x302f30), -1, .055, .06);
+  const rightLeg = restLimb(limb(root, 'rightLeg', .245, .61, 0, pants, pants, 0x302f30), 1, .055, .06);
   const arms = [];
   for (const side of [-1, 1]) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .45, 1.22, .015);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .49, 1.22, .015);
+    crystal(arm, shirt, -side * .05, -.015, 0, .17, .13, .15);
     box(arm, shirt, 0, -.115, 0, .28, .27, .31);
     box(arm, skin, 0, -.34, .035, .21, .34, .23, -.17);
     box(arm, darkSkin, 0, -.51, .11, .25, .17, .28);
     box(arm, skin, 0, -.58, .22, .22, .11, .16);
     if (brute) box(arm, 0x686751, side * .025, -.43, .04, .32, .2, .32);
-    compact(arm);
+    compact(arm); restLimb(arm, side, brute ? .14 : .16);
     arms.push(arm);
   }
   if (brute) root.scale.set(1.45, 1.32, 1.35);
@@ -1146,7 +1161,7 @@ export function makeBoss() {
   compact(body);
   const legs = [];
   for (const side of [-1, 1]) {
-    const leg = group(root, side < 0 ? 'leftLeg' : 'rightLeg', side * .68, 2.21, 0);
+    const leg = group(root, side < 0 ? 'leftLeg' : 'rightLeg', side * .78, 2.21, 0);
     box(leg, dark, 0, -.49, 0, .72, .98, .79);
     box(leg, iron, 0, -.59, .32, .85, .9, .25);
     cylinder(leg, edge, 0, -1.02, .1, .31, .31, .9, 8, 0, 0, Math.PI / 2);
@@ -1155,12 +1170,12 @@ export function makeBoss() {
     box(leg, dark, 0, -1.96, .26, 1.01, .43, 1.49);
     box(leg, edge, 0, -1.87, .9, .99, .17, .22);
     for (const dx of [-.25, 0, .25]) box(leg, iron, dx, -1.98, 1.015, .16, .28, .1);
-    compact(leg); legs.push(leg);
+    compact(leg); restLimb(leg, side, .035, .035); legs.push(leg);
   }
   const arms = [];
   for (const side of [-1, 1]) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * 1.63, 3.94, 0);
-    cylinder(arm, dark, 0, -.16, 0, .43, .43, .91, 8, 0, 0, Math.PI / 2);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * 1.73, 3.94, 0);
+    cylinder(arm, dark, -side * .07, -.16, 0, .43, .43, 1.01, 8, 0, 0, Math.PI / 2);
     box(arm, iron, side * .1, .05, .03, 1.21, .62, 1.41, 0, 0, side * .1);
     box(arm, orange, side * .1, .4, .08, 1.01, .17, 1.21, 0, 0, side * .1);
     for (const z of [-.36, .31]) cylinder(arm, edge, side * .46, .03, z, .09, .09, .09, 6, 0, 0, Math.PI / 2);
@@ -1173,7 +1188,7 @@ export function makeBoss() {
       box(arm, dark, dx, -2.1, .52, .23, .17, .32);
     }
     box(arm, edge, -side * .59, -1.66, .23, .27, .5, .3, 0, 0, -side * .37);
-    compact(arm); arms.push(arm);
+    compact(arm); restLimb(arm, side, .10); arms.push(arm);
   }
   root.userData = {
     body, leftLeg: legs[0], rightLeg: legs[1], leftArm: arms[0], rightArm: arms[1],

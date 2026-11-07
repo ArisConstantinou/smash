@@ -189,7 +189,7 @@ test('shoulders follow torso rotation and retain complete arm chains during a bo
     u.body.rotation.set(.12, yaw, -.03); u.body.position.y = .02;
     u.setStance(yaw > 0 ? 1 : 0); u.updateGrip(); hero.updateMatrixWorld(true);
     for (const [side, arm] of [[-1, u.leftArm], [1, u.rightArm]]) {
-      const expected = new THREE.Vector3(side * .49, 1.28, .015).applyMatrix4(u.body.matrix).applyMatrix4(hero.matrixWorld);
+      const expected = new THREE.Vector3().copy(arm.userData.restPosition).applyMatrix4(u.body.matrix).applyMatrix4(hero.matrixWorld);
       close(worldPosition(arm).distanceTo(expected), 0);
     }
     armsConnected(hero);
@@ -531,5 +531,26 @@ test('equipment swaps preserve the real foot contact marker and independent knee
   u.setEquipment(tier);assert.equal(u.rightLeg.userData.foot,foot);assert.equal(foot.parent,u.rightLeg.userData.shin);
   assert.ok(u.rightLeg.userData.thigh.children.length>0);assert.ok(u.rightLeg.userData.shin.children.length>1);
   assert.equal(u.leftLeg.userData.shin.rotation.x,0);
+ }
+});
+
+test('every outfit leaves a visible gap between the legs with attached shoulder caps and reachable hands',()=>{
+ const hero=makeWarrior(),u=hero.userData;
+ for(const tier of [0,1,2,3,4])for(const stance of [0,1]){
+  u.setEquipment(tier);restingPose(hero,stance);hero.updateMatrixWorld(true);
+  const left=new THREE.Box3().setFromObject(u.leftLeg),right=new THREE.Box3().setFromObject(u.rightLeg);
+  assert.ok(right.min.x-left.max.x>.17,`Tier ${tier} boots/trousers must not merge into one lower-body block`);
+  assert.ok(left.min.y>=-.001&&right.min.y>=-.001,'A wider stance must not sink a boot into the ground');
+  assert.ok(left.min.y<.04&&right.min.y<.04,'The relaxed stance must stay planted');
+  const leftCap=new THREE.Box3().setFromObject(u.leftArm.getObjectByName('pauldron'));
+  const rightCap=new THREE.Box3().setFromObject(u.rightArm.getObjectByName('pauldron'));
+  assert.ok(leftCap.max.x>-.37&&rightCap.min.x<.37,'Moving arms outward must preserve their connection to the chest');
+  for(const arm of [u.leftArm,u.rightArm]){
+   const elbow=arm.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0));
+   assert.ok(Math.hypot(elbow.x,elbow.z)>.45,'A resting elbow must clear the ribcage');
+  }
+  armsConnected(hero);
+  contact(u.rightGrip,u.rightGripAnchor);
+  if(stance)contact(u.leftGrip,u.leftGripAnchor);
  }
 });
