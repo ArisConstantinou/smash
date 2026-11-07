@@ -1,0 +1,47 @@
+name: Modern WebGPU comparison
+on:
+  push:
+    branches: [feature/performance14-webgpu]
+    paths: [.github/workflows/gpu-modern.yml]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install official Three r187 into temporary test checkout only
+        run: |
+          npm pack three@0.187.0 --silent
+          mkdir -p /tmp/three-modern
+          tar -xzf three-0.187.0.tgz -C /tmp/three-modern
+          cp /tmp/three-modern/package/build/three.core.min.js vendor/
+          cp /tmp/three-modern/package/build/three.webgpu.min.js vendor/three.webgpu.js
+          cp /tmp/three-modern/package/build/three.module.min.js vendor/three.webgl.js
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('renderer-policy.js')
+          p.write_text(p.read_text().replace("if(typeof transparentPass==='function')", "if(THREE.REVISION==='170'&&typeof transparentPass==='function')"))
+          PY
+          mkdir -p gpu-diagnostic
+          npm view three@0.187.0 dist.integrity > gpu-diagnostic/integrity.txt
+          tar -czf /tmp/three-r187-official.tar.gz -C /tmp/three-modern package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: three-r187-official
+          path: /tmp/three-r187-official.tar.gz
+          retention-days: 3
+      - run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - run: DEBUG=pw:browser node tests/browser-gpu-diagnostic.mjs 2>&1 | tee gpu-diagnostic/browser.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modern-gpu-diagnostic
+          path: gpu-diagnostic/
+          retention-days: 7
