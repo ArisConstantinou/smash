@@ -57,6 +57,8 @@ try{
       assert.ok(Math.abs(newBox.y-resumeBox.y)<10,'New / Continue occupy the same row');
       const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
       assert.equal(overflow,false,'No horizontal overflow');
+      assert.equal(await page.evaluate(()=>{const title=document.querySelector('.forge-title h1');return title.scrollWidth<=title.clientWidth+1;}),true,
+        'The full IRONFALL title must fit on narrow screens');
       const expectedProgress=Math.floor(character.xp/xpForNextLevel(character.level)*100);
       assert.equal(await page.locator('#menuXpTrack').getAttribute('aria-valuenow'),String(expectedProgress));
       await page.waitForFunction(expected=>parseFloat(document.querySelector('#menuXpFill').style.width)>=expected-.2,expectedProgress,{timeout:10000});
@@ -93,7 +95,8 @@ try{
       assert.equal(await page.evaluate(()=>window.__ironfallQA.windup||window.__ironfallQA.flight),false);
       if(config.mobile)await page.locator('#throwButton').tap();else await page.keyboard.press('r');
       await page.waitForFunction(()=>window.__ironfallQA.windup||window.__ironfallQA.flight);
-      await page.screenshot({path:resolve(output,config.name+'-game.png')});
+      // Software WebGL can take longer to read a full desktop framebuffer.
+      await page.screenshot({path:resolve(output,config.name+'-game.png'),timeout:60000});
       await page.locator('#pauseButton').click();await page.locator('#restartButton').click();
       assert.equal(await page.locator('#menu').isVisible(),true);
       assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),saved,'Test level never replaces earned save');

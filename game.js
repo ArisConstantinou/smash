@@ -2361,6 +2361,9 @@ function frame(now){
   if(document.hidden)return;
   visualTime+=realDt;redFlash=Math.max(0,redFlash-realDt*1.4);shake=Math.max(0,shake-realDt*1.7);
   forgeMenu?.update(realDt);
+  // The opaque forge covers both canvases. Keep its animation and music
+  // responsive without spending mobile GPU time drawing an invisible city.
+  if(phase==='menu'){audio.update(realDt,0,'rain');return;}
   let simulated=0;
   if(phase==='playing'){
     // Small physics steps retain wall-clock speed and swept hit detection even
@@ -2371,7 +2374,7 @@ function frame(now){
       if(dt>0){updateGame(dt);simulated+=dt;}
       remaining-=slice;
     }
-  }else if(phase==='menu'){player.walk+=realDt*.25;poseHero(realDt,false);updateObjects(realDt);}
+  }
   const weather=world.regionAt?.(player.x,player.z)?.weather||'rain';
   const environmentDt=phase==='playing'?simulated:phase==='menu'?realDt:0;
   world.update(environmentDt,visualTime,player,weather);
