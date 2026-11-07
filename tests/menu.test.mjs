@@ -88,7 +88,7 @@ test('the real avatar walks to saved XP, idles there, and never renders while th
 });
 test('round selection stays a separate dialog and returns focus without touching saved progression',()=>{
   const f=fixture();f.controller.setReady(true);const saved=createCharacterProgression(6);saved.xp=19;f.controller.updateProgress(saved);
-  f.e('chooseRoundButton').click();assert.equal(f.controller.panelOpen,true);assert.equal(f.e('forgeLayout').inert,true);assert.equal(f.doc.activeElement,f.e('startingLevel'));
+  f.e('chooseRoundButton').click();assert.equal(f.controller.panelOpen,true);assert.equal(f.e('forgeLayout').inert,true);assert.equal(f.doc.activeElement,f.e('cityGrid').children[0]);
   assert.equal(f.e('chooseRoundButton').getAttribute('aria-expanded'),'true');
   assert.equal(f.controller.closePanels(),true);assert.equal(f.controller.closePanels(),false);
   assert.equal(f.e('forgeLayout').inert,false);assert.equal(f.doc.activeElement,f.e('chooseRoundButton'));

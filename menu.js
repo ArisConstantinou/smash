@@ -1,3 +1,5 @@
+import {createLevelPicker} from './level-picker.js?v=20261107-cities10';
+
 // This controller owns only the title screen. Its preview has a small, isolated
 // renderer so it never moves the battle hero, changes a save, or renders while
 // the menu is hidden. The caller supplies the same model/progression functions
@@ -54,6 +56,8 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
   if(el.menuForgeSparks) for(let i=0;i<17;i++){
     const p=doc.createElement('i');p.setAttribute('aria-hidden','true');el.menuForgeSparks.appendChild(p);particles.push(p);
   }
+
+  const cityPicker=createLevelPicker({document:doc,window:win,onSound:fire,onSelect:()=>el.startingLevel?.onchange?.()});
 
   function refreshReady() {
     menu.dataset.ready = String(ready);
@@ -181,7 +185,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     if(!visible||!el.roundPicker)return;
     interacted=true;el.roundPicker.hidden=false;menu.dataset.dialog='round';el.chooseRoundButton?.setAttribute('aria-expanded','true');
     for(const node of [el.forgeLayout,header,footer])if(node)node.inert=true;
-    fire('menuOpen');el.startingLevel?.focus?.();
+    fire('menuOpen');cityPicker.open();
   }
   function stopStrike() {
     strikeTime=0;strikePending=false;
@@ -271,7 +275,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     if(!visible)return;
     if(e.code==='Escape'&&closePanels()){e.preventDefault();e.stopPropagation();return;}
     if(!el.roundPicker?.hidden&&e.code==='Tab'){
-      const focusable=[...(el.roundPicker.querySelectorAll?.('button:not([disabled]),select:not([disabled]),[tabindex="0"]')||[])];
+      const focusable=[...(el.roundPicker.querySelectorAll?.('button:not([disabled]):not([hidden]),[tabindex="0"]:not([hidden])')||[])];
       const first=focusable[0],last=focusable.at(-1);
       if(e.shiftKey&&doc.activeElement===first){e.preventDefault();last?.focus();}
       else if(!e.shiftKey&&doc.activeElement===last){e.preventDefault();first?.focus();}
@@ -288,7 +292,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     get panelOpen(){return !!el.roundPicker&&!el.roundPicker.hidden;},
     dispose(){
       if(disposed)return;disposed=true;for(const remove of cleanup)remove();closePanels(true);
-      preview?.renderer.dispose?.();preview?.renderer.forceContextLoss?.();preview=null;
+      cityPicker.dispose();preview?.renderer.dispose?.();preview?.renderer.forceContextLoss?.();preview=null;
       for(const particle of particles)particle.remove?.();
     },
   };

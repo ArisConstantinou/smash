@@ -1,16 +1,16 @@
 import * as THREE from './vendor/three.module.js';
 import { makeProp } from './models.js?v=20261107-forge9';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
-import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js';
+import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
 import { createGeometryCollision } from './geometry-collision.js?v=20261107-forge9b';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
-export function createWorld(scene, { seed = 1, round = 1 } = {}) {
+export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   const group = new THREE.Group(); group.name = 'Ironfall city'; scene.add(group);
   const objects=[], hazards=[], owned=new Set(), sharedModelMaterials=new Set(), flags=[], trees=[], cranes=[], emergencyVehicles=[];
-  const layout=createCityLayout(seed), regionAt=cityRegionAt;
+  const layout=createCityLayout(seed,city), regionAt=city?((x,z)=>({...cityRegionAt(x,z),weather:city.weather})):cityRegionAt;
   let currentZone=regionAt(0,0), disposed=false;
   let state=(seed*98771+round*11213)>>>0;
   const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296;};
@@ -21,6 +21,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   const transform=new THREE.Object3D(), cube=own(new THREE.BoxGeometry(1,1,1));
   const chunks=new Map(), batches=new Map(), chunkSize=44;
   const palette={grass:0x344f4b,asphalt:0x263c43,sidewalk:0x647679,curb:0x8a9992,lane:0xc8bd83,seam:0x405b5f,soil:0x35473f,snow:0xb9cdce,frost:0x7094a2,ash:0x484c49,metal:0x405c62,brick:0x746f62};
+  if(city)Object.assign(palette,{grass:city.ground,soil:city.ground,ash:city.ground,sidewalk:city.stone,curb:city.stone});
   const floorMats=Object.fromEntries(Object.entries(palette).map(([k,c])=>[k,material(c)]));
   function chunkFor(x,z){
     const cx=Math.floor(x/chunkSize),cz=Math.floor(z/chunkSize),key=`${cx},${cz}`;
@@ -67,7 +68,8 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     }
   }
   for(const p of layout.plots){
-    const terrain=p.districtId==='frost-quarter'?'frost':p.districtId==='foundry'?'ash':'soil';
+    const climate=regionAt(p.x,p.z).weather;
+    const terrain=climate==='snow'?'frost':climate==='ash'?'ash':'soil';
     box('sidewalk',p.x,.008,p.z,15.2,.055,15.2);
     box(terrain,p.x,.04,p.z,13.4,.018,13.4);
     for(const side of [-1,1]){
@@ -111,7 +113,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     for(let j=-2;j<=2;j++)box('asphalt',x,.06,z+j*.15,.62,.008,.035);
   }
   const snowMat=material(0xb8cccc),snowShadow=material(0x8aabb6),iceMat=material(0x658f9d,{transparent:true,opacity:.82});
-  for(const p of layout.plots.filter(p=>p.districtId==='frost-quarter')){
+  for(const p of layout.plots.filter(p=>regionAt(p.x,p.z).weather==='snow')){
     patch(p.x,p.z,7.2,7.2,snowShadow,.05,12,.08);
     patch(p.x,p.z,6.9,6.9,snowMat,.057,12,.13);
     patch(p.x+6.1,p.z-5.2,.9,1.6,iceMat,.067,8,.2);
@@ -248,7 +250,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   // collision circle, while tiny orange seams between them are decorative.
   const lavaMat=basic(0xff642f),lavaHot=basic(0xffcb68),lavaCrust=material(0x283536),lavaShore=material(0x59463a);
   const lavaMeshes=[];
-  const lavaPools=[[115,-77,1.55],[115,-99,1.6],[77,-115,1.6],[99,-115,1.7],[55,-115,1.45]];
+  const lavaPools=city&&city.weather!=='ash'?[]:[[115,-77,1.55],[115,-99,1.6],[77,-115,1.6],[99,-115,1.7],[55,-115,1.45]];
   for(const [x,z,r] of lavaPools) {
     patch(x,z,r*1.35,r*1.25,lavaShore,.025,10,.18);
     patch(x,z,r*1.13,r*1.09,lavaCrust,.035,11,.16);
@@ -260,7 +262,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
       patch(x+Math.cos(a)*rr,z+Math.sin(a)*rr,range(.12,.3),range(.12,.22),lavaCrust,.063,5,.15);
     }
   }
-  for(let i=0;i<5;i++) {
+  for(let i=0;i<(lavaPools.length?5:0);i++) {
     const x=114.7+Math.sin(i*2)*.2,z=-78-i*1.2;
     box(lavaMat,x,.04,z,.25,.02,1.5,Math.sin(i)*.28);
   }
@@ -449,7 +451,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
     });
     fireMesh.instanceMatrix.needsUpdate=true;coreMesh.instanceMatrix.needsUpdate=true;smokeMesh.instanceMatrix.needsUpdate=true;
     for(let i=0;i<100;i++) {
-      const a=emberBase[i],f=i<60?fires[i%fires.length]:lavaPools[i%lavaPools.length];
+      const a=emberBase[i],f=i<60||!lavaPools.length?fires[i%fires.length]:lavaPools[i%lavaPools.length];
       const fx=f.x??f[0],fz=f.z??f[1],h=modulo(a[1]+time*(.18+a[2]*.2),1);
       emberPositions[i*3]=fx+(a[0]-.5)*2+wind*h*2;
       emberPositions[i*3+1]=.2+h*(i<60?4:1.8);
@@ -460,7 +462,7 @@ export function createWorld(scene, { seed = 1, round = 1 } = {}) {
   updateVisibility({x:0,z:0});
   update(0,0,{x:0,z:0},'rain');
   return {
-    group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
+    city,group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
     supportHeight:collision.supportHeight,supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,
     moveBody:collision.moveBody,clearBody:collision.clearBody,collisionDiagnostics:collision.diagnostics,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,

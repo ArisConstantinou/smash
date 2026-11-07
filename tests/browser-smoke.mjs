@@ -10,7 +10,7 @@ import {createCharacterProgression,xpForNextLevel} from '../character-progressio
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const output=resolve(root,'browser-evidence');await mkdir(output,{recursive:true});
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.wav':'audio/wav','.mp3':'audio/mpeg','.png':'image/png'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.wav':'audio/wav','.mp3':'audio/mpeg','.png':'image/png','.webp':'image/webp'};
 const qa=`\nwindow.__ironfallQA={get phase(){return phase},get settings(){return settings},get audio(){return audio},get player(){return player},get world(){return world},get hero(){return hero},get character(){return character},get menu(){return forgeMenu},get testRun(){return testRun},get aiming(){return !!touchThrowAim},get windup(){return !!throwWindup},get flight(){return !!throwFlight},get throwLock(){return throwLock},setPhase,startGame,persistCharacter,updateSavedCharacter,updatePlayer};\n`;
 const server=createServer(async(req,res)=>{
   try{
@@ -24,7 +24,7 @@ const server=createServer(async(req,res)=>{
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const origin='http://127.0.0.1:'+server.address().port;
-const browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
+const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_EXECUTABLE?{executablePath:process.env.CHROMIUM_EXECUTABLE}:{}),args:['--no-sandbox','--enable-unsafe-swiftshader','--use-angle=swiftshader']});
 const results=[];
 const character=createCharacterProgression(6);character.xp=Math.floor(xpForNextLevel(6)*.6);
 const saved={character,levels:{power:1,size:0,range:0,speed:0,vitality:0,quake:0,kick:0}};
@@ -89,11 +89,43 @@ try{
       if(config.mobile)await page.locator('#chooseRoundButton').click();
       else await page.locator('#chooseRoundButton').press('Space');
       await insideViewport(page,'testStartButton');
-      await page.locator('#startingLevel').selectOption('10');
+      assert.equal(await page.locator('#roundPicker select').count(),0,'No dropdown remains in level selection');
+      const cityCards=page.locator('#cityGrid .city-card');
+      assert.equal(await cityCards.count(),15);
+      const images=await cityCards.locator('img').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('src')));
+      assert.equal(new Set(images).size,15,'Every city has a different actual gameplay postcard');
+      const reached=new Set();
+      do {
+        const visible=page.locator('#cityGrid .city-card:not([hidden])');
+        for(const card of await visible.all()){
+          reached.add(await card.getAttribute('data-level'));
+          const image=card.locator('img');
+          await image.evaluate(img=>img.decode());
+          assert.equal(await image.evaluate(img=>img.naturalWidth),640);
+          const b=await card.boundingBox();assert.ok(b.height>=60&&b.width>=70,'Readable image card touch targets');
+        }
+        if(await page.locator('#cityNext').isDisabled())break;
+        await page.locator('#cityNext').click();
+      }while(true);
+      assert.equal(reached.size,15,'All 15 levels are reachable without scrolling');
+      await page.locator('#city-level-15').click();
+      assert.equal(await page.locator('#startingLevel').inputValue(),'15');
+      assert.equal(await page.evaluate(()=>window.__ironfallQA.phase),'menu','Selecting a card does not start the battle');
+      assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),saved);
+      await page.locator('#city-level-15').press('Home');
+      assert.equal(await page.locator('#startingLevel').inputValue(),'1');
+      await page.screenshot({path:resolve(output,config.name+'-cities.png')});
+      assert.equal(await page.locator('.city-dialog').evaluate(el=>el.scrollHeight<=el.clientHeight+1),true,'No dialog scrolling');
+      const secondRow=await page.locator('#chooseRoundButton').boundingBox(),settingsBox=await page.locator('#menuSettingsButton').boundingBox();
+      assert.ok(Math.abs(secondRow.y-settingsBox.y)<2&&secondRow.x+secondRow.width<=settingsBox.x+1,'Level selection and Settings share one row');
+      while(!await page.locator('#city-level-10').isVisible())await page.locator('#cityNext').click();
+      await page.locator('#city-level-10').click();
+      assert.equal(await page.locator('#startingLevel').inputValue(),'10');
       await page.locator('#testStartButton').click();
       await page.waitForFunction(()=>window.__ironfallQA.phase==='playing');
       assert.equal(await page.evaluate(()=>window.__ironfallQA.character.level),10);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.testRun),true);
+      assert.equal(await page.evaluate(()=>window.__ironfallQA.world.city.level),10,'The postcard launches its corresponding city');
       assert.equal(await page.evaluate(()=>window.__ironfallQA.audio._menuActive),false,'Entering battle stops the menu score');
       if(config.mobile){
         await insideViewport(page,'joystick');await insideViewport(page,'throwButton');
@@ -112,6 +144,7 @@ try{
       await page.waitForFunction(()=>window.__ironfallQA.phase==='playing');
       assert.equal(await page.evaluate(()=>window.__ironfallQA.character.level),6);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.testRun),false);
+      assert.equal(await page.evaluate(()=>window.__ironfallQA.world.city),null,'Continue preserves the original saved-game workflow');
       assert.deepEqual(errors,[]);
       results.push({viewport:config.name,passed:true});
     }catch(error){
