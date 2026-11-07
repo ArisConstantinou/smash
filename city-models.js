@@ -70,11 +70,12 @@ class Builder {
     const key = glow ? tint + ':' + glow : 'matte';
     let bucket = this.buckets.get(key);
     if (!bucket) {
-      bucket = { positions: [], normals: [], colors: [], material: material(tint, glow), tint, glow };
+      bucket = { positions: [], normals: [], colors: [], parts: [], material: material(tint, glow), tint, glow };
       this.buckets.set(key, bucket);
     }
     this.matrix.compose(this.position.set(x, y, z), quaternion, this.scale.set(sx, sy, sz));
     this.normal.getNormalMatrix(this.matrix);
+    const start = bucket.positions.length / 3;
     const p = geometry.getAttribute('position'), n = geometry.getAttribute('normal');
     const indices = geometry.index?.array, count = indices ? indices.length : p.count, c = color(tint);
     for (let i = 0; i < count; i++) {
@@ -85,6 +86,7 @@ class Builder {
       bucket.normals.push(this.direction.x, this.direction.y, this.direction.z);
       bucket.colors.push(c.r, c.g, c.b);
     }
+    bucket.parts.push({start,count,box:geometry===BOX,matrix:this.matrix.toArray(),tint,glow});
     return this;
   }
   put(geometry, tint, x, y, z, sx = 1, sy = 1, sz = 1, rx = 0, ry = 0, rz = 0, glow = 0) {
@@ -112,6 +114,7 @@ class Builder {
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(bucket.positions, 3));
       geometry.setAttribute('normal', new THREE.Float32BufferAttribute(bucket.normals, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(bucket.colors, 3));
+      geometry.userData.fractureParts = bucket.parts;
       geometry.computeBoundingBox(); geometry.computeBoundingSphere();
       const mesh = new THREE.Mesh(geometry, bucket.material);
       mesh.name = bucket.glow ? 'Emissive facade ' + bucket.tint.toString(16) : 'Baked architectural detail';

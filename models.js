@@ -63,7 +63,7 @@ function group(parent, name, x = 0, y = 0, z = 0) {
 
 // Static matte detail becomes a single vertex-colored mesh. Emissive windows
 // and eyes retain their own materials. Fine silhouette detail is cheap to draw.
-function compact(root) {
+function compact(root, destructible = false) {
   root.updateMatrixWorld(true);
   const inverse = root.matrixWorld.clone().invert();
   const transform = new THREE.Matrix4();
@@ -76,16 +76,17 @@ function compact(root) {
     const key = glowing ? original.uuid : 'matte';
     const mat = glowing ? original : vertexMaterial;
     let bucket = buckets.get(key);
-    if (!bucket) { bucket = { mat, positions: [], normals: [], colors: [] }; buckets.set(key, bucket); }
+    if (!bucket) { bucket = { mat, positions: [], normals: [], colors: [], parts: [] }; buckets.set(key, bucket); }
     const geo = node.geometry.index ? node.geometry.toNonIndexed() : node.geometry.clone();
     transform.multiplyMatrices(inverse, node.matrixWorld);
+    if(destructible)bucket.parts.push({start:bucket.positions.length/3,count:geo.attributes.position.count,box:node.geometry===UNIT_BOX,matrix:transform.toArray(),tint:original.color.getHex(),glow:glowing?original.emissiveIntensity:0});
     geo.applyMatrix4(transform);
     const p = geo.getAttribute('position');
     let n = geo.getAttribute('normal');
     if (!n) { geo.computeVertexNormals(); n = geo.getAttribute('normal'); }
     for (let i = 0; i < p.array.length; i++) bucket.positions.push(p.array[i]);
     for (let i = 0; i < n.array.length; i++) bucket.normals.push(n.array[i]);
-    if (!glowing) {
+    if (!glowing || destructible) {
       const oldColor = geo.getAttribute('color');
       for (let i = 0; i < p.count; i++) {
         bucket.colors.push(original.color.r * (oldColor ? oldColor.getX(i) : 1));
@@ -102,6 +103,7 @@ function compact(root) {
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(bucket.positions, 3));
     geometry.setAttribute('normal', new THREE.Float32BufferAttribute(bucket.normals, 3));
     if (bucket.colors.length) geometry.setAttribute('color', new THREE.Float32BufferAttribute(bucket.colors, 3));
+    if(destructible)geometry.userData.fractureParts = bucket.parts;
     geometry.computeBoundingSphere();
     const mesh = new THREE.Mesh(geometry, bucket.mat);
     mesh.castShadow = true;
@@ -1355,7 +1357,7 @@ function car(variant) {
   box(g, pale, 0, .47, -1.913, .4, .1, .025);
   box(g, paint, 0, .96, 1.39, 1.74, .08, .62, -.035);
   box(g, dark, .63, .24, -1.65, .11, .11, .47);
-  compact(g);
+  compact(g, true);
   g.userData = { width: 1.85, depth: 3.64, height: 1.43, color: paint, fragments: [paint, steel, glass, dark] };
   return g;
 }
