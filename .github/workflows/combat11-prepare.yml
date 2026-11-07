@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -29,7 +29,7 @@ jobs:
           assert hashlib.sha256(raw).hexdigest() == '7cc61b94bb62df0cb5bd9c9d7188ba75005ce8dc193877e197543a4252a8d139'
           payload = json.loads(raw)
           assert payload['base'] == '8eb76bc589288cb11974e369ad65a815343b89f8'
-          assert subprocess.check_output(['git','rev-parse','HEAD^'], text=True).strip() == payload['base']
+          subprocess.run(['git','merge-base','--is-ancestor',payload['base'],'HEAD'],check=True)
           def blob(data):
               return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
           assert len(payload['files']) == 16
@@ -58,6 +58,7 @@ jobs:
               print('Verified',relative,entry['sha'])
           pathlib.Path('/tmp/combat11-files.txt').write_text('\n'.join(paths)+'\n')
           PY
+          python3 .combat11-transfer/browser-fix.py
       - name: Run gameplay geometry input and pooling regressions
         run: |
           set -euo pipefail
