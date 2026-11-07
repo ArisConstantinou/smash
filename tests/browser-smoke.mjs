@@ -66,7 +66,11 @@ try{
       assert.equal(await page.locator('#menuHeroFallback').isVisible(),false,'The fallback must not duplicate the live warrior');
       await page.screenshot({path:resolve(output,config.name+'-menu.png')});
 
-      await page.locator('#menuMetalProp').click();
+      // Floating props intentionally move; use an actual pointer at their visible center.
+      const hammer=await page.locator('#menuMetalProp').boundingBox();
+      assert.ok(hammer,'The illustrated hammer must be visible');
+      const hitX=hammer.x+hammer.width*.5,hitY=hammer.y+hammer.height*.35;
+      if(config.mobile)await page.touchscreen.tap(hitX,hitY);else await page.mouse.click(hitX,hitY);
       await page.waitForFunction(()=>Number(document.querySelector('#menuWorkshop').dataset.hits)>0);
       await page.waitForFunction(()=>window.__ironfallQA.audio._menuSources.size>0,null,{timeout:5000});
       assert.equal(await page.evaluate(()=>window.__ironfallQA.audio.state),'ready','A real gesture activates menu audio');
