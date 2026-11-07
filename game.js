@@ -2244,12 +2244,15 @@ function initInput(){
   updateSoundButtons();
   window.addEventListener('keydown',e=>{
     const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyU','KeyE'];
-    if(handled.includes(e.code)&&!['INPUT','SELECT'].includes(document.activeElement?.tagName))e.preventDefault();
+    const focused=document.activeElement;
+    const editing=['INPUT','SELECT','TEXTAREA'].includes(focused?.tagName)||focused?.isContentEditable;
+    const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
+    if(phase==='playing'&&handled.includes(e.code)&&!editing&&!nativeActivation)e.preventDefault();
     if(e.code==='Escape'&&!e.repeat){if(phase==='menu'&&forgeMenu?.closeDialog?.())return;if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();else if(phase==='playing'&&upgradePanelOpen)toggleUpgradePanel(false);else if(phase==='settings'){setPhase(previousPhase);}else pauseGame();return;}
     if(phase==='menu'&&e.code==='Enter'&&!e.repeat&&!$('startButton').disabled&&
       (document.activeElement===document.body||document.activeElement===$('gameCanvas'))){startGame();return;}
     if(phase==='playing'&&upgradePanelOpen&&upgradeTab==='powers'&&['Digit1','Digit2','Digit3'].includes(e.code)){if(!e.repeat)$('upgradeChoices').children[Number(e.code.slice(-1))-1]?.click();return;}
-    if(phase!=='playing'||['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable)return;
+    if(phase!=='playing'||editing||nativeActivation)return;
     if(e.code==='KeyU'&&!e.repeat){toggleUpgradePanel();return;}
     keys.add(e.code);document.querySelector('[data-key="'+e.code+'"]')?.classList.add('active');
     if(e.code==='Space'&&!e.repeat)startLeap();

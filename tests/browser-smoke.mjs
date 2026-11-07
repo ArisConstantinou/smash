@@ -77,7 +77,8 @@ try{
       await page.locator('#closeSettingsButton').click();
       assert.equal(await page.locator('#menu').isVisible(),true);
 
-      await page.locator('#levelSelectButton').click();
+      if(config.mobile)await page.locator('#levelSelectButton').click();
+      else await page.locator('#levelSelectButton').press('Space');
       await insideViewport(page,'testStartButton');
       await page.locator('#startingLevel').selectOption('10');
       await page.locator('#testStartButton').click();
