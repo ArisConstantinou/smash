@@ -39,9 +39,11 @@ jobs:
         run: |
           npm install --no-save --package-lock=false playwright@1.62.1
           npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb xauth libvulkan1 mesa-vulkan-drivers
       - name: Strict WebGPU and WASM real-browser validation
         if: ${{ !cancelled() }}
-        run: node tests/browser-performance14.mjs 2>&1 | tee browser-evidence/perf14/browser-test.log
+        run: xvfb-run -a -s '-screen 0 1600x1000x24' env DEBUG=pw:browser node tests/browser-performance14.mjs 2>&1 | tee browser-evidence/perf14/browser-test.log
       - name: Keep early WebGPU evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
