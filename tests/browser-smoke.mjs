@@ -6,6 +6,7 @@ import {readFile, mkdir, writeFile} from 'node:fs/promises';
 import {resolve, extname, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
+import {manualCombatQA,verifyManualCombat} from './browser-manual-combat.mjs';
 import {createCharacterProgression,xpForNextLevel} from '../character-progression.js';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -18,7 +19,7 @@ const server=createServer(async(req,res)=>{
     const filename=resolve(root,'.'+(pathname==='/'?'/index.html':pathname));
     if(!filename.startsWith(root.endsWith(sep)?root:root+sep)){res.writeHead(403);res.end();return;}
     let data=await readFile(filename);
-    if(filename===resolve(root,'game.js'))data=Buffer.from(data.toString('utf8')+qa);
+    if(filename===resolve(root,'game.js'))data=Buffer.from(data.toString('utf8')+qa+manualCombatQA);
     res.writeHead(200,{'Content-Type':types[extname(filename)]||'application/octet-stream','Cache-Control':'no-store'});res.end(data);
   }catch{res.writeHead(404);res.end();}
 });
@@ -52,6 +53,7 @@ try{
       await page.waitForFunction(()=>window.__ironfallQA&&!document.querySelector('#startButton').disabled,null,{timeout:45000});
       assert.equal(await page.evaluate(()=>!!document.querySelector('#gameCanvas').getContext('webgl2')),true);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.settings.throwMode),'confirm');
+      assert.equal(await page.evaluate(()=>window.__ironfallQA.settings.throwAutoLock),false,'Manual aiming is the new default');
       for(const id of ['startButton','resumeCharacterButton','menuSettingsButton','chooseRoundButton'])await insideViewport(page,id);
       const newBox=await page.locator('#startButton').boundingBox(),resumeBox=await page.locator('#resumeCharacterButton').boundingBox();
       assert.ok(Math.abs(newBox.y-resumeBox.y)<10,'New / Continue occupy the same row');
@@ -146,7 +148,9 @@ try{
       assert.equal(await page.evaluate(()=>window.__ironfallQA.testRun),false);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.world.city),null,'Continue preserves the original saved-game workflow');
       assert.deepEqual(errors,[]);
-      results.push({viewport:config.name,passed:true});
+      const combat=await verifyManualCombat(page,config,output);
+      assert.deepEqual(errors,[]);
+      results.push({viewport:config.name,passed:true,combat});
     }catch(error){
       await page.screenshot({path:resolve(output,config.name+'-failure.png')}).catch(()=>{});
       results.push({viewport:config.name,passed:false,error:error.stack,consoleErrors:errors});
