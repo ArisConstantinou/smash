@@ -13,6 +13,7 @@ Run `npm run preview` and open <http://127.0.0.1:8000/>. Python 3 and Node are a
 - Render the exact detached rubble in one rigidly skinned mesh: one bone per physical piece, with original positions, normals and colours. The physics records and individual movement remain independent; batches reuse their allocated buffers until capacity must grow.
 - Keep FPS text at least 12px on desktop and phone layouts.
 - Keep one preview/test port and add bounded local browser/benchmark tooling, including owned-browser cleanup and measured peak storage.
+- CI records the tested Git revision and bounded evidence instead of uploading another full project archive on every push. Existing source archives and the original ZIP are preserved.
 
 The source also includes the pending Performance14 work from branch `feature/performance14-webgpu`: WASM collision sweeps, bounded simulation catch-up, reusable destruction index buffers, reachable large-hammer hands, metre-scale kicks, vehicle impacts and staged smoke/fire, and the FPS HUD. These were absent from the published main at the initial inspection.
 

@@ -22,16 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Archive the exact source under test
+      - name: Record the exact source revision under test
         run: |
-          git archive --format=tar HEAD > /tmp/performance14-source.tar
           mkdir -p browser-evidence/perf14
           git rev-parse HEAD > browser-evidence/perf14/commit.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: performance14-source
-          path: /tmp/performance14-source.tar
-          retention-days: 3
       - name: Logic geometry audio and WASM equivalence
         run: npm test | tee browser-evidence/unit-tests.log
       - name: Reproducible CPU collision benchmark
