@@ -1,0 +1,63 @@
+name: Prepare and validate damage8
+on:
+  push:
+    branches: [codex/prepare-damage8-20261107]
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply exact reviewed damage8 patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess, zlib
+          root = pathlib.Path('.')
+          packed = b''.join((root / f'.release/damage8-{i}.z').read_bytes() for i in range(4))
+          assert hashlib.sha256(packed).hexdigest() == '42bd49fe650d30f137c7136622bba545823ae90019aee35b0173e2ec96959567', 'Payload mismatch'
+          data = json.loads(zlib.decompress(packed))
+          assert data['base'] == 'e4eafb21a13fcd87dd8b28d35f445865ac111b93'
+          subprocess.run(['git','merge-base','--is-ancestor',data['base'],'HEAD'],check=True)
+          allowed = {'RELEASE-damage8.md','assets/audio/CREDITS.md','audio.js','city-models.js','destruction.js','game.js','index.html','models.js','tests/audio.test.mjs','tests/destruction.test.mjs','tests/game.integration.mjs','tools/check-damage-geometry.mjs','world.js'}
+          assert set(data['before']) == set(data['after']) == allowed
+          for name, sha in data['before'].items():
+              p = root / name
+              assert (not p.exists()) if sha is None else (p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest() == sha), 'Unexpected base: ' + name
+          patch = data['patch'].encode('utf-8')
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          for name, sha in data['after'].items():
+              assert hashlib.sha256((root/name).read_bytes()).hexdigest() == sha, 'Output mismatch: ' + name
+          (root/'.release/damage8-manifest.json').write_text(json.dumps(data['after']))
+          print('Verified all 13 output files against reviewed checksums.')
+          PY
+      - name: Run complete gameplay and audio regression suite
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test-concurrency=1 --experimental-vm-modules --test tests/*.test.mjs tests/game.integration.mjs | tee "$RUNNER_TEMP/damage8-tests.log"
+          git diff --check
+      - name: Commit validated candidate on preparation branch only
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          manifest = json.loads(pathlib.Path('.release/damage8-manifest.json').read_text())
+          for name, sha in manifest.items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == sha, 'Post-test mismatch: ' + name
+          subprocess.run(['git','add','--',*manifest],check=True)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Validated damage8: progressive model destruction and spatial vehicle alarms'
+          git push origin HEAD:codex/prepare-damage8-20261107
+          echo "CANDIDATE_COMMIT=$(git rev-parse HEAD)"
+          echo "CANDIDATE_TREE=$(git rev-parse HEAD^{tree})"
