@@ -1,24 +1,26 @@
+import {selectThrowLock,punchStats,samplePunchMotion,restSpotClear,nearestPickupPoint,findWeaponRest} from './combat-tools.js?v=20261107-combat7';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261106-kick6';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261106-kick6';
-import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261106-feel1';
+import {makeWarrior,makeEnemy,makeBoss,makeTreasure} from './models.js?v=20261107-combat7';
+import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-combat7';
 import {createWorld} from './world.js?v=20261106-kick6';
-import {GameAudio} from './audio.js?v=20261106-kick6';
+import {GameAudio} from './audio.js?v=20261107-combat7';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261106-impact4';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,UPGRADE_DEFS,calculateStats} from './core.js?v=20261106-kick6';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
 import {createSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261106-kick6';
-import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261106-feel1';
+import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261107-combat7';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
 const read = (key,fallback) => {try {return JSON.parse(localStorage.getItem(key)) ?? fallback;} catch {return fallback;}};
-const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false},read('ironfall.settings',{}));
+const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false,throwAutoLock:true},read('ironfall.settings',{}));
 settings.volume=Number.isFinite(Number(settings.volume))?clamp(Number(settings.volume),0,1):.75;
 settings.muted=!!settings.muted;
+settings.throwAutoLock=settings.throwAutoLock!==false;
 const keys = new Set();
 const touch = {x:0,y:0,attack:false};
 const inputResetters=[];
@@ -51,6 +53,7 @@ let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0,landingPose=null;
 let kick=null,kickCooldown=0,vehicleNavTimer=0;
+let punch=null,punchSequence=0,throwLock=null,dashFollowup=0;
 const movingVehicles=new Set();
 const THROW_CHAIN_RADIUS=9,THROW_MAX_HITS=5,HAMMER_LIGHTNING_SECONDS=2.8;
 let hammerLightning=0,hammerAura=null,hammerMaterials=[];
@@ -214,7 +217,7 @@ function setPhase(next){
 function clearInput(){
   for(const reset of inputResetters)reset();
   keys.clear();touch.x=0;touch.y=0;touch.attack=false;touchCanvasPointer=null;touchThrowAim=null;touchThrowQueued=null;
-  combatPointer=null;mouseButtons=0;cancelAttack();guardHeld=false;guarding=false;kick=null;
+  combatPointer=null;mouseButtons=0;cancelAttack();guardHeld=false;guarding=false;kick=null;punch=null;
   if(touchLayout)pointer.active=false;
   document.querySelectorAll('[data-key]').forEach(e=>e.classList.remove('active'));
   for(const id of ['attackButton','guardButton','kickButton'])$(id)?.classList.remove('active');
@@ -330,6 +333,7 @@ function updateHammerAura(){
 function resetWorld(keepUpgrades=false,startLevel=1){
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
   kick=null;kickCooldown=0;movingVehicles.clear();vehicleNavTimer=0;
+  punch=null;punchSequence=0;throwLock=null;dashFollowup=0;hero.userData.setUnarmedPose?.(null);
   swingSequences[0]=createSwingSequence();swingSequences[1]=createSwingSequence();landingPose=null;
   upgradePanelOpen=false;upgradeTab='powers';nearbyTargets=[];focusedTarget=null;
   battleOccluders.clear();occlusionTimer=0;heroOccluded=false;comicState=null;lastComicAt=-10;resetHitCombo(combatCombo);if(!keepUpgrades)comboXpCarry=0;
@@ -393,9 +397,13 @@ function applyStats(){
   if($('relicSlots'))$('relicSlots').innerHTML=UPGRADE_DEFS.filter(d=>levels[d.id]).map(d=>'<span class="relic-installed" title="'+d.name+'" style="--relic-color:'+d.color+'"><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-'+d.id+'"/></svg><b>'+levels[d.id]+'</b></span>').join('');
 }
 function gainXP(value){
-  const result=awardCharacterXp(character,value);applyStats();
-  for(let i=0;i<result.levelsGained;i++){player.hp=Math.min(player.maxHp,player.hp+18);spawnDrop(player.x+randomBetween(-1,1),player.z+randomBetween(-1,1),'relic');}
-  if(result.levelsGained){upgradeFeedback='ΕΠΙΠΕΔΟ '+level+' · +18 ΖΩΗ';toast('ΕΠΙΠΕΔΟ '+level,'Η δύναμή σου μεγαλώνει. Έλεγξε την επόμενη κατασκευή.');persistCharacter();}
+  const oldHp=player.maxHp,result=awardCharacterXp(character,value);applyStats();
+  player.hp=Math.min(player.maxHp,player.hp+Math.max(0,player.maxHp-oldHp));
+  for(let i=0;i<result.levelsGained;i++)spawnDrop(player.x+randomBetween(-1,1),player.z+randomBetween(-1,1),'relic');
+  if(result.levelsGained){
+    const message='ΜΟΝΙΜΑ +'+(result.levelsGained*2)+' ΖΗΜΙΑ · +'+(result.levelsGained*8)+' ΜΕΓΙΣΤΗ ΖΩΗ';
+    upgradeFeedback='LV '+level+' · '+message;toast('ΕΠΙΠΕΔΟ '+level,message,'#9de3cb');persistCharacter();
+  }
   renderCharacterProgress();
 }
 function renderCharacterProgress(){
@@ -405,6 +413,7 @@ function renderCharacterProgress(){
   for(const id of ['characterXpFill','forgeXpFill'])if($(id))$(id).style.width=Math.min(100,progress*100)+'%';
   if($('characterXpText'))$('characterXpText').textContent=level>=MAX_CHARACTER_LEVEL?'ΜΕΓΙΣΤΟ ΕΠΙΠΕΔΟ':xp+' / '+xpTarget+' XP';
   if($('equippedWeapon'))$('equippedWeapon').textContent=characterStats.weaponName;
+  if($('permanentStats'))$('permanentStats').textContent='Μόνιμα από LV: +'+characterStats.levelDamageBonus+' ζημιά · +'+characterStats.levelHealthBonus+' μέγιστη ζωή. Σύνολο: '+Math.round(stats.power)+' ζημιά / '+player.maxHp+' HP';
   if($('weaponAbilities'))$('weaponAbilities').textContent=characterStats.canLightning?'Ψηλό άλμα · συντριβή · 5 στόχοι · επιστροφή · κεραυνοί':characterStats.canReturn?'Ψηλό άλμα · συντριβή · αυτόματη επιστροφή':characterStats.canAirSmash?'Δυνατό άλμα · εναέρια συντριβή · μάζεψε το όπλο μετά τη ρίψη':'Άλμα · μικρό smash · dash στον αέρα · μάζεψε το όπλο μετά τη ρίψη';
   for(const type of MATERIAL_TYPES)if($('material-'+type))$('material-'+type).textContent=String(character.materials[type]);
   if($('nextWeaponName'))$('nextWeaponName').textContent=status.next?status.next.name:'ΤΟ ΣΦΥΡΙ ΤΗΣ ΚΑΤΑΙΓΙΔΑΣ ΕΙΝΑΙ ΔΙΚΟ ΣΟΥ';
@@ -472,7 +481,7 @@ function renderUpgradePanel(){
   });
 }
 
-function weaponBusy(){return !!(kick||throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005||landingRecovery>0);}
+function weaponBusy(){return !!(punch||kick||throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005||landingRecovery>0);}
 function stancePower(){return stance>.95?1.25:1;}
 function movementDirection(){
   const horizontal=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
@@ -493,9 +502,35 @@ function beginSwing(){
   const twoHanded=stance>.9,comboIndex=twoHanded?1:0;
   const variant=selectHammerSwing(swingSequences[comboIndex],{twoHanded,moving:!!(move.x||move.z)});
   swing={time:0,q,...details,twoHanded,variant,duration:getHammerSwingDuration(variant)+q*.10,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
+  if(dashFollowup>0){swing.damage=Math.round(swing.damage*1.25);swing.dashBoost=true;dashFollowup=0;}
   swing.fromBody=hero.userData.body.rotation.clone();swing.fromBodyY=hero.userData.body.position.y;
   chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q,{variant,duration:swing.duration,weapon:characterStats.weaponTier<2?'wood':'metal',exert:true});
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);
+}
+function beginPunch(){
+  if(phase!=='playing'||!throwFlight||punch||kick||throwWindup||attackCooldown>0||guardHeld||dashTime>0)return false;
+  updateAim();const move=movementDirection();
+  const dir=(move.x||move.z)?move:pointer.active?{...aim}:{...facing};
+  facing={...dir};hero.rotation.y=Math.atan2(dir.x,dir.z);
+  const spec=punchStats(level,levels.power,punchSequence++);
+  punch={...spec,time:0,hit:false,dir:{...dir}};
+  if(dashFollowup>0){punch.damage=Math.round(punch.damage*1.25);punch.dashBoost=true;dashFollowup=0;}
+  poseHero(0);hero.updateMatrixWorld(true);
+  punch.previousHand=hero.userData[punch.hand+'Grip'].getWorldPosition(new THREE.Vector3());
+  attackCooldown=punch.duration+.025;attackBuffer=null;chargeStarted=false;charge=0;
+  audio.play('punch',.25,{exert:true});return true;
+}
+function punchImpact(from,hand){
+  if(!punch||punch.hit)return false;
+  const p=punch,origin={x:player.x,y:player.y+1.3,z:player.z};
+  const targets=[...nearbyObjects(player.x,player.z,2),...enemies,...(boss&&!boss.dead?[boss]:[])];
+  const direct=firstHammerHit(origin,hand,targets,p.radius),swept=firstHammerHit(from,hand,targets,p.radius);
+  const hit=direct||swept;if(!hit)return false;
+  p.hit=true;const t=hit.target;
+  if(t===boss)hitBoss(p.damage,p.dir,1,{weapon:'fist',interrupt:false,stagger:.08});
+  else if(enemies.includes(t))hitEnemy(t,p.damage,p.dir,1.7,0,hit,{weapon:'fist',stagger:.22,fear:false});
+  else hurtObject(t,Math.max(1,Math.round(p.damage*.45)),.08,hit,'fist');
+  shake=Math.max(shake,.045);hitStop=Math.max(hitStop,.006);checkGoal();return true;
 }
 function startSpin(previousHits=null){
   if(spin)return true;
@@ -552,8 +587,16 @@ function spinImpact(from,to){
     checkGoal();
   }
 }
+function followupDamage(target,damage,weapon){
+  if(weapon!=='foot'&&weapon!=='body'&&(target.openUntil||0)>elapsed){
+    target.openUntil=0;floatText(target.x,(target.y||0)+1.8,target.z,'ΑΝΟΙΓΜΑ +25%','#a7efcc',13);
+    return Math.round(damage*1.25);
+  }
+  return damage;
+}
 function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   if(e.dead||!Number.isFinite(damage)||damage<=0)return;
+  damage=followupDamage(e,damage,response.weapon);
   if(response.combo!==false)recordCombatContact(e);
   const force=clamp(Number.isFinite(strength)?strength:0,0,18);
   const mass=bodyMass(e);
@@ -628,6 +671,7 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
 }
 function hitBoss(damage,dir,strength=5,response={}){
   if(!boss||boss.dead||!Number.isFinite(damage)||damage<=0)return;
+  damage=followupDamage(boss,damage,response.weapon);
   if(response.combo!==false)recordCombatContact(boss);audio.play('hit',Math.min(1,damage/120),{material:'metal',weapon:response.weapon||(characterStats.weaponTier<2?'wood':'metal')});audio.play('enemyHurt',.8,{type:'siegeMech',fatal:boss.hp<=damage});
   boss.hp-=damage;boss.flash=.15;boss.stagger=Math.max(boss.stagger,response.stagger??.12);if(!response.preserveVelocity){boss.vx=dir.x*strength*.13;boss.vz=dir.z*strength*.13;}
   boss.impact={time:0,duration:.32,dirX:dir.x,dirZ:dir.z};
@@ -716,11 +760,14 @@ function updateAim(){
     if(alignment>bestAlignment){bestAlignment=alignment;focusedTarget=e;}
   }
   if(contact&&nearbyTargets.includes(contact.target))focusedTarget=contact.target;
+  throwLock=settings.throwAutoLock&&!throwFlight?chooseThrowLock(aim):null;
+  if(throwLock){focusedTarget=throwLock;if(!nearbyTargets.includes(throwLock))nearbyTargets.push(throwLock);}
+
 }
 function startLeap(){
   if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
-  if(phase!=='playing'||leap||leapCooldown>0||throwFlight&&!throwFlight.grounded||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
-  kick=null;cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;swing=null;attackCooldown=0;landingRecovery=0;landingPose=null;
+  if(phase!=='playing'||leap||leapCooldown>0||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
+  punch=null;kick=null;cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;swing=null;attackCooldown=0;landingRecovery=0;landingPose=null;
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
   updateAim();const direction=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...(pointer.active?aim:facing)};facing={...direction};
@@ -769,9 +816,10 @@ function canThrow(){return !kick&&phase==='playing'&&!throwFlight&&!throwWindup&
 function startThrow(direction=null,channelAngle=null){
   if(!canThrow())return false;
   if(direction){const d=normalize(direction.x,direction.z);aim.x=d.x;aim.z=d.z;}else updateAim();
-  const launchDirection={...aim};
+  const locked=settings.throwAutoLock?chooseThrowLock(aim):null;
+  const launchDirection=locked?normalize(locked.x-player.x,locked.z-player.z):{...aim};
   const rig=hero.userData.weaponRig;
-  cancelAttack();spinRecovery=null;throwWindup={time:0,dir:launchDirection,channelAngle,
+  cancelAttack();spinRecovery=null;throwWindup={time:0,dir:launchDirection,channelAngle,target:locked,
     fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};
   const move=movementDirection();facing=move.x||move.z?move:{...aim};guardHeld=false;guarding=false;
   return true;
@@ -788,9 +836,26 @@ function releaseHammer(){
     retrievable:!characterStats.canReturn,grounded:false,vy:1.8,groundY:0,maxRange:characterStats.throwRange,
     spinAxis:new THREE.Vector3(dir.z,0,-dir.x),radius:mesh.userData.radius,speed:characterStats.canReturn?23:18,distance:0,
     legDistance:0,returning:false,life:0,returnTime:0,hits:new Set(),hitCount:0,bounces:0,chainTarget:null,
-    damage:Math.round(stats.power*characterStats.throwDamageMultiplier*stancePower()),trailTime:0};
+    damage:Math.round(stats.power*characterStats.throwDamageMultiplier*stancePower()),trailTime:0,
+    breadcrumbs:[{x:player.x,z:player.z}],lastBreadcrumb:0,launchGroundY:player.y};
+  const target=throwWindup.target;
+  if(settings.throwAutoLock&&target&&!target.dead){
+    const point=throwTargetPoint(target),distance=Math.hypot(point.x-x,point.z-z);
+    if(distance>.2&&!firstHammerHit(origin,point,segmentObjects(origin,point,throwFlight.radius),throwFlight.radius)){
+      const time=distance/throwFlight.speed;
+      throwFlight.dir=normalize(point.x-x,point.z-z);throwFlight.spinAxis.set(throwFlight.dir.z,0,-throwFlight.dir.x);
+      if(throwFlight.retrievable)throwFlight.vy=(point.y-y+3.75*time*time)/time;
+      else throwFlight.chainTarget=target;
+    }
+  }
   hammerLightning=0;if(hammerAura)hammerAura.root.visible=false;
   hero.userData.setWeaponVisible(false);throwWindup=null;throwCooldown=1.25;audio.play('swing',1,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});
+}
+function chooseThrowLock(direction){
+  const origin={x:player.x,y:player.y+1.2,z:player.z};
+  const targets=[...enemies,...(boss&&!boss.dead?[boss]:[])];
+  return selectThrowLock(origin,direction,targets,nearbyObjects(player.x,player.z,characterStats.throwRange+2),
+    {range:characterStats.throwRange,radius:hero.userData.getThrowRadius?.()||.45});
 }
 function throwTargetPoint(target){
   return {x:target.x,y:(target.y||0)+Math.min(1.35,(target.height||target.h||2)*.6),z:target.z};
@@ -799,7 +864,7 @@ function validChainTarget(h,target){
   return target&&!target.dead&&!h.hits.has(target)&&(target===boss||enemies.includes(target));
 }
 function nextThrowTarget(h){
-  if(!characterStats.canRicochet||h.hitCount>=Math.min(THROW_MAX_HITS,characterStats.maxChainHits))return null;
+  if(!settings.throwAutoLock||!characterStats.canRicochet||h.hitCount>=Math.min(THROW_MAX_HITS,characterStats.maxChainHits))return null;
   let nearest=null,bestDistance=THROW_CHAIN_RADIUS;
   for(const target of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
     if(!validChainTarget(h,target))continue;
@@ -813,21 +878,42 @@ function nextThrowTarget(h){
   return nearest;
 }
 function settleThrownWeapon(h){
-  h.returning=false;h.chainTarget=null;h.grounded=true;h.groundY=0;h.vy=0;
-  // Keep the pickup on a reachable surface, just outside any struck wall.
-  h.x=clamp(h.x,-BOUNDS+1,BOUNDS-1);h.z=clamp(h.z,-BOUNDS+1,BOUNDS-1);
-  for(const o of nearbyObjects(h.x,h.z,.2))if(o.h<=h.y&&circleOverlaps(h.x,h.z,.2,o))h.groundY=Math.max(h.groundY,o.h);
-  h.mesh.position.set(h.x,0,h.z);h.mesh.rotation.set(Math.PI/2,0,Math.atan2(h.dir.x,h.dir.z));
-  // A thick trunk and a flat hammer have different resting depths. Place the
-  // actual lying geometry above its support, leaving room for the pickup bob.
-  const lowest=new THREE.Box3().setFromObject(h.mesh).min.y;
-  h.y=h.groundY+.05-lowest;h.mesh.position.y=h.y;
-  pulse(h.x,h.z,1.1,0xf0d39b,.5).position.y=h.groundY+.06;
+  const original={x:h.x,z:h.z},breadcrumbs=h.breadcrumbs||[{x:player.x,z:player.z}];
+  const heading=Math.atan2(h.dir.x,h.dir.z),oldRotation=h.mesh.quaternion.clone();
+  let placement=null,footprint=null,restY=0,floor=0;
+  // A long log can lie across a lane but not through a parked car. Try its
+  // natural pose, a quarter-turn, then upright if the alley is very narrow.
+  for(const rotation of [[Math.PI/2,0,heading],[Math.PI/2,0,heading+Math.PI/2],[0,heading,0]]){
+    h.mesh.position.set(0,0,0);h.mesh.rotation.set(...rotation);h.mesh.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(h.mesh);
+    footprint={minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z};
+    const support=h.launchGroundY>.1?world.objects.find(o=>!o.dead&&o.h<=h.launchGroundY+.05&&o.h<=h.y+.01&&Math.abs(o.x-h.x)<=o.w/2&&Math.abs(o.z-h.z)<=o.d/2):null;
+    floor=0;
+    if(support){
+      placement=findWeaponRest(original,footprint,world.objects.filter(o=>o.h>support.h+.04),{bounds:BOUNDS,breadcrumbs,support});
+      if(placement)floor=support.h;
+    }
+    if(!placement)placement=findWeaponRest(original,footprint,world.objects,{bounds:BOUNDS,breadcrumbs});
+    if(!placement&&breadcrumbs.length)placement=findWeaponRest(breadcrumbs[0],footprint,world.objects,{bounds:BOUNDS,breadcrumbs});
+    if(placement){restY=floor+.09-box.min.y;break;}
+  }
+  if(!placement){
+    // Do not park invalid geometry. Retry after the obstruction moves/breaks;
+    // the last non-penetrating airborne pose remains visible and retrievable.
+    h.mesh.quaternion.copy(oldRotation);h.mesh.position.set(h.x,h.y,h.z);h.restPending=true;return false;
+  }
+  h.returning=false;h.chainTarget=null;h.grounded=true;h.groundY=floor;h.vy=0;h.restPending=false;
+  h.x=placement.x;h.z=placement.z;h.y=restY;h.restFootprint=footprint;h.restCheck=0;
+  h.mesh.position.set(h.x,h.y,h.z);
+  pulse(h.x,h.z,1.1,0xf0d39b,.5).position.y=floor+.06;
+  updateAttackFeedback();return true;
 }
 function returnHammer(h){if(h.retrievable){settleThrownWeapon(h);return;}h.returning=true;h.chainTarget=null;h.returnTime=0;}
 function catchHammer(h){
   if(throwFlight!==h)return;
-  disposeInstance(h);throwFlight=null;hero.userData.setWeaponVisible(true);
+  punch=null;chargeHeld=false;chargeStarted=false;attackBuffer=null;holdElapsed=0;
+  hero.userData.setUnarmedPose?.(null);
+  disposeInstance(h);throwFlight=null;hero.userData.setWeaponVisible(true);updateAttackFeedback();
   hammerLightning=characterStats.canLightning?HAMMER_LIGHTNING_SECONDS:0;
   if(hammerAura)hammerAura.lastPattern=-1;
   audio.play('pickup',.7);pulse(player.x,player.z,1.15,characterStats.canLightning?0x9cecff:0xd3bd91,.27).position.y=player.y+.06;
@@ -836,17 +922,35 @@ function catchHammer(h){
 }
 function updateThrownHammer(dt){
   if(!throwFlight)return;const h=throwFlight;h.life+=dt;
+  if(h.restPending){
+    if(Math.hypot(player.x-h.x,player.z-h.z)<1.3&&Math.abs(player.y+.8-h.y)<1.8){
+      const from={x:player.x,y:player.y+.8,z:player.z},to={x:h.x,y:h.y,z:h.z};
+      if(!firstHammerHit(from,to,segmentObjects(from,to,.08),.08)){catchHammer(h);return;}
+    }
+    if((h.restCheck=(h.restCheck||0)-dt)<=0){h.restCheck=.15;settleThrownWeapon(h);}return;
+  }
   if(h.grounded){
-    h.mesh.position.y=h.y+Math.sin(visualTime*4)*.035;
-    if(Math.hypot(player.x-h.x,player.z-h.z)<1.3&&Math.abs(player.y-h.groundY)<1){
-      const from={x:player.x,y:player.y+.65,z:player.z},to={x:h.x,y:h.groundY+.65,z:h.z};
+    h.restCheck-=dt;if(movingVehicles.size)h.restCheck=0;
+    if(h.restCheck<=0){
+      h.restCheck=.10;
+      const supported=h.groundY<=.04||world.objects.some(o=>!o.dead&&Math.abs(o.h-h.groundY)<.04&&h.x+h.restFootprint.minX>=o.x-o.w/2&&h.x+h.restFootprint.maxX<=o.x+o.w/2&&h.z+h.restFootprint.minZ>=o.z-o.d/2&&h.z+h.restFootprint.maxZ<=o.z+o.d/2);
+      if(!supported||!restSpotClear(h,h.restFootprint,nearbyObjects(h.x,h.z,6),BOUNDS)){settleThrownWeapon(h);return;}
+    }
+    h.mesh.position.y=h.y+Math.sin(visualTime*4)*.025;
+    const edge=nearestPickupPoint(player,h,h.restFootprint);
+    if(Math.hypot(player.x-edge.x,player.z-edge.z)<player.radius+.65&&Math.abs(player.y-h.groundY)<1){
+      const from={x:player.x,y:player.y+.65,z:player.z},to={x:edge.x,y:h.groundY+.65,z:edge.z};
       const walls=segmentObjects(from,to,.08).filter(o=>o.h>Math.min(player.y,h.groundY)+.65);
       if(!firstHammerHit(from,to,walls,.08))catchHammer(h);
     }
     return;
   }
+  if(h.distance-(h.lastBreadcrumb||0)>.35){
+    h.breadcrumbs.push({x:h.x,z:h.z});h.lastBreadcrumb=h.distance;
+    if(h.breadcrumbs.length>160)h.breadcrumbs.splice(1,1);
+  }
   const from=new THREE.Vector3(h.x,h.y,h.z);
-  if(!h.returning&&(h.life>3.2||h.distance>52)){returnHammer(h);if(h.grounded)return;}
+  if(!h.returning&&(h.life>3.2||h.distance>52)){returnHammer(h);if(h.grounded||h.restPending)return;}
   if(h.returning){
     h.returnTime+=dt;
     // The projectile is centered on its balance point, so home to the held
@@ -894,7 +998,7 @@ function updateThrownHammer(dt){
       }else if((!h.chainTarget&&h.distance>=h.maxRange)||h.legDistance>12&&h.chainTarget||Math.abs(h.x)>BOUNDS||Math.abs(h.z)>BOUNDS||h.retrievable&&h.y<=.24)returnHammer(h);
       // Integrating rotation preserves the visible pose when a bounce changes
       // its spin axis, unlike rebuilding from total lifetime on each new axis.
-      if(!h.grounded)h.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,dt*22));
+      if(!h.grounded&&!h.restPending)h.mesh.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(h.spinAxis,dt*22));
     }
   }
   h.mesh.position.set(h.x,h.y,h.z);
@@ -980,7 +1084,7 @@ function hurtPlayer(damage,dx=0,dz=0,blockable=true){
     fragments.add(player.x+facing.x,player.y+1.3,player.z+facing.z,7,[0xa5e5de,0xffd490],4,.07);audio.play('hit',.1,{material:characterStats.weaponTier<2?'wood':'metal'});return;
   }
   const shieldFacing=spin?{x:Math.sin(hero.rotation.y),z:Math.cos(hero.rotation.y)}:facing;
-  if(blockable&&characterStats.hasShield&&directionLength>.01&&stance<.05&&!throwWindup&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
+  if(blockable&&characterStats.hasShield&&directionLength>.01&&stance<.05&&!throwWindup&&!throwFlight&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
 
   player.hp=Math.max(0,player.hp-damage);player.invincible=.85;player.hurtAgo=0;player.vx=dx*4;player.vz=dz*4;
   redFlash=.55;shake=Math.max(shake,.19);resetHitCombo(combatCombo);comicState=null;audio.play('hurt');floatText(player.x,2.5,player.z,'−'+Math.ceil(damage),'#ff8d80',21);
@@ -1232,7 +1336,7 @@ function dodge(){
   if(phase!=='playing'||dashCooldown>0||dashTime>0||leap?.airDashed||Math.abs(stance-stanceTarget)>.005)return false;
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
-  kick=null;dashDirection=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};dashTime=leap?.18:.23;dashCooldown=1.5;
+  punch=null;dashFollowup=1.1;kick=null;dashDirection=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};dashTime=leap?.18:.23;dashCooldown=1.5;
   if(leap){leap.airDashed=true;leap.dir={...dashDirection};}player.invincible=Math.max(player.invincible,.3);
   audio.play('dash');pulse(player.x,player.z,1.5,0x86d3c2,.25).position.y=player.y+.08;return true;
 }
@@ -1241,7 +1345,7 @@ function dodge(){
 function startKick(){
   if(phase!=='playing'||kick||kickCooldown>0||leap||dashTime>0||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
   updateAim();const move=movementDirection(),dir=(move.x||move.z)?move:pointer.active?{...aim}:{...facing};
-  cancelAttack();swing=null;attackCooldown=0;guardHeld=false;guarding=false;spinRecovery=null;
+  punch=null;cancelAttack();swing=null;attackCooldown=0;guardHeld=false;guarding=false;spinRecovery=null;
   facing={...dir};hero.rotation.y=Math.atan2(dir.x,dir.z);
   const spec=kickStats(level,levels.kick),rig=hero.userData.weaponRig;
   kick={time:0,...spec,dir:{...dir},hit:false,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),
@@ -1261,6 +1365,7 @@ function kickImpact(from,foot){
   const contact=direct||swept;
   if(!contact)return false;
   const target=contact.target;k.hit=true;const dir={...k.dir};
+  if(target===boss||enemies.includes(target))target.openUntil=elapsed+1.6;
   if(target===boss){hitBoss(k.damage,dir,.45,{interrupt:false,stagger:0,weapon:'foot'});target.slowTime=.35;target.slowFactor=.7;}
   else if(enemies.includes(target)){
     const speed=kickVelocity(target,k),mass=bodyMass(target);
@@ -1402,6 +1507,7 @@ function updatePlayer(dt){
   player.invincible=Math.max(0,player.invincible-dt);player.hurtAgo+=dt;
   hammerLightning=Math.max(0,hammerLightning-dt);
   kickCooldown=Math.max(0,kickCooldown-dt);if(kick)kick.time+=dt;
+  dashFollowup=Math.max(0,dashFollowup-dt);if(punch)punch.time+=dt;
   dashCooldown=Math.max(0,dashCooldown-dt);attackCooldown=Math.max(0,attackCooldown-dt);leapCooldown=Math.max(0,leapCooldown-dt);throwCooldown=Math.max(0,throwCooldown-dt);landingRecovery=Math.max(0,landingRecovery-dt);
   if(player.hurtAgo>8&&player.hp<player.maxHp)player.hp=Math.min(player.maxHp,player.hp+1.25*dt);
   if(stance!==stanceTarget){const step=dt/1.05;stance=Math.abs(stance-stanceTarget)<=step?stanceTarget:stance+Math.sign(stanceTarget-stance)*step;}
@@ -1410,7 +1516,8 @@ function updatePlayer(dt){
   // Locomotion owns facing. Cursor aim is independent only for the thrown
   // hammer, or while standing still; attacks never turn a running hero sideways.
   if(!spin){
-    if(kick)facing={...kick.dir};
+    if(punch)facing={...punch.dir};
+    else if(kick)facing={...kick.dir};
     else if(leap)facing={...leap.dir};
     else if(dashTime>0)facing={...dashDirection};
     else if(moving)facing=move;
@@ -1452,6 +1559,9 @@ function updatePlayer(dt){
   }
   if(spinRecovery){spinRecovery.time+=dt;if(spinRecovery.time>=.12)spinRecovery=null;}
   if(attackBuffer){attackBuffer.life-=dt;if(attackBuffer.life<=0)attackBuffer=null;}
+  if(throwFlight&&!punch&&!kick&&(chargeHeld||attackBuffer)&&attackCooldown<=0&&!guardHeld){
+    beginPunch();
+  }
   if(chargeHeld){
     holdElapsed+=dt;
     if(!spin&&holdElapsed>=SPIN_HOLD_SECONDS&&!weaponBusy()&&!guardHeld){
@@ -1487,6 +1597,11 @@ function updatePlayer(dt){
     const foot=hero.userData.rightLeg.userData.foot.getWorldPosition(new THREE.Vector3());
     if(!kick.hit&&sampleKickMotion(kick.time/kick.duration).active)kickImpact(kick.previousFoot,foot);
     if(kick){kick.previousFoot.copy(foot);if(kick.time>=kick.duration)kick=null;}
+  }
+  if(punch){
+    const hand=hero.userData[punch.hand+'Grip'].getWorldPosition(new THREE.Vector3());
+    if(samplePunchMotion(punch.time/punch.duration,punch.variant).active)punchImpact(punch.previousHand,hand);
+    if(punch){punch.previousHand.copy(hand);if(punch.time>=punch.duration)punch=null;}
   }
   if(throwWindup?.time>=.28)releaseHammer();
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headNow);
@@ -1525,13 +1640,15 @@ function poseHero(dt,moving=false){
   const targetAngle=Math.atan2(facing.x,facing.z);
   const diff=Math.atan2(Math.sin(targetAngle-hero.rotation.y),Math.cos(targetAngle-hero.rotation.y));
   if(spin)hero.rotation.y=spin.angle+spin.entryYawOffset;
-  else if(moving||leap||dashTime>0||guarding||swing)hero.rotation.y=targetAngle;
+  else if(moving||leap||dashTime>0||guarding||swing||punch)hero.rotation.y=targetAngle;
   else hero.rotation.y+=diff*(1-Math.exp(-dt*24));
   hero.position.set(player.x,player.y+(dashTime>0&&!leap?.15:Math.abs(walk)*(swing?.025:.07)),player.z);
   const p=swing?clamp(swing.time/swing.duration,0,1):0;
   const motion=swing?(swing.blocked?swing.blockPose:sampleHammerSwing(p,{twoHanded:swing.twoHanded,charge:swing.q,variant:swing.variant})):null;
   const settle=swing?.blocked?1-smooth((swing.time-swing.blockTime)/.12):1;
   const impactRecoil=swing?.contactTime!==undefined?Math.sin(clamp((swing.time-swing.contactTime)/.085,0,1)*Math.PI)*.055:0;
+  const punchPose=!u.weaponHeld?samplePunchMotion(punch?punch.time/punch.duration:0,punch?.variant||0):null;
+  u.setUnarmedPose?.(punchPose);
   const kickPose=kick?sampleKickMotion(kick.time/kick.duration):null;
   const spinPose=spin?sampleSpinMotion(spin.rotation,{twoHanded:stance>.9,recoil:spin.recoil}):null;
   const torque=spinPose?spinPose.bodyYaw:motion?motion.bodyYaw*settle:guarding?-.08:0;
@@ -1563,6 +1680,7 @@ function poseHero(dt,moving=false){
     u.body.rotation.x=kickPose.bodyPitch;u.body.rotation.y=kickPose.bodyYaw;u.body.rotation.z=-.05*kickPose.extension;
     u.body.position.y=-kickPose.weight;
   }
+  if(punch&&punchPose){u.body.rotation.y=punchPose.bodyYaw;u.body.rotation.x=punchPose.bodyPitch;}
   if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:spin?.55:motion?.18+Math.abs(torque)*.3:moving?.25:0);u.cape.rotation.z=spin?.3-Math.sin(spin.rotation)*.1:motion?-torque*.38:Math.sin(visualTime*3)*.045;}
   u.setStance?.(stance);
   const rest=u.weaponRest||{x:.55,y:0,z:-.72},rp=u.weaponRestPosition||{x:0,y:1.04,z:.38};
@@ -1744,16 +1862,16 @@ function updateHUD(force=false){
   $('waveEnemiesValue').textContent=boss&&!boss.dead?String(enemies.length):String(Math.max(0,(wave?.total||0)-(wave?.defeated||0)))+' / '+(wave?.total||10);
   $('waveStatus').textContent=boss&&!boss.dead?'ΤΕΛΙΚΟΣ BOSS':wave?.state==='break'?'ΚΥΜΑ ΚΑΘΑΡΟ · ΕΠΟΜΕΝΟ ΣΕ '+Math.ceil(wave.breakTimer)+'s':enemies.filter(e=>e.waveNumber===wave?.number).length+' ΕΝΕΡΓΟΙ · '+Math.max(0,(wave?.total||0)-(wave?.spawned||0))+' ΕΡΧΟΝΤΑΙ';
   $('timeValue').textContent=String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
-  $('chargeFill').style.width=spin?'100%':chargeHeld?Math.min(100,holdElapsed/SPIN_HOLD_SECONDS*100)+'%':'0%';
+  $('chargeFill').style.width=throwFlight?(punch?Math.round(clamp(punch.time/punch.duration,0,1)*100)+'%':'0%'):spin?'100%':chargeHeld?Math.min(100,holdElapsed/SPIN_HOLD_SECONDS*100)+'%':'0%';
   $('chargeWrap').classList.toggle('spinning',!!spin);
-  $('chargeText').textContent=spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ: ΠΕΡΙΣΤΡΟΦΗ':touchLayout?'ΚΡΑΤΑ ΠΕΡΙΣΤΡΟΦΗ':'ΚΡΑΤΑ ΑΡ. ΚΛΙΚ: 360°';
+  $('chargeText').textContent=throwFlight?'ΚΡΑΤΑ ΕΠΙΘΕΣΗ: ΓΡΟΘΙΕΣ':spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ: ΠΕΡΙΣΤΡΟΦΗ':touchLayout?'ΚΡΑΤΑ ΠΕΡΙΣΤΡΟΦΗ':'ΚΡΑΤΑ ΑΡ. ΚΛΙΚ: 360°';
   document.querySelector('[data-key="ShiftLeft"]')?.classList.toggle('cooldown',dashCooldown>0);
   if(boss){$('bossFill').style.backgroundColor=enemyHealthColor(boss.level);$('bossFill').style.width=Math.max(0,boss.hp/boss.maxHp*100)+'%';$('bossValue').textContent=(boss.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(boss.hp))+' / '+Math.ceil(boss.maxHp)+' HP';}
-  const stanceLabel=Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':characterStats.hasShield?'ΣΦΥΡΙ + ΑΣΠΙΔΑ':'ΛΑΒΗ ΜΕ ΕΝΑ ΧΕΡΙ';
+  const stanceLabel=throwFlight?'ΑΟΠΛΟΣ · ΓΡΟΘΙΕΣ + ΚΛΩΤΣΙΑ':Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':characterStats.hasShield?'ΣΦΥΡΙ + ΑΣΠΙΔΑ':'ΛΑΒΗ ΜΕ ΕΝΑ ΧΕΡΙ';
   for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent=stanceLabel;
   for(const id of ['stanceButton','mobileStanceButton'])$(id)?.setAttribute('aria-pressed',String(stanceTarget===1));
   if($('guardValue'))$('guardValue').textContent=guarding?'ΠΡΟΣΤΑΣΙΑ ΜΠΡΟΣΤΑ':throwFlight?'ΧΩΡΙΣ ΣΦΥΡΙ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
-  if($('leapValue'))$('leapValue').textContent=leap?(leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΧΤΥΠΗΜΑ / DASH':'ΚΛΙΚ: SMASH · SHIFT: DASH'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
+  if($('leapValue'))$('leapValue').textContent=leap?(throwFlight?'ΓΡΟΘΙΑ / DASH':leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΧΤΥΠΗΜΑ / DASH':'ΚΛΙΚ: SMASH · SHIFT: DASH'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?.channeling?'ΑΦΗΣΕ ΓΙΑ ΡΙΨΗ':throwFlight?(throwFlight.grounded?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount&&characterStats.canRicochet?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':touchLayout?'ΣΥΡΕ ΓΙΑ ΣΤΟΧΕΥΣΗ':'ΣΤΟΧΕΥΣΕ';
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   updateAttackFeedback();
@@ -1773,17 +1891,17 @@ function updateHUD(force=false){
 }
 function updateAttackFeedback(){
   const button=$('attackButton');if(!button)return;
-  const holding=chargeHeld||!!spin,air=!!leap;
-  button.classList.toggle('active',!!swing||holding||!!leap?.slam||!!leap?.strike);
+  const unarmed=!!throwFlight,holding=!unarmed&&(chargeHeld||!!spin),air=!!leap&&!unarmed;
+  button.classList.toggle('active',!!punch||!!swing||holding||!!leap?.slam||!!leap?.strike);
   button.classList.toggle('air-smash-ready',air&&!leap.strike);
   button.classList.toggle('air-smash-armed',!!leap?.slam||!!leap?.strike);
-  button.classList.toggle('spin-active',!!spin);button.classList.toggle('spin-pending',chargeHeld&&!spin);
-  button.dataset.action=air?'air':holding?'spin':'attack';
-  $('attackIcon')?.setAttribute('href',air?'#a-slam':holding?'#a-spin':'#a-swing');
-  $('attackTouchIcon')?.setAttribute('href',air?'#t-slam':holding?'#t-spin':'#t-attack');
-  $('attackName').textContent=air?(leap.slam||leap.strike?'ΕΤΟΙΜΟ':'ΜΙΚΡΟ SMASH'):holding?'360°':characterStats.weaponTier<2?'ΧΤΥΠΗΜΑ':'ΣΦΥΡΙΑ';
-  $('attackValue').textContent=throwFlight?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':air?(leap.slam?'ΜΕΓΑΛΟ SMASH':leap.strike?'ΣΤΗΝ ΠΡΟΣΓΕΙΩΣΗ':characterStats.canAirSmash?'ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ ΜΕΓΑΛΟ':'ΠΑΤΑ ΣΤΟΝ ΑΕΡΑ'):spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ ΓΙΑ ΣΥΝΕΧΕΙΑ':'ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°';
-  const label=air?(leap.slam||leap.strike?'Το χτύπημα είναι έτοιμο για την προσγείωση.':characterStats.canAirSmash?'Πάτησε στον αέρα για μικρό smash. Κράτα για μεγάλη συντριβή.':'Πάτησε στον αέρα για μικρό smash.'):spin?'Συνεχής περιστροφή 360°. Άφησε για να σταματήσεις.':'Χτύπημα με '+characterStats.weaponName.toLowerCase()+'. Κράτα για συνεχή περιστροφή 360°.';
+  button.classList.toggle('spin-active',!!spin);button.classList.toggle('spin-pending',!unarmed&&chargeHeld&&!spin);
+  button.dataset.action=unarmed?'punch':air?'air':holding?'spin':'attack';
+  $('attackIcon')?.setAttribute('href',unarmed?'#a-punch':air?'#a-slam':holding?'#a-spin':'#a-swing');
+  $('attackTouchIcon')?.setAttribute('href',unarmed?'#t-punch':air?'#t-slam':holding?'#t-spin':'#t-attack');
+  $('attackName').textContent=unarmed?'ΓΡΟΘΙΕΣ':air?(leap.slam||leap.strike?'ΕΤΟΙΜΟ':'ΜΙΚΡΟ SMASH'):holding?'360°':characterStats.weaponTier<2?'ΧΤΥΠΗΜΑ':'ΣΦΥΡΙΑ';
+  $('attackValue').textContent=unarmed?'ΚΡΑΤΑ · ΣΥΝΕΧΕΙΣ ΓΡΟΘΙΕΣ':air?(leap.slam?'ΜΕΓΑΛΟ SMASH':leap.strike?'ΣΤΗΝ ΠΡΟΣΓΕΙΩΣΗ':characterStats.canAirSmash?'ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ ΜΕΓΑΛΟ':'ΠΑΤΑ ΣΤΟΝ ΑΕΡΑ'):spin?'ΑΦΗΣΕ ΓΙΑ ΣΤΟΠ':chargeHeld?'ΚΡΑΤΑ ΓΙΑ ΣΥΝΕΧΕΙΑ':'ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°';
+  const label=unarmed?'Πάτησε για γροθιά. Κράτα για διαδοχικές γροθιές. Η κλωτσιά παραμένει στο E.':air?(leap.slam||leap.strike?'Το χτύπημα είναι έτοιμο για την προσγείωση.':characterStats.canAirSmash?'Πάτησε στον αέρα για μικρό smash. Κράτα για μεγάλη συντριβή.':'Πάτησε στον αέρα για μικρό smash.'):spin?'Συνεχής περιστροφή 360°. Άφησε για να σταματήσεις.':'Χτύπημα με '+characterStats.weaponName.toLowerCase()+'. Κράτα για συνεχή περιστροφή 360°.';
   button.setAttribute('aria-label',label);button.setAttribute('title',label);
 }
 function drawMinimap(){
@@ -1846,6 +1964,7 @@ function drawAim(){
         if(step===0)c.moveTo(p.x,p.y);else c.lineTo(p.x,p.y);
       }c.stroke();
     }
+    if(e===throwLock){const lock=screenPoint(e.x,(e.y||0)+e.height+.95,e.z);c.font='bold 11px Arial';c.textAlign='center';c.fillStyle='#ffe0a0';c.fillText('ΣΤΟΧΟΣ ΡΙΨΗΣ',lock.x,lock.y);}
     if(focused){const p=screenPoint(e.x,.07,e.z);c.fillStyle='#ffd180';c.beginPath();c.moveTo(p.x,p.y-5);c.lineTo(p.x-3,p.y);c.lineTo(p.x+3,p.y);c.closePath();c.fill();}
   }
   if(pointer.active){
@@ -1863,7 +1982,7 @@ function drawFX(){
   drawAim();
   if(throwFlight?.grounded){const p=screenPoint(throwFlight.x,throwFlight.groundY+1.2,throwFlight.z);if(p.inside){c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#10201e';c.strokeText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);c.fillStyle='#ffe2a3';c.fillText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);}}
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
-    const label='LV '+e.level+(e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
+    const label='LV '+e.level+((e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
     drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,enemyHealthColor(e.level),1,label);
   }
   if(boss&&!boss.dead)drawHP(boss.x,boss.y+boss.height+.4,boss.z,boss.hp,boss.maxHp,enemyHealthColor(boss.level),1,'LV '+boss.level+' · ΚΟΛΟΣΣΟΣ');
@@ -1908,8 +2027,14 @@ function pauseGame(){if(phase==='playing'){setPhase('paused');audio.play('ui');}
 function pressAttack(){
   if(phase!=='playing')return;audio.unlock();
   if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
+  if(throwFlight){
+    if(guardHeld||chargeHeld)return;
+    chargeHeld=true;holdElapsed=0;
+    if(!beginPunch())attackBuffer={life:ATTACK_BUFFER_SECONDS};
+    updateAttackFeedback();return;
+  }
   if(leap){armAirSmash();updateAttackFeedback();return;}
-  if(throwFlight||throwWindup||Math.abs(stance-stanceTarget)>.005||guardHeld||chargeHeld)return;
+  if(throwWindup||Math.abs(stance-stanceTarget)>.005||guardHeld||chargeHeld)return;
   chargeHeld=true;holdElapsed=0;charge=0;
   // Start on pointer DOWN, not UP: the physical wind-up and its audio start
   // together. During recovery remember just ONE next strike, not click spam.
@@ -1933,6 +2058,7 @@ function releaseAttack(){
 function cancelAttack(){if(leap)leap.attackHeld=false;stopSpin();chargeHeld=false;chargeStarted=false;charge=0;attackBuffer=null;holdElapsed=0;if(touchThrowAim||touchThrowQueued)cancelTouchThrow();updateAttackFeedback();}
 function pressGuard(){
   if(phase!=='playing')return;
+  if(throwFlight)return;
   guardHeld=true;cancelAttack();spinRecovery=null;
 }
 function releaseGuard(){guardHeld=false;guarding=false;}
@@ -2052,6 +2178,8 @@ function initInput(){
   $('qualitySelect').value=settings.quality;$('shakeToggle').checked=settings.shake;$('volumeRange').value=Math.round(settings.volume*100);
   $('qualitySelect').onchange=e=>{settings.quality=e.target.value;resize();save('ironfall.settings',settings);};
   $('shakeToggle').onchange=e=>{settings.shake=e.target.checked;save('ironfall.settings',settings);};
+  $('throwAutoLockToggle').checked=settings.throwAutoLock;
+  $('throwAutoLockToggle').onchange=e=>{settings.throwAutoLock=!!e.target.checked;throwLock=null;if(!settings.throwAutoLock&&throwFlight){throwFlight.chainTarget=null;throwFlight.dir=normalize(throwFlight.dir.x,throwFlight.dir.z);}save('ironfall.settings',settings);};
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
   updateSoundButtons();
   window.addEventListener('keydown',e=>{

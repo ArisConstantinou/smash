@@ -8,7 +8,7 @@
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261106-audio2">
-  <link rel="stylesheet" href="./controls.css?v=20261106-kick6">
+  <link rel="stylesheet" href="./controls.css?v=20261107-combat7">
 </head>
 <body>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -90,6 +90,8 @@
       </symbol>
       <symbol id="t-kick" viewBox="0 0 24 24"><path d="m4 3 6 1-1 8 8 1 3 5-2 3-12-3-3-4Zm11 3 2-3m2 6 3-1M6 10l4 1"/></symbol>
       <symbol id="upgrade-kick" viewBox="0 0 96 80"><use href="#a-kick"/></symbol>
+      <symbol id="a-punch" viewBox="0 0 96 80"><ellipse cx="40" cy="71" rx="23" ry="4" fill="#102730"/><use href="#a-warrior" transform="translate(34 43) scale(.88)"/><path d="m40 34 13 4 18-6" fill="none" stroke="#b8cfd1" stroke-width="9" stroke-linejoin="round"/><path d="m64 23 15-2 7 8-3 11-16 1-5-9Z" fill="#dec394" stroke="#193743" stroke-width="3"/><path d="m67 28 14-1m-11 5 11-1" stroke="#947c60" stroke-width="2"/><path d="m83 11 3 7m2 27 5 4M53 16l8 5" stroke="#9ee5cd" stroke-width="3"/><path d="m88 23 5-4-1 9 4 5-9-1" fill="#ffdb8b"/></symbol>
+      <symbol id="t-punch" viewBox="0 0 24 24"><path d="M5 21V11l-1-4 3-2 2 1 1-3 3 1 2-1 3 2 3 1v8l-4 7ZM9 6v5m4-7v7m4-7v7M5 13l6-2 3 3-3 3"/></symbol>
       <symbol id="t-attack" viewBox="0 0 24 24"><path d="m4 5 4-3 10 10-3 4L4 5Zm9 8-9 9M3 12a10 10 0 0 0 9 9M16 3h5v5"/></symbol>
       <symbol id="t-spin" viewBox="0 0 24 24"><circle cx="12" cy="7" r="2"/><path d="M12 9v7m-5-4h10m-5 4-3 5m3-5 3 5M3 9a9 9 0 0 1 16-3l2 3m0-5v5h-5M21 15a9 9 0 0 1-16 3l-2-3m0 5v-5h5"/></symbol>
       <symbol id="t-guard" viewBox="0 0 24 24"><path d="m4 4 8-2 8 2v8c0 5-8 10-8 10S4 17 4 12ZM12 6v11"/></symbol>
@@ -214,6 +216,7 @@
           <div class="gear-topline">
             <section class="forge-card" aria-label="Τρέχον όπλο">
               <div class="equipped-heading"><strong id="equippedWeapon">ΚΟΥΤΣΟΥΡΟ</strong><span class="loadout-level">LV <b id="levelValue">1</b></span></div>
+              <p id="permanentStats" class="permanent-stats">Κάθε επίπεδο: μόνιμα +2 ζημιά όπλου και +8 μέγιστη ζωή.</p>
               <div class="gear-experience"><span id="characterXpText">0 / 8 XP</span><div class="character-xp"><span id="forgeXpFill"></span></div></div>
               <p id="weaponAbilities">Μικρό άλμα · μάζεψε το όπλο μετά τη ρίψη</p>
             </section>
@@ -326,21 +329,22 @@
       <button id="restartButton" class="secondary-button" type="button">ΑΡΧΙΚΟ ΜΕΝΟΥ / ΔΟΚΙΜΗ ΕΠΙΠΕΔΟΥ</button>
       <details class="combat-help"><summary>ΧΕΙΡΙΣΜΟΣ ΜΑΧΗΣ</summary>
         <dl class="desktop-only"><dt>W A S D</dt><dd>Ελεύθερη κίνηση προς κάθε κατεύθυνση. Ο πολεμιστής στρέφεται πάντα προς την κίνησή του.</dd>
-        <dt>ΠΟΝΤΙΚΙ</dt><dd>Όταν στέκεσαι, στρέφει τον πολεμιστή, τη σφυριά και την άμυνα. Η ρίψη με R ακολουθεί πάντα το ποντίκι.</dd>
-        <dt>LMB</dt><dd>Αριστερό κλικ: γρήγορη σφυριά. Κράτημα: συνεχής περιστροφή 360° του πολεμιστή μαζί με το σφυρί. Άφησε για να σταματήσεις. Το εικονίδιο περιστροφής λειτουργεί με τον ίδιο τρόπο.</dd>
+        <dt>ΠΟΝΤΙΚΙ</dt><dd>Όταν στέκεσαι, στρέφει τον πολεμιστή, τη σφυριά και την άμυνα. Η ρίψη με R ακολουθεί τη στόχευση, με προαιρετική αυτόματη επιλογή ορατού εχθρού.</dd>
+        <dt>LMB</dt><dd>Αριστερό κλικ: χτύπημα. Κράτημα: περιστροφή με όπλο. Χωρίς όπλο: γροθιά, κράτημα για διαδοχικές γροθιές. Άφησε για να σταματήσεις.</dd>
         <dt>Z</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά Z για επαναφορά.</dd>
         <dt>Κράτα RMB</dt><dd>Δεξί κλικ: κατακόρυφη περιστροφή του σφυριού μπροστά σου. Προστατεύει προς την κατεύθυνση που κοιτάς και ανακλά μετωπικά βλήματα.</dd>
         <dt>SPACE</dt><dd>Ψηλό άλμα προς τα εμπρός και μικρό χτύπημα στην προσγείωση.</dd>
-        <dt>SPACE → LMB</dt><dd>Πήδηξε και πάτησε αριστερό κλικ όσο βρίσκεσαι στον αέρα για μεγάλη ζημιά περιοχής στην προσγείωση.</dd>
-        <dt>R</dt><dd>Στόχευσε με το ποντίκι και ρίξε το σφυρί. Αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με κεραυνούς στη λαβή.</dd>
-        <dt>SHIFT</dt><dd>Σύντομη αποφυγή.</dd>
+        <dt>SPACE → LMB</dt><dd>Πήδηξε και πάτησε LMB για μικρό smash σε κάθε επίπεδο. Με σιδερένιο σφυρί ή καλύτερο, κράτα LMB για μεγάλη συντριβή.</dd>
+        <dt>R</dt><dd>Ρίξε προς τη στόχευση. Η βοήθεια στόχευσης είναι αρχικά ενεργή και κλείνει στις Ρυθμίσεις. Το ξύλο μένει στο έδαφος για συλλογή. Τα προχωρημένα όπλα ξεκλειδώνουν επιστροφή και έως πέντε αναπηδήσεις.</dd>
+        <dt>E</dt><dd>Κλωτσιά, ακόμη και άοπλος. Ανοίγει την άμυνα του εχθρού: το επόμενο διαφορετικό χτύπημα σε 1,6 δευτερόλεπτα κάνει +25% ζημιά.</dd>
+        <dt>SHIFT</dt><dd>Αποφυγή και μία εναέρια αποφυγή ανά άλμα. Η επόμενη κανονική σφυριά ή γροθιά σε 1,1 δευτερόλεπτα έχει +25% ζημιά.</dd>
         <dt>U</dt><dd>Άνοιγμα ή κλείσιμο του οπλοστασίου. Οι αναβαθμίσεις σε περιμένουν εκεί, χωρίς παύση της μάχης.</dd>
         <dt>1 / 2 / 3</dt><dd>Επιλογή αναβάθμισης, μόνο όσο το οπλοστάσιο είναι ανοιχτό.</dd></dl>
         <dl class="touch-only touch-help"><dt>ΜΟΧΛΟΣ</dt><dd>Σύρε για ελεύθερη κίνηση. Ο πολεμιστής κοιτάζει προς την πορεία του. Κράτα τον μοχλό με το ένα δάχτυλο και πάτα τις ενέργειες με το άλλο.</dd>
-        <dt>ΣΦΥΡΙΑ</dt><dd>Πάτησε για γρήγορο χτύπημα μπροστά σου.</dd>
+        <dt>ΧΤΥΠΗΜΑ</dt><dd>Πάτησε για χτύπημα. Χωρίς όπλο το κουμπί γίνεται γροθιά· κράτα το για διαδοχικές γροθιές. Η μπότα δίνει πάντα κλωτσιά.</dd>
         <dt>ΠΕΡΙΣΤΡΟΦΗ</dt><dd>Κράτα πατημένο για συνεχή περιστροφή 360°. Άφησε για να σταματήσεις.</dd>
         <dt>ΑΜΥΝΑ</dt><dd>Κράτα πατημένο για προστασία προς την κατεύθυνση που κοιτάς.</dd>
-        <dt>ΑΛΜΑ</dt><dd>Πάτησε για ψηλό άλμα προς τα εμπρός. Όσο βρίσκεσαι στον αέρα, η ΣΦΥΡΙΑ γίνεται ΣΥΝΤΡΙΒΗ: πάτησέ την για μεγάλη ζημιά στην προσγείωση.</dd>
+        <dt>ΑΛΜΑ</dt><dd>Πάτησε για άλμα και, με το όπλο στα χέρια, πάτα ΧΤΥΠΗΜΑ στον αέρα για μικρό smash. Με σιδερένιο σφυρί ή καλύτερο, κράτα για μεγάλη συντριβή.</dd>
         <dt>ΡΙΨΗ</dt><dd>Κράτα για κατακόρυφη περιστροφή, σύρε προς τον στόχο και άφησε. Το σφυρί αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με ηλεκτρική λάμψη.</dd>
         <dt>ΛΑΒΗ</dt><dd>Άνοιξε τις αναβαθμίσεις επάνω και πάτα ΑΛΛΑΓΗ ΛΑΒΗΣ. Βάζει την ασπίδα στην πλάτη και κρατά το σφυρί με δύο χέρια για +25% ζημιά. Πάτησε ξανά για επαναφορά.</dd>
         <dt>ΕΥΡΗΜΑΤΑ</dt><dd>Άνοιξε τις αναβαθμίσεις από το επάνω κουμπί και πάτα την επιλογή σου. Η μάχη συνεχίζεται.</dd></dl>
@@ -355,6 +359,7 @@
       <div class="modal-eyebrow">ΠΡΟΣΑΡΜΟΣΕ ΤΗΝ ΕΜΠΕΙΡΙΑ</div>
       <h2>ΡΥΘΜΙΣΕΙΣ<span>.</span></h2>
       <label class="setting-row" for="qualitySelect"><span><b>Γραφικά</b><small>Ποιότητα εικόνας & εφέ</small></span><select id="qualitySelect"><option value="high" selected>Υψηλά</option><option value="medium">Μεσαία</option><option value="low">Χαμηλά</option></select></label>
+      <label class="setting-row" for="throwAutoLockToggle"><span><b>Αυτόματη στόχευση ρίψης</b><small>Κοντινοί εχθροί προς τη στόχευση · χωρίς στόχους πίσω από εμπόδια. Επηρεάζει και τις αυτόματες αναπηδήσεις.</small></span><input id="throwAutoLockToggle" type="checkbox" checked></label>
       <label class="setting-row" for="shakeToggle"><span><b>Τρέμουλο κάμερας</b><small>Νιώσε τη δύναμη κάθε χτυπήματος</small></span><input id="shakeToggle" type="checkbox" checked></label>
       <label class="setting-row volume-setting" for="volumeRange"><span><b>Ένταση ήχου</b><small>Χτυπήματα & ατμόσφαιρα</small></span><input id="volumeRange" type="range" min="0" max="100" value="75" aria-label="Ένταση ήχου"></label>
       <div class="audio-check">
@@ -382,6 +387,6 @@
   <section id="fatalError" class="modal-overlay" aria-label="Αδυναμία εκκίνησης" hidden>
     <div class="modal-panel"><div class="modal-eyebrow">IRONFALL</div><h2>ΜΙΑ ΣΤΙΓΜΗ<span>.</span></h2><p id="fatalText">Το παιχνίδι χρειάζεται υποστήριξη WebGL για να ξεκινήσει.</p><button class="primary-button" type="button" onclick="location.reload()">ΔΟΚΙΜΑΣΕ ΞΑΝΑ</button></div>
   </section>
-  <script type="module" src="./game.js?v=20261106-kick6"></script>
+  <script type="module" src="./game.js?v=20261107-combat7"></script>
 </body>
 </html>
