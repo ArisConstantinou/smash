@@ -1,4 +1,5 @@
-import {VehicleEffects,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-colossus1';
+import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-props1';
+import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
 import {createGameRenderer} from './renderer-policy.js?v=20261108-contact1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
@@ -11,13 +12,13 @@ import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPi
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-perf14';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261107-aim13';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-props1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261107-perf14-fix1';
+import {createWorld} from './world.js?v=20261108-props1';
 import {GameAudio} from './audio.js?v=20261107-aim13';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-perf14';
-import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261108-colossus1';
+import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261108-props1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
@@ -84,7 +85,7 @@ let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,si
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0,landingPose=null;
-let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null;
+let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null,hydrantEffects=null;
 let punch=null,punchSequence=0,throwLock=null,throwPreviewTargets=[],dashFollowup=0;
 const movingVehicles=new Set();
 const THROW_CHAIN_RADIUS=9,THROW_MAX_HITS=5,HAMMER_LIGHTNING_SECONDS=2.8;
@@ -437,6 +438,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
   vehicleEffects?.dispose();
+  hydrantEffects?.dispose();
   destruction?.dispose();
   world?.dispose();
   world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
@@ -444,6 +446,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
   destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
   vehicleEffects=new VehicleEffects(scene,document,{onExplode:explodeVehicle,onBlink:(car,amount)=>flashMaterials(car,amount)});
+  hydrantEffects=new HydrantEffects(scene);
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
@@ -816,10 +819,15 @@ function explodeVehicle(car){
   if(d<radius){const dir=normalize(player.x-x,player.z-z);hurtPlayer(Math.round(55*falloff(d)),dir.x,dir.z,false);}
 }
 function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
-  if(o.dead||o.exploding||!Number.isFinite(damage)||damage<=0)return false;o.hp-=damage;o.flash=.15;o.shudder=.22;flashMaterials(o,.85);showHitPoints(o,damage);
-  if(isVehicle(o)&&o.hp<=0&&!o.explosionComplete){
+  if(o.dead||o.exploding||!Number.isFinite(damage)||damage<=0)return false;
+  if(o.type==='hydrant'&&!o.ruptured){
+    o.ruptured=true;o.hp=Math.max(o.maxHp*.5,o.hp-damage);o.flash=.15;o.shudder=.22;
+    hydrantEffects.activate(o);flashMaterials(o,.85);audio.play('hit',.65,{material:'metal'});showHitPoints(o,damage);return true;
+  }
+  o.hp-=damage;o.flash=.15;o.shudder=.22;flashMaterials(o,.85);showHitPoints(o,damage);
+  if(isExplosiveProp(o)&&o.hp<=0&&!o.explosionComplete){
     o.exploding=true;vehicleEffects.arm(o);
-    floatText(o.x,o.h+1,o.z,'ΕΚΡΗΞΗ — ΦΥΓΕ!','#ff915d',17);audio.play('carAlarm',.75);return false;
+    floatText(o.x,o.h+1,o.z,'ΕΚΡΗΞΗ — ΦΥΓΕ!','#ff915d',17);audio.play(isVehicle(o)?'carAlarm':'charge',.75);return false;
   }
   const nearest=impactPoint||nearestPoint(player.x,player.z,o),contact={x:nearest.x,y:nearest.y??Math.min(player.y+1,o.h),z:nearest.z};
   const fracture=destruction?.hit(o,contact,player);
@@ -831,7 +839,6 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
   fragments.add(o.x,o.h*.35,o.z,o.weight>2?30:16,palette,5+q*5,o.weight>2?.5:.25,true);
   pulse(o.x,o.z,Math.max(o.w,o.d)*.65,0xbb9f78,.3);
-  if(o.type==='barrel'){fragments.add(o.x,.7,o.z,18,[0xffaa43,0xff6f37,0xffde92],7,.13);pulse(o.x,o.z,3.5,0xff783d,.4);for(const e of [...enemies])if(Math.hypot(e.x-o.x,e.z-o.z)<3.6)hitEnemy(e,65,normalize(e.x-o.x,e.z-o.z),8,3);}
   const point=nearestPoint(player.x,player.z,o),dx=point.x+(player.x-point.x)*.2,dz=point.z+(player.z-point.z)*.2;
   if(lootCounter%4===0||Math.random()<.1)spawnDrop(dx,dz,'relic');
   else if(player.hp<player.maxHp*.85&&Math.random()<.35)spawnDrop(dx,dz,'heart');
@@ -1744,6 +1751,14 @@ function updatePlayer(dt){
   if(player.hurtAgo>8&&player.hp<player.maxHp)player.hp=Math.min(player.maxHp,player.hp+1.25*dt);
   if(stance!==stanceTarget){const step=dt/1.05;stance=Math.abs(stance-stanceTarget)<=step?stanceTarget:stance+Math.sign(stanceTarget-stance)*step;}
   const move=movementDirection(),moving=Math.hypot(move.x,move.z)>.01&&movementStrength()>.001;
+  if(leap&&moving&&dashTime<=0){
+    // Steer through continuous angles while retaining jump momentum. Turning
+    // on the unit circle handles an exact reversal without a zero-vector snap.
+    const from=Math.atan2(leap.dir.x,leap.dir.z),to=Math.atan2(move.x,move.z);
+    const delta=Math.atan2(Math.sin(to-from),Math.cos(to-from));
+    const angle=from+delta*(1-Math.exp(-18*dt*movementStrength()));
+    leap.dir={x:Math.sin(angle),z:Math.cos(angle)};
+  }
   updateAim(false);guarding=guardHeld&&!swing&&!spin&&!weaponBusy()&&!chargeStarted;
   // Walking follows travel; attacking follows deliberate manual direction.
   // Once contact starts, the stroke keeps its heading so a 180-degree mouse
@@ -2265,7 +2280,7 @@ function drawFX(){
     drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,enemyHealthColor(e.level),1,label);
   }
 
-  const objectNames={townhouse:'ΚΑΤΟΙΚΙΑ',apartment:'ΠΟΛΥΚΑΤΟΙΚΙΑ',shop:'ΚΑΤΑΣΤΗΜΑ',office:'ΓΡΑΦΕΙΑ',townhall:'ΔΗΜΑΡΧΕΙΟ',police:'ΑΣΤΥΝΟΜΙΚΟ ΤΜΗΜΑ',hospital:'ΝΟΣΟΚΟΜΕΙΟ',skyscraper:'ΟΥΡΑΝΟΞΥΣΤΗΣ',construction:'ΕΡΓΟΤΑΞΙΟ',warehouse:'ΑΠΟΘΗΚΗ',policecar:'ΠΕΡΙΠΟΛΙΚΟ',ambulance:'ΑΣΘΕΝΟΦΟΡΟ',car:'ΑΥΤΟΚΙΝΗΤΟ',wall:'ΤΟΙΧΟΣ',tree:'ΔΕΝΤΡΟ',barrel:'ΒΑΡΕΛΙ',crate:'ΚΙΒΩΤΙΟ',lamp:'ΦΑΝΑΡΙ',bench:'ΠΑΓΚΑΚΙ'};
+  const objectNames={townhouse:'ΚΑΤΟΙΚΙΑ',apartment:'ΠΟΛΥΚΑΤΟΙΚΙΑ',shop:'ΚΑΤΑΣΤΗΜΑ',office:'ΓΡΑΦΕΙΑ',townhall:'ΔΗΜΑΡΧΕΙΟ',police:'ΑΣΤΥΝΟΜΙΚΟ ΤΜΗΜΑ',hospital:'ΝΟΣΟΚΟΜΕΙΟ',skyscraper:'ΟΥΡΑΝΟΞΥΣΤΗΣ',construction:'ΕΡΓΟΤΑΞΙΟ',warehouse:'ΑΠΟΘΗΚΗ',policecar:'ΠΕΡΙΠΟΛΙΚΟ',ambulance:'ΑΣΘΕΝΟΦΟΡΟ',car:'ΑΥΤΟΚΙΝΗΤΟ',wall:'ΤΟΙΧΟΣ',tree:'ΔΕΝΤΡΟ',barrel:'ΒΑΡΕΛΙ',hydrant:'ΚΡΟΥΝΟΣ',crate:'ΚΙΒΩΤΙΟ',lamp:'ΦΑΝΑΡΙ',bench:'ΠΑΓΚΑΚΙ'};
   for(const o of world.objects)if(!o.dead&&(o.hurtTimer>0||aimPreview?.contact?.target===o)){
     if(o.isBuilding)drawBuildingHP(o,objectNames[o.type]||'ΚΤΙΡΙΟ',Math.min(1,o.hurtTimer||1));
     else drawHP(o.x,Math.min(o.h,player.y+4)+.4,o.z,o.hp,o.maxHp,'#ffd08b',Math.min(1,o.hurtTimer||1),objectNames[o.type]||'ΑΝΤΙΚΕΙΜΕΝΟ');
@@ -2629,7 +2644,7 @@ function frame(now){
   if(phase==='playing')updateObjects(simulated);
   world.update(environmentDt,visualTime,player,weather);
   destruction?.update(environmentDt,player,{active:phase==='playing'});
-  if(phase==='playing')vehicleEffects?.update(environmentDt,player,camera);
+  if(phase==='playing'){vehicleEffects?.update(environmentDt,player,camera);hydrantEffects?.update(environmentDt,player,camera);}
   updateEffects(phase==='paused'||phase==='settings'?0:realDt);
   const desired=phase==='menu'?new THREE.Vector3(-5,.6,3.5):new THREE.Vector3(player.x+facing.x*.8,.6+player.y,player.z+facing.z*.8);
   updateBattleCamera(realDt,desired);
@@ -2698,8 +2713,8 @@ async function init(){
   // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync){
     const blast=vehicleEffects.explosion;blast.mesh.visible=true;blast.geometry.setDrawRange(0,6);
-    beastRig.visible=true;beastCombat.warm();
-    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
+    beastRig.visible=true;beastCombat.warm();hydrantEffects.warm();
+    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();hydrantEffects.hide();blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
   }
   gameReady=true;forgeMenu.setReady(true);updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη. Το επόμενο χτύπημα είναι δικό σου.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');

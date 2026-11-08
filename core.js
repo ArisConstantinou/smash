@@ -163,7 +163,7 @@ export function attackStats(stats, charge = 0) {
 }
 export function destructionPercent(objects) {
   let destroyed = 0, total = 0;
-  for (const o of objects) { total += o.weight || 1; if (o.dead) destroyed += o.weight || 1; }
+  for (const o of objects) { total += o.weight || 1; if (o.dead || o.type==='hydrant'&&o.ruptured) destroyed += o.weight || 1; }
   return total > 0 ? clamp(destroyed / total * 100, 0, 100) : 0;
 }
 export const UPGRADE_DEFS = [

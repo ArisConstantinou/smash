@@ -33,6 +33,7 @@ import * as weaponRest from '../weapon-rest.js';
 import * as throwIndicatorModule from '../throw-indicator.js';
 import * as barbedContact from '../barbed-contact.js';
 import * as vehicleEffectsModule from '../vehicle-effects.js';
+import * as hydrantEffectsModule from '../hydrant-effects.js';
 import * as performanceModule from '../performance-hud.js';
 import * as weaponPoseModule from '../weapon-pose.js';
 
@@ -188,6 +189,7 @@ function synthetic(exports, identifier) {
 }
 const imports = new Map([
   ['./vehicle-effects.js', synthetic({...vehicleEffectsModule,preloadVehicleExplosion:async()=>{}}, 'real-vehicle-effects')],
+  ['./hydrant-effects.js', synthetic(hydrantEffectsModule, 'real-hydrant-effects')],
   ['./renderer-policy.js', synthetic({createGameRenderer: async ({canvas}) => new FakeRenderer({canvas})}, 'renderer-test-surface')],
   ['./collision-wasm.js', synthetic({loadCollisionWasm: async () => false, collisionWasmStatus: () => ({active:false})}, 'wasm-bootstrap-test-surface')],
   ['./performance-hud.js', synthetic(performanceModule, 'real-performance-hud')],
@@ -225,7 +227,7 @@ const testingExports = `
 export const __integration = {
   get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
-  get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},
+  get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},get hydrantEffects(){return hydrantEffects;},
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,segmentObjects,
   get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},get vehicleEffects(){return vehicleEffects;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
@@ -1089,6 +1091,21 @@ test('a moving thumb can tap a real hammer hit or trigger an aimed leap with ano
     playerSteps(.2); assert.ok(api.player.y > 3);
     assert.ok(api.touch.x > .99);
   });
+});
+
+test('jump steering follows arbitrary joystick angles and real diagonal keys without extra speed',()=>{
+ touchArena(()=>{
+  moveStick('pointerdown',1,0);api.startLeap();playerSteps(.1);
+  moveStick('pointermove',.31,-.95);const desired=core.screenMovement(.31,-.95),start={...api.player};
+  playerSteps(.15);assert.ok(api.leap&&api.player.y>0);
+  assert.ok(api.leap.dir.x*desired.x+api.leap.dir.z*desired.z>.95,'A changed airborne thumb direction must steer this jump');
+  const distance=Math.hypot(api.player.x-start.x,api.player.z-start.z);assert.ok(distance<=8.2*.15+.001,'Steering must not add diagonal speed');
+ });
+ arena(1);key('KeyW',true);key('KeyD',true);api.startLeap();playerSteps(.05);
+ key('KeyW',false);key('KeyD',false);key('KeyS',true);key('KeyA',true);playerSteps(.25);
+ const desired=core.screenMovement(-1,1);assert.ok(api.leap.dir.x*desired.x+api.leap.dir.z*desired.z>.95);
+ api.dodge();const heading={...api.leap.dir};key('KeyS',false);key('KeyA',false);key('KeyW',true);playerSteps(.08);
+ close(api.leap.dir.x,heading.x);close(api.leap.dir.z,heading.z);assert.equal(api.dodge(),false);
 });
 
 test('mobile air smash requires a fresh attack during the jump and its one button follows the landing state', () => {
@@ -3949,9 +3966,9 @@ test('large whirlwinds retain real wire contact at inner and outer enemy distanc
  mouseAttack(false);
 });
 
-test('fatal cars warn before exploding once, damage buildings/enemies/player and expire their flames',()=>{
+for(const type of ['car','barrel'])test('fatal '+type+' warns before exploding once, damages buildings/enemies/player and expires its flames',()=>{
  arena(1,{test:false});
- const car=placeObject('car',0,2,{hp:1000,maxHp:1000});car.mesh.visible=true;
+ const car=placeObject(type,0,2,{hp:1000,maxHp:1000});car.mesh.visible=true;
  const wall=placeObject('wall',2.5,2,{w:.2,d:2,h:3,hp:1000,maxHp:1000});
  const near=stationaryEnemy('brute',-2,2),far=stationaryEnemy('brute',-7,2);
  near.hp=near.maxHp=far.hp=far.maxHp=1000;
@@ -3990,6 +4007,29 @@ test('region progress counts a real enemy kill once and resets on a new run',()=
  api.hitEnemy(enemy,100,{x:0,z:1},0,0);api.updateHUD();
  assert.equal(elements.get('goalValue').textContent,'1%','A defeated body cannot award progress again');
  arena(1,{test:false});api.updateHUD();assert.equal(elements.get('goalValue').textContent,'0%');
+});
+
+test('barrels and cars chain both ways, each retaining its own complete fuse',()=>{
+ for(const [first,second]of [['barrel','car'],['car','barrel'],['barrel','barrel']]){
+  arena(1,{test:false});const a=placeObject(first,0,2,{hp:100,maxHp:100});
+  const b=api.world.objects.find(o=>o.type===second&&o!==a);api.world.relocateObject(b,2,2);b.hp=60;
+  api.hurtObject(a,101);api.vehicleEffects.update(1.21,api.player,api.camera);
+  assert.equal(a.dead,true);assert.equal(b.dead,false);assert.equal(b.exploding,true);
+  const source=api.vehicleEffects.sources.get(b);close(source.fuse,1.2);api.hurtObject(b,1000);close(source.fuse,1.2);
+  api.vehicleEffects.update(1.21,api.player,api.camera);assert.equal(b.dead,true);
+ }
+});
+
+test('a first hydrant impact opens three real outlets; repeated hits cannot duplicate water or progress',()=>{
+ arena();const o=placeObject('hydrant',0,3),effects=api.hydrantEffects;
+ api.hurtObject(o,1000);assert.equal(o.dead,false);assert.equal(o.ruptured,true);assert.equal(effects.sources.size,1);
+ const progress=core.destructionPercent(api.world.objects);effects.update(.4,api.player,api.camera);
+ assert.equal(effects.water.geometry.drawRange.count,3*18*6*6);assert.ok(effects.spray.geometry.drawRange.count>0);
+ assert.ok(o.mesh.userData.caps[0].position.x>.2);assert.ok(o.mesh.userData.caps[1].position.y<.4);
+ api.hurtObject(o,1000);assert.equal(o.dead,true);effects.update(.1,api.player,api.camera);
+ assert.equal(effects.sources.size,1);assert.equal(effects.water.geometry.drawRange.count,18*6*6,'A destroyed body emits only at its ground-level broken base');
+ close(core.destructionPercent(api.world.objects),progress);
+ arena();assert.equal(effects.disposed,true);assert.equal(effects.sources.size,0);assert.equal(effects.water.parent,null);assert.equal(effects.spray.parent,null);
 });
 
 test('enemy kills and destroyed scenery jointly summon the final boss',()=>{

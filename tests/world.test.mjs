@@ -13,6 +13,14 @@ const distanceToBox=(x,z,o)=>Math.hypot(Math.max(0,Math.abs(x-o.x)-o.w/2),Math.m
 const kinds=['townhouse','apartment','shop','office','townhall','police','hospital','skyscraper','construction','warehouse'];
 test.after(()=>world.dispose());
 
+test('hydrant cap pivots remain live inside the otherwise cached static city',()=>{
+ const o=world.objects.find(o=>o.type==='hydrant');assert.ok(o);
+ const cap=o.mesh.userData.caps[0],before=cap.getWorldPosition(new THREE.Vector3());
+ assert.equal(cap.matrixAutoUpdate,true);cap.position.y+=.2;o.mesh.updateWorldMatrix(true,true);
+ const after=cap.getWorldPosition(new THREE.Vector3());assert.ok(after.y-before.y>.17);
+ cap.position.y-=.2;assert.equal(o.mesh.children.find(n=>n.isMesh).matrixAutoUpdate,false);
+});
+
 test('city contains 100 substantial, damageable buildings with civic and skyline variety',()=>{
   assert.equal(CITY_BUILDING_COUNT,100);
   assert.equal(world.buildingCount,100);

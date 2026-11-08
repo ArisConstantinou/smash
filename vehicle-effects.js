@@ -7,6 +7,7 @@ import {VehicleExplosionBatch} from './vehicle-explosion.js?v=20261108-colossus1
 export {preloadVehicleExplosion} from './vehicle-explosion.js?v=20261108-colossus1';
 export const VEHICLE_SMOKE_HP=.55,VEHICLE_FIRE_HP=.28,VEHICLE_EFFECT_LIMIT=16;
 export const VEHICLE_FUSE_SECONDS=1.2,VEHICLE_BLAST_RADIUS=4.2;
+export const isExplosiveProp=o=>isVehicle(o)||o?.type==='barrel';
 export function vehicleDamageStage(car){
  if(!isVehicle(car)||!Number.isFinite(car.maxHp)||car.maxHp<=0)return 0;
  return car.hp/car.maxHp<=VEHICLE_FIRE_HP?2:car.hp/car.maxHp<=VEHICLE_SMOKE_HP?1:0;
@@ -41,7 +42,10 @@ export class VehicleEffects{
   source.stage=Math.max(source.stage,stage);
  }
  arm(car){
-  this.damage(car);const s=this.sources.get(car);if(!s||s.armed||s.destroyed)return false;
+  if(this.disposed||!isExplosiveProp(car)||car.explosionComplete)return false;
+  this.damage(car);let s=this.sources.get(car);
+  if(!s){s={car,stage:0,deadTime:0,seed:(car.seed||1)*.37,visualScale:.72};this.sources.set(car,s);}
+  if(s.armed||s.destroyed)return false;
   s.armed=true;s.fuse=VEHICLE_FUSE_SECONDS;return true;
  }
  burst(s){
@@ -75,7 +79,7 @@ export class VehicleEffects{
    car.mesh.updateMatrixWorld(true);
    if(s.destroyed)this.origin.copy(s.burstOrigin);
    else{this.origin.set(0,Math.min(car.h*.68,1.15),-car.d*.22);car.mesh.localToWorld(this.origin);}
-   for(let i=0;i<8;i++){
+   if(s.stage>0||s.destroyed)for(let i=0;i<8;i++){
     const t=s.destroyed?Math.min(.99,s.deadTime/2.2+i*.035):((this.time*.28+i/8+s.seed)%1+1)%1,spread=.25+t*.85;
     this.position.set(this.origin.x+Math.sin(i*2.4+s.seed)*spread+t*.5,this.origin.y+t*3.5,this.origin.z+Math.cos(i*3.1)*spread);
     const size=(.8+t*1.7)*Math.sin(Math.PI*t)*fade;
