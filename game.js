@@ -1,22 +1,27 @@
-import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-props1';
+import {createMountWorkshop} from './mount-workshop.js?v=20261108-mount1';
+import {applyPlayerCustomization} from './player-customization.js?v=20261108-mount1';
+import {MountWeapons} from './mount-weapons.js?v=20261108-mount1';
+import {MountRide} from './mount-ride.js?v=20261108-mount1';
+import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261108-mount1';
+import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
-import {LevelStorm,stormStats} from './level-storm.js?v=20261108-camera1';
-import {GroundScars} from './ground-scars.js?v=20261108-storm2';
+import {LevelStorm,stormStats} from './level-storm.js?v=20261108-mount1';
+import {GroundScars} from './ground-scars.js?v=20261108-mount1';
 import {createGameRenderer} from './renderer-policy.js?v=20261108-contact1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261107-perf14-fix2';
-import {createForgeMenu} from './menu.js?v=20261108-readable1';
+import {createForgeMenu} from './menu.js?v=20261108-mount1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
-import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-storm1';
+import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
-import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-storm1';
+import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-mount1';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-grip1';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-mount1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261108-grip1';
+import {createWorld} from './world.js?v=20261108-mount1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -26,7 +31,7 @@ import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
 import {createThrowIndicator} from './throw-indicator.js?v=20261107-perf14-fix3';
 import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
-import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261108-storm1';
+import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261108-mount1';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
 import {beastObstacleContacts} from './beast-obstacles.js?v=20261108-colossus1';
@@ -60,6 +65,9 @@ audio.preload?.();
 // Sound tests work even while the renderer is still loading.
 for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
 let destruction=null;
+let mountedAimYaw=0;
+let mountRide=null,mountWeapons=null,mountWorkshop=null,workshopPhase='menu',activeStartingLevel=1;
+let garage=restoreGarage(read('ironfall.character',null)?.garage),playerCustomization={hp:0,power:1,speed:1,defence:0};
 let forgeMenu=null,gameReady=false,menuBackdropReady=false;
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker,throwIndicator,occlusionDepth;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
@@ -141,7 +149,7 @@ class Fragments {
     this.capacity=680;this.items=[];this.dummy=new THREE.Object3D();
     this.material=new THREE.MeshLambertMaterial({color:0xffffff,flatShading:true});
     this.mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),this.material,this.capacity);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.mesh.count=0;this.mesh.frustumCulled=false;
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);this.mesh.count=0;this.mesh.visible=false;this.mesh.frustumCulled=false;
     this.mesh.castShadow=true;scene.add(this.mesh);
   }
   add(x,y,z,count,palette,force=4,size=0.14,long=false) {
@@ -165,9 +173,10 @@ class Fragments {
       this.dummy.position.set(p.x,p.y,p.z);this.dummy.rotation.set(p.rx,0,p.rz);this.dummy.scale.set(p.sx*scale,p.sy*scale,p.sz*scale);this.dummy.updateMatrix();
       this.mesh.setMatrixAt(count,this.dummy.matrix);this.mesh.setColorAt(count,cachedColor(p.color));count++;
     }
-    this.mesh.count=count;this.mesh.instanceMatrix.needsUpdate=true;if(this.mesh.instanceColor)this.mesh.instanceColor.needsUpdate=true;
+    this.mesh.count=count;this.mesh.visible=count>0;this.mesh.instanceMatrix.needsUpdate=true;if(this.mesh.instanceColor)this.mesh.instanceColor.needsUpdate=true;
   }
-  clear(){this.items.length=0;this.mesh.count=0;}
+  warm(){this.mesh.setColorAt(0,cachedColor(0xffffff));this.mesh.count=this.capacity;this.mesh.visible=true;}
+  clear(){this.items.length=0;this.mesh.count=0;this.mesh.visible=false;}
 }
 let fragments;
 class ImpactClouds {
@@ -194,7 +203,8 @@ class ImpactClouds {
     }
   }
   update(dt){for(const p of this.pool){if(p.life<=0)continue;p.life-=dt;if(p.life<=0){p.mesh.visible=false;continue;}const t=1-p.life/p.max;p.x+=p.vx*dt;p.z+=p.vz*dt;p.y+=p.vy*dt;p.mesh.position.set(p.x,p.y,p.z);p.mesh.scale.setScalar(p.size*(p.star?1+t*.5:1+t*1.65));p.mesh.material.opacity=(p.star?1:.5)*(1-t);}}
-  clear(){for(const p of this.pool){p.life=0;p.mesh.visible=false;}}
+  warm(){for(let i=0;i<this.pool.length;i++){const p=this.pool[i];p.mesh.material.map=i<2?this.star:this.dust;p.mesh.material.opacity=1;p.mesh.visible=true;}}
+  clear(){for(const p of this.pool){p.life=0;p.mesh.visible=false;p.mesh.material.opacity=0;}}
 }
 let impactClouds;
 function frightenNearby(x,z,severity=1,radius=4.3,exclude=null){
@@ -287,7 +297,7 @@ function setPhase(next){
   performanceMonitor.reset();
   if(next!=='playing'){if(throwIndicator)throwIndicator.mesh.visible=false;audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
-  syncTouchControls();
+  syncTouchControls();syncMountHud();
 }
 function clearInput(){
   for(const reset of inputResetters)reset();
@@ -436,6 +446,7 @@ function updateHammerAura(){
   hammerAura.bolts.geometry.attributes.position.needsUpdate=true;
 }
 function resetWorld(keepUpgrades=false,startLevel=1){
+  mountRide?.reset(hero);mountWeapons?.reset();
   levelStorm?.reset();
   groundScars?.reset();
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
@@ -453,7 +464,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   hammerLightning=0;if(hammerAura){hammerAura.root.visible=false;hammerAura.lastPattern=-1;}
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
-  vehicleEffects?.dispose();
+  vehicleEffects?.reset();
   hydrantEffects?.dispose();
   destruction?.dispose();
   occlusionDepth?.reset();
@@ -463,7 +474,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
   destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
-  vehicleEffects=new VehicleEffects(scene,document,{onExplode:explodeVehicle,onBlink:(car,amount)=>flashMaterials(car,amount)});
+  if(!vehicleEffects||vehicleEffects.disposed)vehicleEffects=new VehicleEffects(scene,document,{onExplode:explodeVehicle,onBlink:(car,amount)=>flashMaterials(car,amount)});
   hydrantEffects=new HydrantEffects(scene);
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
@@ -474,6 +485,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();updateHUD(true);
 }
 function startGame(startLevel=1,options={}){
+  garage=restoreGarage(read('ironfall.character',null)?.garage);activeStartingLevel=Number.isFinite(startLevel)?clamp(Math.floor(startLevel),1,MAX_CHARACTER_LEVEL):1;
   const requested=typeof startLevel==='number'?startLevel:1;
   activeCity=options.city??null;testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));resetWorld(false,requested);
   if(options.resume){
@@ -486,7 +498,7 @@ function startGame(startLevel=1,options={}){
 }
 function persistCharacter(){
   if(!gameReady||testRun||phase==='menu'||phase==='settings'&&previousPhase==='menu')return;
-  save('ironfall.character',{character,levels});updateSavedCharacter();
+  save('ironfall.character',{character,levels,garage});updateSavedCharacter();
 }
 function updateSavedCharacter(){
   const stored=restoreCharacterProgression(read('ironfall.character',null)?.character),button=$('resumeCharacterButton');
@@ -504,7 +516,9 @@ function applyStats(){
   characterStats=getCharacterStats(character);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);
   stats={...calculateStats(levels),power:characterStats.power*(1+(levels.power||0)*.25),size:characterStats.size*(1+(levels.size||0)*.18),
     range:characterStats.range*(1+(levels.range||0)*.22+(levels.size||0)*.08),speed:characterStats.speed*(1+(levels.speed||0)*.12),maxHp:characterStats.maxHp+(levels.vitality||0)*25};
+  playerCustomization=playerCustomStats(garage,{hasShield:characterStats.hasShield});stats.power*=playerCustomization.power;stats.speed*=playerCustomization.speed;stats.maxHp+=playerCustomization.hp;
   player.maxHp=stats.maxHp;player.hp=Math.min(player.hp,player.maxHp);syncCharacterModel();
+  mountRide?.sync(garage,level);applyPlayerCustomization(hero,garage);if(mountRide?.active){if(world&&!mountRide.clear(world,mountRide.body.x,mountRide.body.z,mountRide.body.y,mountRide.yaw)){mountRide.dismount(player,hero);toast('ΝΕΟΣ ΕΞΟΠΛΙΣΜΟΣ','Μετακινήσου σε ανοικτό χώρο για επιβίβαση.');}else{mountRide.pose(hero);hero.userData.updateGrip();}}
   if(hero.userData.hammerHead)hero.userData.hammerHead.scale.setScalar(stats.size);
   if($('powerValue'))$('powerValue').textContent=Math.round(stats.power);
   if($('sizeValue'))$('sizeValue').textContent=stats.size.toFixed(2)+'×';
@@ -636,15 +650,16 @@ function manualAttackDirection(){
   if(touch.aimX||touch.aimY)return screenMovement(touch.aimX,touch.aimY);
   const move=movementDirection();return move.x||move.z?move:{...facing};
 }
+function weaponPoseRotation(){const q=hero.userData.weaponRig.quaternion.clone();return mountRide?.active?q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),-mountedAimYaw)):q;}
 function beginSwing(){
   if(phase!=='playing'||!chargeStarted||spin||attackCooldown>0||weaponBusy()||guarding)return;
   updateAim(false);const move=movementDirection();
   facing=manualAttackDirection();spinCharge=null;
-  hero.rotation.y=Math.atan2(facing.x,facing.z);
+  if(!mountRide?.active)hero.rotation.y=Math.atan2(facing.x,facing.z);
   const q=charge,details=attackStats(stats,q);
-  const twoHanded=stance>.9,comboIndex=twoHanded?1:0;
+  const twoHanded=!mountRide?.active&&stance>.9,comboIndex=twoHanded?1:0;
   const variant=selectHammerSwing(swingSequences[comboIndex],{twoHanded,moving:!!(move.x||move.z)});
-  swing={time:0,q,...details,twoHanded,variant,duration:getHammerSwingDuration(variant)+q*.10,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:hero.userData.weaponRig.quaternion.clone(),fromPosition:hero.userData.weaponRig.position.clone()};
+  swing={time:0,q,...details,twoHanded,variant,duration:getHammerSwingDuration(variant)+q*.10,damage:Math.round(details.damage*stancePower()),fx:facing.x,fz:facing.z,hit:false,hits:new Set(),blocked:false,fromRotation:weaponPoseRotation(),fromPosition:hero.userData.weaponRig.position.clone()};
   if(dashFollowup>0){swing.damage=Math.round(swing.damage*1.25);swing.dashBoost=true;dashFollowup=0;}
   swing.fromBody=hero.userData.body.rotation.clone();swing.fromBodyY=hero.userData.body.position.y;
   chargeStarted=false;charge=0;spinRecovery=null;attackCooldown=swing.duration+.012;audio.play('swing',q,{variant,duration:swing.duration,weapon:characterStats.weaponTier<2?'wood':'metal',exert:true});
@@ -653,8 +668,8 @@ function beginSwing(){
 function beginPunch(){
   if(phase!=='playing'||!throwFlight||punch||kick||throwWindup||attackCooldown>0||guardHeld||dashTime>0)return false;
   updateAim(false);const dir=manualAttackDirection();
-  facing={...dir};hero.rotation.y=Math.atan2(dir.x,dir.z);
-  const spec=punchStats(level,levels.power,punchSequence++);
+  facing={...dir};if(!mountRide?.active)hero.rotation.y=Math.atan2(dir.x,dir.z);
+  const spec=punchStats(level,levels.power,punchSequence++);spec.damage=Math.round(spec.damage*playerCustomization.power);
   punch={...spec,time:0,hit:false,dir:{...dir}};
   if(dashFollowup>0){punch.damage=Math.round(punch.damage*1.25);punch.dashBoost=true;dashFollowup=0;}
   poseHero(0);hero.updateMatrixWorld(true);
@@ -675,13 +690,14 @@ function punchImpact(from,hand){
   shake=Math.max(shake,.045);hitStop=Math.max(hitStop,.006);checkGoal();return true;
 }
 function startSpin(previousHits=null){
+  if(mountRide?.active){spinCharge=null;return false;}
   if(spin)return true;
   if(phase!=='playing'||swing||weaponBusy()||guardHeld||!spinCharge||spinCharge.life<=0)return false;
   const rig=hero.userData.weaponRig;
   hero.updateMatrixWorld(true);const entryHead=hero.worldToLocal(hero.userData.hammerHead.getWorldPosition(new THREE.Vector3()));
   spin={startLocalAzimuth:Math.atan2(entryHead.x,entryHead.z),entryYawOffset:0,time:0,angle:hero.rotation.y,rotation:0,cycle:0,momentum:1,hitTimes:new Map(),hitAngles:new Map(),touching:new Set(),entryHits:new Set(previousHits||spinCharge.hits),attackDir:{...facing},trailTime:0,soundTime:-1,recoil:0,
     damage:Math.round(stats.power*SPIN_DAMAGE_SCALE*stancePower()),knockback:4.6,lift:1.1,
-    fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromBody:hero.userData.body.rotation.clone(),fromBodyY:hero.userData.body.position.y};
+    fromRotation:weaponPoseRotation(),fromPosition:rig.position.clone(),fromBody:hero.userData.body.rotation.clone(),fromBodyY:hero.userData.body.position.y};
   spinCharge=null;spinRecovery=null;chargeStarted=false;charge=0;attackBuffer=null;attackCooldown=0;guarding=false;
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);rememberBarbedSegment(spin);audio.play('swing',.3,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});return true;
 }
@@ -689,7 +705,7 @@ function stopSpin(exhausted=false){
   if(!spin)return;
   resetAttackChain();
   const rig=hero.userData.weaponRig;
-  spinRecovery={time:0,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone()};
+  spinRecovery={time:0,fromRotation:weaponPoseRotation(),fromPosition:rig.position.clone()};
   facing=pointer.active?{...aim}:touch.aimX||touch.aimY?screenMovement(touch.aimX,touch.aimY):{...spin.attackDir};
   spinCharge=null;if(exhausted)attackCooldown=Math.max(attackCooldown,.14);
   hero.rotation.y=Math.atan2(facing.x,facing.z);spin=null;
@@ -925,7 +941,7 @@ function impact(from=headPrevious,to=headNow){
     if(!headContact&&characterStats.weaponTier>=2)hitBarbedTarget(e,s,contact);
     else{hardHits++;if(e===boss)hitBoss(s.damage,dir,s.knockback);else hitEnemy(e,s.damage,dir,s.knockback,s.lift,contact);}
   }
-  if(wall){s.hits.add(wall.target);hits++;hardHits++;if(hurtObject(wall.target,s.damage,s.q,wall))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=hero.userData.weaponRig.quaternion.clone();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
+  if(wall){s.hits.add(wall.target);hits++;hardHits++;if(hurtObject(wall.target,s.damage,s.q,wall))breaks++;else{s.blocked=true;s.blockTime=s.time;s.blockRotation=weaponPoseRotation();s.blockPosition=hero.userData.weaponRig.position.clone();s.blockPose=sampleHammerSwing(s.time/s.duration,{twoHanded:s.twoHanded,charge:s.q,variant:s.variant});attackCooldown=Math.min(attackCooldown,.125);}}
   if(hits){if(chargeHeld)spinCharge={life:.45,hits:s.hits};s.hit=true;shake=Math.max(shake,(.105+s.q*.14)*(breaks?1.2:1));if(!s.feedbackDone){s.feedbackDone=true;s.contactTime=s.time;hitStop=(s.variant==='two-overhead'?.032:s.variant==='two-cross'?.026:.022)+s.q*.006;}}
   if(hardHits&&s.charged&&!s.quakeDone){
     s.quakeDone=true;const radius=2.3+stats.quake*.7;pulse(to.x,to.z,radius,0xffd48b,.35);
@@ -935,7 +951,79 @@ function impact(from=headPrevious,to=headNow){
   checkGoal();
 }
 
+function mountProjectileHit(target,damage,dir,point,id){
+  if(target===boss)hitBoss(damage,dir,2);
+  else if(enemies.includes(target))hitEnemy(target,damage,dir,2,.3,point,{weapon:'mount-'+id});
+  else hurtObject(target,damage,0,point,'mount-'+id);
+}
+function mountProjectileBlast(point,damage,radius,direct){
+  const targets=[...world.nearObjects(point.x,point.z,radius+2),...enemies,...(boss&&!boss.dead?[boss]:[])];
+  for(const target of targets){
+    if(target.dead)continue;
+    const near=target.w?nearestPoint(point.x,point.z,target):{x:target.x,z:target.z};
+    const bottom=target.y||0,top=bottom+(target.height||target.h||1.6),y=clamp(point.y,bottom,top);
+    const distance=Math.hypot(near.x-point.x,near.z-point.z,y-point.y);if(distance>radius+(target.radius||0)&&target!==direct)continue;
+    const dir=normalize(target.x-point.x,target.z-point.z),end={x:near.x,y,z:near.z};
+    const obstruction=firstHammerHit(point,end,world.nearObjects(point.x,point.z,radius+2),.01);
+    if(target!==direct&&obstruction&&obstruction.target!==target)continue;
+    mountProjectileHit(target,Math.round(damage*Math.max(.3,1-distance/radius)),dir,point,'rockets');
+  }
+  if(Math.hypot(player.x-point.x,player.z-point.z,player.y+.8-point.y)<radius){
+    const end={x:player.x,y:player.y+.8,z:player.z};
+    if(!firstHammerHit(point,end,world.nearObjects(point.x,point.z,radius+2),.01))hurtPlayer(damage*.5,player.x-point.x,player.z-point.z,false);
+  }
+}
+function initMountWorkshop(){
+  mountWorkshop=createMountWorkshop({document,
+    getContext(){
+      const menu=phase==='menu';if(!menu)return {menu:false,garage,character,materials:character.materials,level,test:testRun,weaponTier:characterStats.weaponTier,actualMountKind:mountRide?.kind,actualMount:mountRide?.snapshot()};
+      const stored=read('ironfall.character',null),c=restoreCharacterProgression(stored?.character)||createCharacterProgression();
+      return {menu:true,garage:restoreGarage(stored?.garage),character:c,materials:c.materials,level:c.level,test:false,weaponTier:getCharacterStats(c).weaponTier};
+    },
+    onOpen(){workshopPhase=phase;if(phase==='playing')setPhase('paused');else forgeMenu?.setVisible(false);},
+    onClose(){if(workshopPhase==='playing'&&phase==='paused')setPhase('playing');else if(phase==='menu')forgeMenu?.setVisible(true);},
+    onChange(context){garage=context.garage;if(context.menu){const stored=read('ironfall.character',null);save('ironfall.character',{character:context.character,levels:stored?.levels||{},garage});updateSavedCharacter();}else{applyStats();persistCharacter();}},
+    canModify({kind,slot}){if(mountRide?.active&&(slot==='chassis'||slot==='mobility'))return 'Αποβιβάσου πριν αλλάξεις σασί ή σύστημα πτήσης.';return '';},
+    onRepair(context){if(context.repairKind!==mountRide.kind)return {ok:false,reason:'Επίλεξε το ενεργό όχημα.'};const result=mountRide.repair(context.materials,{test:context.test});if(result.ok)persistCharacter();return result;},
+    onTestStart:n=>startGame(n,{test:true,city:getLevelCity(Math.min(n,15))}),
+  });
+  $('menuMountWorkshopButton').disabled=!gameReady;$('menuMountWorkshopButton').onclick=() => {if(gameReady)mountWorkshop.open();};
+  $('mountWorkshopButton').onclick=()=>mountWorkshop.open();
+}
+function initMountControls(){
+  const panel=$('mountControls');
+  $('mountToggle').onclick=toggleMount;
+  for(const [id,action] of [['mountUp','up'],['mountDown','down'],['mountBoost','boost']]){const b=$(id);
+    b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);mountTouch[action]=true;};
+    for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>mountTouch[action]=false);
+  }
+  inputResetters.push(()=>{for(const key in mountTouch)mountTouch[key]=false;});
+}
+const mountTouch={up:false,down:false,boost:false};
+function toggleMount(){
+  if(phase!=='playing'||leap||swing||spin||throwWindup||throwFlight||kick)return false;
+  mountRide.sync(garage,level);cancelAttack();guardHeld=guarding=false;
+  if(!mountRide.active&&boss&&!boss.dead&&!mountRide.clear(beastCollision,player.x,player.z,player.y,hero.rotation.y)){toast('ΔΕΝ ΥΠΑΡΧΕΙ ΧΩΡΟΣ','Απομακρύνσου από τον Κολοσσό.');return false;}
+  const result=mountRide.toggle(player,hero,world);
+  if(mountRide.active){stance=stanceTarget=0;hero.userData.setStance(0);}
+  poseHero(0);syncMountHud();return result;
+}
+function syncMountHud(){
+  const panel=$('mountControls');if(!panel)return;panel.hidden=phase!=='playing';
+  const v=mountRide?.snapshot();if(!v)return;
+  panel.classList.toggle('hover-flight',v.active&&v.hover);
+  $('mountToggle').textContent=(v.active?'ΑΠΟΒΙΒΑΣΗ':'ΕΠΙΒΙΒΑΣΗ')+' · C';
+  $('mountReadout').textContent=(v.kind==='bicycle'?'ΠΟΔΗΛΑΤΟ':v.kind==='motorcycle'?'ΜΟΤΟΣΙΚΛΕΤΑ':'SCI-FI')+' · '+v.hp+'/'+v.maxHp+' HP · '+v.energy+'/'+v.maxEnergy+' ⚡'+(v.hover?' · '+v.altitude+' m':'');
+  $('mountFlight').hidden=!v.active||!v.hover;
+  $('dashName').textContent=v.active?'BOOST':'ΑΠΟΦΥΓΗ';
+  $('leapDesktopName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΨΗΛΟ ΑΛΜΑ';$('leapTouchName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΑΛΜΑ';
+  for(const id of ['stanceButton','mobileStanceButton'])if($(id))$(id).disabled=v.active;
+  if(v.active){$('attackName').textContent='ΜΟΝΟ ΧΕΡΙ';$('attackValue').textContent='ΚΡΑΤΑ · ΣΥΝΕΧΗ ΧΤΥΠΗΜΑΤΑ';$('dashValue').textContent='ΚΡΑΤΑ ΓΙΑ ΩΘΗΣΗ';$('leapValue').textContent=v.hover?'ΚΡΑΤΑ ΓΙΑ ΑΝΟΔΟ':'ΑΠΟΒΙΒΑΣΗ + ΑΛΜΑ';for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent='ΜΟΝΟ ΧΕΡΙ · ΤΙΜΟΝΙ';}
+  for(const [id,label]of [['dashButton','Κράτα για boost με κατανάλωση ενέργειας.'],['leapButton',v.hover?'Κράτα για άνοδο. X ή το κουμπί καθόδου για κάθοδο.':'Αποβίβαση από το όχημα και άλμα.']]){const b=$(id),text=v.active?label:b.dataset[touchLayout?'touchLabel':'desktopLabel'];b.setAttribute('aria-label',text);b.title=text;}
+
+}
 function toggleStance(){
+  if(mountRide?.active){toast('ΜΟΝΟ ΧΕΡΙ','Το αριστερό χέρι παραμένει στο τιμόνι.');return;}
   if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
   if(phase!=='playing'||kick||swing||throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005)return;
   cancelAttack();spinRecovery=null;stanceTarget=stanceTarget===0?1:0;guardHeld=false;guarding=false;
@@ -1022,6 +1110,7 @@ function updateAimPreview(withThrow=!!(touchThrowAim||throwWindup)){
     {origin:start,maxHits:characterStats.canRicochet?characterStats.maxChainHits:1,radius:throwRadius,chainRadius:THROW_CHAIN_RADIUS}):[];
 }
 function startLeap(){
+  if(mountRide?.active){if(mountRide.stats.hover)return true;mountRide.dismount(player,hero);}
   if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
   if(phase!=='playing'||leap||leapCooldown>0||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
   punch=null;kick=null;cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;swing=null;attackCooldown=0;landingRecovery=0;landingPose=null;
@@ -1073,7 +1162,7 @@ function startThrow(direction=null,channelAngle=null,confirmedTarget=undefined){
   const launchDirection=locked?normalize(locked.x-player.x,locked.z-player.z):{...aim};
   const rig=hero.userData.weaponRig;
   cancelAttack();spinRecovery=null;throwWindup={time:0,dir:launchDirection,channelAngle,target:locked,
-    fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};
+    fromRotation:weaponPoseRotation(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};
   const move=movementDirection();facing=move.x||move.z?move:{...aim};guardHeld=false;guarding=false;
   return true;
 }
@@ -1330,14 +1419,15 @@ function spawnEnemy(forcedType=null,position=null,{waveNumber=null}={}){
   return e;
 }
 function hurtPlayer(damage,dx=0,dz=0,blockable=true){
-  if(phase!=='playing'||player.invincible>0||dashTime>0||(player.y>1.6&&blockable))return;
+  if(phase!=='playing'||player.invincible>0||dashTime>0||(player.y>1.6&&blockable&&!mountRide?.active))return;
   const directionLength=Math.hypot(dx,dz),source={x:player.x-dx,z:player.z-dz};
   if(blockable&&directionLength>.01&&guarding&&facingCoverage(facing,source,player,Math.PI*.36)){
     fragments.add(player.x+facing.x,player.y+1.3,player.z+facing.z,7,[0xa5e5de,0xffd490],4,.07);audio.play('hit',.1,{material:characterStats.weaponTier<2?'wood':'metal'});return;
   }
   const shieldFacing=spin?{x:Math.sin(hero.rotation.y),z:Math.cos(hero.rotation.y)}:facing;
-  if(blockable&&characterStats.hasShield&&directionLength>.01&&stance<.05&&!throwWindup&&!throwFlight&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
+  if(blockable&&!mountRide?.active&&characterStats.hasShield&&directionLength>.01&&stance<.05&&!throwWindup&&!throwFlight&&facingCoverage(shieldFacing,source,player,Math.PI*.32)){damage*=.65;fragments.add(player.x+shieldFacing.x*.6,player.y+1,player.z+shieldFacing.z*.6,4,[0xffd490,0x8dc9cd],3,.06);}
 
+  damage=mountRide?.absorb(damage,player,hero)??damage;damage*=1-playerCustomization.defence;
   player.hp=Math.max(0,player.hp-damage);player.invincible=.85;player.hurtAgo=0;player.vx=dx*4;player.vz=dz*4;
   resetAttackChain();redFlash=.55;shake=Math.max(shake,.19);resetHitCombo(combatCombo);comicState=null;audio.play('hurt');floatText(player.x,2.5,player.z,'−'+Math.ceil(damage),'#ff8d80',21);
   if(player.hp<=0)endGame(false);
@@ -1579,7 +1669,7 @@ function updateBoss(dt){
   const a=beastCombat.attack;next.stomp=a?.kind==='stomp'?Math.sin(Math.min(1,a.time/a.windup)*Math.PI/2)*(a.launched?0:1):0;
   moveBeast(b,next,dt);
   if(b.state==='enter'&&b.y===0){b.state='walk';b.timer=2;if(b.telegraph){removeEffect(b.telegraph);b.telegraph=null;}audio.play('break',1);shake=Math.max(shake,.4);}
-  if(b.state!=='enter')beastCollision.moveBody(player,0,0,{radius:player.radius,height:1.88,grounded:player.y===0});
+  if(b.state!=='enter'){if(mountRide?.active){mountRide.move(beastCollision,0,0,0);mountRide.place(player);poseHero(0);}else beastCollision.moveBody(player,0,0,{radius:player.radius,height:1.88,grounded:player.y===0});}
   beastCombat.update(dt,b,player,camera);
 }
 function defeatBoss(){
@@ -1598,6 +1688,7 @@ function endGame(won){
 }
 
 function dodge(){
+  if(mountRide?.active)return false;
   if(phase!=='playing'||dashCooldown>0||dashTime>0||leap?.airDashed||Math.abs(stance-stanceTarget)>.005)return false;
   if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
@@ -1612,9 +1703,9 @@ function startKick(){
   if(phase!=='playing'||kick||kickCooldown>0||leap||dashTime>0||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
   updateAim(false);const dir=manualAttackDirection();
   punch=null;cancelAttack();swing=null;attackCooldown=0;guardHeld=false;guarding=false;spinRecovery=null;
-  facing={...dir};hero.rotation.y=Math.atan2(dir.x,dir.z);
-  const spec=kickStats(level,levels.kick),rig=hero.userData.weaponRig;
-  kick={time:0,...spec,dir:{...dir},hit:false,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),
+  facing={...dir};if(!mountRide?.active)hero.rotation.y=Math.atan2(dir.x,dir.z);
+  const spec=kickStats(level,levels.kick),rig=hero.userData.weaponRig;spec.damage=Math.round(spec.damage*playerCustomization.power);
+  kick={time:0,...spec,dir:{...dir},hit:false,step:0,fromRotation:weaponPoseRotation(),fromPosition:rig.position.clone(),
     previousFoot:hero.userData.rightLeg.userData.foot.getWorldPosition(new THREE.Vector3())};
   kickCooldown=spec.cooldown;audio.play('kick',.25,{exert:true});return true;
 }
@@ -1818,7 +1909,10 @@ function updatePlayer(dt){
     else if(pointer.active)facing={...aim};
   }
   if(guarding)guardAngle+=dt*19;
-  if(leap){
+  if(mountRide?.active){
+    mountRide.update(dt,{player,hero,world,move,strength:movementStrength(),up:keys.has('Space')||mountTouch.up,down:keys.has('KeyX')||keys.has('ControlLeft')||mountTouch.down,boost:keys.has('ShiftLeft')||keys.has('ShiftRight')||mountTouch.boost});
+    mountRide.contacts(enemies,(target,damage,dir,force)=>hitEnemy(target,damage,dir,force,1),world);
+  }else if(leap){
     const l=leap;l.time+=dt;
     if(l.strike){
       l.attackTime+=dt;
@@ -1843,6 +1937,12 @@ function updatePlayer(dt){
     let dx,dz;
     if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*characterStats.mobilityScale*dt;dz=dashDirection.z*19*characterStats.mobilityScale*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
     else{const speed=stats.speed*movementStrength()*(kick?.28:guarding?.55:spin?.84:swing?.92:Math.abs(stance-stanceTarget)>.005?.55:landingRecovery>0?.25:1);dx=move.x*speed*dt;dz=move.z*speed*dt;}
+    if(kick){
+      // The added reach is a real, collision-checked step and hip sweep.
+      const step=Math.max(0,kick.range-1.30)*sampleKickMotion(kick.time/kick.duration).extension;
+      const advance=Math.max(0,step-kick.step);kick.step=Math.max(kick.step,step);
+      dx+=kick.dir.x*advance;dz+=kick.dir.z*advance;
+    }
     dx+=player.vx*dt;dz+=player.vz*dt;player.vx*=Math.exp(-9*dt);player.vz*=Math.exp(-9*dt);
     player.vy=(player.vy||0)-20*dt;
     const actual=world.moveBody(player,dx,dz,{dy:player.vy*dt});player.walk+=Math.hypot(actual.x,actual.z)*6;
@@ -1859,7 +1959,7 @@ function updatePlayer(dt){
       let previousHits=null;
       if(spinCharge&&swing&&swing.time/swing.duration>=.86){previousHits=swing.hits;swing=null;attackCooldown=0;}
       if(!swing&&attackCooldown<=0){
-        if(spinCharge)startSpin(previousHits);
+        if(spinCharge&&!mountRide?.active)startSpin(previousHits);
         else{attackBuffer=null;chargeStarted=true;charge=0;beginSwing();}
       }
     }
@@ -1881,7 +1981,7 @@ function updatePlayer(dt){
     const g=touchThrowAim;g.time+=dt;
     g.channeling=g.mode==='hold'&&g.pressed&&canThrow()&&!guardHeld;
     if(g.channeling){
-      if(!g.channelFromRotation){g.channelFromRotation=hero.userData.weaponRig.quaternion.clone();g.channelFromPosition=hero.userData.weaponRig.position.clone();g.channelFromReach=hero.userData.reachScale;}
+      if(!g.channelFromRotation){g.channelFromRotation=weaponPoseRotation();g.channelFromPosition=hero.userData.weaponRig.position.clone();g.channelFromReach=hero.userData.reachScale;}
       g.channelTime+=dt;g.channelAngle=-.7+g.channelTime*10;
     }
   }
@@ -1927,12 +2027,14 @@ function updatePlayer(dt){
       const queued=touchThrowQueued;touchThrowQueued=null;startThrow(queued.dir,queued.channelAngle,queued.target);
     }
   }
-  for(const hazard of world.hazards)if(player.y<.4&&Math.hypot(player.x-hazard.x,player.z-hazard.z)<hazard.r)hurtPlayer((hazard.damage||10)*.65,0,0,false);
+  for(const hazard of world.hazards)if((mountRide?.active?mountRide.body.y:player.y)<.4&&Math.hypot(player.x-hazard.x,player.z-hazard.z)<hazard.r)hurtPlayer((hazard.damage||10)*.65,0,0,false);
   updateAim(false);
   updateHammerAura();
 }
 function poseHero(dt,moving=false){
-  const u=hero.userData,walk=moving&&!leap&&!spin?Math.sin(player.walk):0;
+  const u=hero.userData;u.body.position.x=u.body.position.z=0;
+  if(!mountRide?.active){u.setRidingAnchor?.(null);mountedAimYaw=0;}
+  const walk=moving&&!leap&&!spin?Math.sin(player.walk):0;
   const targetAngle=Math.atan2(facing.x,facing.z);
   const diff=Math.atan2(Math.sin(targetAngle-hero.rotation.y),Math.cos(targetAngle-hero.rotation.y));
   if(spin)hero.rotation.y=spin.angle+spin.entryYawOffset;
@@ -1971,6 +2073,7 @@ function poseHero(dt,moving=false){
   for(const leg of [u.leftLeg,u.rightLeg])if(leg?.userData.shin)leg.userData.shin.rotation.x=0;
   if(kickPose){
     u.rightLeg.rotation.set(kickPose.hip,u.rightLeg.userData.restYaw||0,(u.rightLeg.userData.restRoll||0)+.045);u.rightLeg.position.z=.08*kickPose.extension;
+    u.rightLeg.rotation.y-=.42*kickPose.extension;
     u.rightLeg.userData.shin.rotation.x=kickPose.knee;
     u.leftLeg.rotation.x=.035*kickPose.extension;u.leftLeg.rotation.z=(u.leftLeg.userData.restRoll||0)-.04;
     u.body.rotation.x=kickPose.bodyPitch;u.body.rotation.y=kickPose.bodyYaw;u.body.rotation.z=-.05*kickPose.extension;
@@ -2089,6 +2192,13 @@ function poseHero(dt,moving=false){
   }
   else if(spinRecovery){const t=smooth(spinRecovery.time/.12);if(spinRecovery.fromReach!==undefined)u.setReach?.(lerp(spinRecovery.fromReach,u.reachScale,t));rig.position.lerpVectors(spinRecovery.fromPosition,new THREE.Vector3(rp.x,rp.y,rp.z),t);rig.quaternion.copy(spinRecovery.fromRotation).slerp(restQuaternion,t);}
   if((swing||spin||leap?.strike||landingRecovery>0)&&u.getHeadFloorY)rig.position.y+=Math.max(0,.04-u.getHeadFloorY());
+  if(mountRide?.active){
+    mountRide.pose(hero,{kick:!!kick});
+    const localYaw=Math.atan2(Math.sin(targetAngle-mountRide.yaw),Math.cos(targetAngle-mountRide.yaw));
+    if(kick)u.rightLeg.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),localYaw));
+    mountedAimYaw=localYaw;
+    u.weaponRig.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),localYaw));
+  }
   // Keep both wrists within the anatomical span when head/range upgrades
   // make the old ground-clearance lift physically unreachable.
   if((!guarding||guardDimensions().brace)&&!touchThrowAim?.channeling&&!throwWindup)constrainLargeWeaponPose(u,stance>.9);
@@ -2104,10 +2214,10 @@ function poseHero(dt,moving=false){
 function updateDrops(dt){
   for(let i=drops.length-1;i>=0;i--){
     const d=drops[i];d.age+=dt;d.life-=dt;const distance=Math.hypot(player.x-d.x,player.z-d.z);
-    const magnet=d.kind==='relic'?1.7:3.8;
-    if(distance<magnet&&d.age>.4){const dir=normalize(player.x-d.x,player.z-d.z);const speed=d.kind==='relic'?4.5:9;d.x+=dir.x*speed*dt;d.z+=dir.z*speed*dt;}
+    const material=MATERIAL_TYPES.includes(d.kind),magnet=material?6:d.kind==='relic'?1.7:3.8;
+    if(distance<magnet&&d.age>.4){const dir=normalize(player.x-d.x,player.z-d.z);const speed=d.kind==='relic'?4.5:9,travel=Math.min(distance,speed*dt);d.x+=dir.x*travel;d.z+=dir.z*travel;}
     d.mesh.position.set(d.x,.45+Math.sin(visualTime*3+d.phase)*.13,d.z);d.mesh.rotation.y+=dt*(d.kind==='relic'?.9:2.5);
-    if(distance<.8&&d.age>.45){
+    if(Math.hypot(player.x-d.x,player.z-d.z)<(material?1.3:.8)&&d.age>.45){
       scene.remove(d.mesh);disposeModelGeometry(d.mesh);drops.splice(i,1);
       if(d.kind==='relic'){openUpgrade();}
       else if(d.kind==='heart'){const heal=Math.min(28,player.maxHp-player.hp);player.hp+=heal;floatText(player.x,2.2,player.z,'+'+Math.round(heal),'#a3e3af',20);audio.play('pickup',.2);}
@@ -2149,6 +2259,7 @@ function updateGame(dt){
   updateMovingVehicles(dt);
   updateEnemies(dt);if(phase!=='playing')return;
   updateBoss(dt);if(phase!=='playing')return;
+  mountWeapons?.update(dt,mountRide,{enemies:boss&&!boss.dead?[...enemies,boss]:enemies,world,camera,hero});if(phase!=='playing')return;
   updateDrops(dt);checkGoal();
   updateWaves(dt);
   checkpointTimer+=dt;if(checkpointTimer>=8){checkpointTimer=0;persistCharacter();}
@@ -2215,7 +2326,7 @@ function updateAttackFeedback(){
   button.classList.toggle('active',!!punch||!!swing||holding||!!leap?.slam||!!leap?.strike);
   button.classList.toggle('air-smash-ready',air&&!leap.strike);
   button.classList.toggle('air-smash-armed',!!leap?.slam||!!leap?.strike);
-  button.classList.toggle('spin-active',!!spin);button.classList.toggle('spin-pending',!unarmed&&chargeHeld&&!spin);
+  button.classList.toggle('spin-active',!!spin);button.classList.toggle('spin-pending',!unarmed&&chargeHeld&&!spin&&!mountRide?.active);
   button.dataset.action=unarmed?'punch':air?'air':holding?'spin':'attack';
   $('attackIcon')?.setAttribute('href',unarmed?'#a-punch':air?'#a-slam':holding?'#a-spin':'#a-swing');
   $('attackTouchIcon')?.setAttribute('href',unarmed?'#t-punch':air?'#t-slam':holding?'#t-spin':'#t-attack');
@@ -2500,14 +2611,14 @@ function releaseTouchThrow(e){
   updateHUD();
 }
 function cancelTouchThrow(){
-  if(touchThrowAim?.channeling&&!swing&&!leap&&!throwFlight){const rig=hero.userData.weaponRig;spinRecovery={time:0,fromRotation:rig.quaternion.clone(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};}
+  if(touchThrowAim?.channeling&&!swing&&!leap&&!throwFlight){const rig=hero.userData.weaponRig;spinRecovery={time:0,fromRotation:weaponPoseRotation(),fromPosition:rig.position.clone(),fromReach:hero.userData.reachScale};}
   if(touchThrowAim?.touchInput)pointer.active=false;
   touchThrowAim=null;touchThrowQueued=null;throwLock=null;throwPreviewTargets=[];
   $('throwButton')?.classList.remove('aiming','queued','channeling');
   if($('throwAimStatus'))$('throwAimStatus').hidden=true;
 }
 function initInput(){
-  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?Number($('startingLevel').value):1,{test:testRun,resume:!testRun,city:activeCity});
+  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?activeStartingLevel:1,{test:testRun,resume:!testRun,city:activeCity});
   $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};
   $('resumeCharacterButton').onclick=()=>startGame(1,{resume:true});
   $('startingLevel').value='1';
@@ -2539,7 +2650,7 @@ function initInput(){
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
   updateSoundButtons();
   window.addEventListener('keydown',e=>{
-    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyQ','KeyU','KeyE'];
+    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyQ','KeyU','KeyE','KeyC','KeyX','ControlLeft'];
     const focused=document.activeElement,editable=['INPUT','SELECT','TEXTAREA'].includes(focused?.tagName)||focused?.isContentEditable;
     const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
     if(phase==='playing'&&handled.includes(e.code)&&!editable&&!nativeActivation)e.preventDefault();
@@ -2550,6 +2661,7 @@ function initInput(){
     if(e.code==='KeyQ'||e.code==='KeyU'){if(!e.repeat)toggleUpgradePanel();return;}
     keys.add(e.code);document.querySelector('[data-key="'+e.code+'"]')?.classList.add('active');
     if(e.code==='Space'&&!e.repeat)startLeap();
+    if(e.code==='KeyC'&&!e.repeat)toggleMount();
     if(e.code==='KeyE'&&!e.repeat)startKick();
     if(e.code==='KeyR'&&!e.repeat)beginTouchThrow({pointerId:'keyboard',pointerType:'keyboard'});
     if(e.code==='KeyZ'&&!e.repeat)toggleStance();
@@ -2564,7 +2676,7 @@ function initInput(){
   window.addEventListener('pointermove',e=>{
     if(phase!=='playing')return;
     if(e.pointerId===touchCanvasPointer&&!touchThrowAim?.pressed){if(touchThrowAim){touchThrowAim.dragged=false;touchThrowAim.lockedTarget=null;}aimFromClient(e);return;}
-    if(!isTouchPointer(e)&&!e.target?.closest?.('#combatDock,#upgradePanel,#upgradesToggle,.hud-buttons,#touchControls')){
+    if(!isTouchPointer(e)&&!e.target?.closest?.('#combatDock,#upgradePanel,#upgradesToggle,.hud-buttons,#touchControls,#mountControls')){
       aimFromClient(e);
       const anchor=touchThrowAim?.lockCursor;
       if(anchor&&Math.hypot(pointer.x-anchor.x,pointer.y-anchor.y)>6)touchThrowAim.lockedTarget=null;
@@ -2638,11 +2750,11 @@ function initInput(){
   }
   bindAction('attackButton',pressAttack,releaseAttack,cancelAttack);
   bindAction('guardButton',pressGuard,releaseGuard);
-  bindAction('leapButton',startLeap);
+  bindAction('leapButton',()=>{if(mountRide?.active&&mountRide.stats.hover)mountTouch.up=true;else startLeap();},()=>mountTouch.up=false);
   bindAction('kickButton',startKick);
   bindAction('throwButton',beginTouchThrow,releaseTouchThrow,cancelTouchThrow);
   bindAction('stanceButton',toggleStance);
-  bindAction('dashButton',dodge);
+  bindAction('dashButton',()=>{if(mountRide?.active)mountTouch.boost=true;else dodge();},()=>mountTouch.boost=false);
   for(const [id,code] of [['moveUpButton','KeyW'],['moveLeftButton','KeyA'],['moveDownButton','KeyS'],['moveRightButton','KeyD']]){
     bindAction(id,()=>{pointer.active=false;keys.add(code);},()=>keys.delete(code));
   }
@@ -2657,7 +2769,8 @@ function frame(now){
   requestAnimationFrame(frame);const rawFrameDt=Math.max(0,(now-lastFrame)/1000||1/60),realDt=Math.min(.25,rawFrameDt);lastFrame=now;
   if(document.hidden){performanceMonitor.reset();return;}
   const frameStart=performance.now();let simulationMs=0;
-  forgeMenu?.update(realDt);
+  forgeMenu?.update(realDt);mountWorkshop?.update(realDt);
+  if(mountWorkshop?.isOpen){audio.update(realDt,0,'wind');return;}
   // Keep the workshop's own 3D hero animated while reusing the city backdrop.
   // Drawing the hidden battlefield every frame needlessly taxes mobile GPUs.
   const menuBackground=phase==='menu'||phase==='settings'&&previousPhase==='menu';
@@ -2717,7 +2830,7 @@ function frame(now){
     }
   }
   if(menuBackground)menuBackdropReady=true;
-  hudTimer-=realDt;if(hudTimer<=0){updateHUD();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
+  hudTimer-=realDt;if(hudTimer<=0){updateHUD();syncMountHud();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
   minimapTimer-=realDt;if(minimapTimer<=0){drawMinimap();minimapTimer=.18;}
 }
 
@@ -2726,7 +2839,7 @@ async function init(){
   forgeMenu=createForgeMenu({THREE,makeWarrior,xpForNextLevel,getCharacterStats,maxLevel:MAX_CHARACTER_LEVEL,document,window,
     onSound:(name,details)=>{if(!settings.muted&&settings.volume>0)audio.unlock().then(()=>audio.play(name,.5,details));},
     onSettings:()=>{previousPhase='menu';setPhase('settings');}});
-  initInput();updateSavedCharacter();
+  initInput();initMountControls();initMountWorkshop();updateSavedCharacter();
   renderer=await createGameRenderer({THREE,canvas:$('gameCanvas'),mode:rendererMode});
   await loadCollisionWasm();
   await preloadVehicleExplosion();
@@ -2737,7 +2850,9 @@ async function init(){
   fillLight=new THREE.HemisphereLight(0xb9dcd9,0x536650,1.45);scene.add(fillLight);
   sun=new THREE.DirectionalLight(0xffdfb1,2.25);sun.position.set(-15,28,8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-23;sun.shadow.camera.right=23;sun.shadow.camera.top=23;sun.shadow.camera.bottom=-23;sun.shadow.camera.far=75;sun.shadow.normalBias=.04;sun.shadow.bias=-.0002;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight(0x80c7dd,1.15);rim.position.set(8,14,-18);scene.add(rim);
-  hero=makeWarrior();scene.add(hero);player.materials=hero.userData.getEquipmentMaterials?.()||prepareMaterials(hero);
+  hero=makeWarrior();scene.add(hero);
+  mountRide=new MountRide(scene,{notice:toast,onBreak:()=>toast('ΟΧΗΜΑ ΕΚΤΟΣ','Επισκεύασέ το στο εργαστήριο.')});
+  mountWeapons=new MountWeapons(scene,{hit:mountProjectileHit,blast:mountProjectileBlast});player.materials=hero.userData.getEquipmentMaterials?.()||prepareMaterials(hero);
   beastRig=makeBeastMech();beastRig.userData.materials=prepareMaterials(beastRig);beastRig.visible=false;scene.add(beastRig);
   beastCombat=new BeastCombat(scene,{surface:(x,z)=>world?.supportHeight(x,z,.05,Infinity)||0,blast:beastBlast,beamHit:beastBeamHit,cast:(from,to,radius)=>firstHammerHit(from,to,segmentObjects(from,to,radius),radius),cue:kind=>{const cue=BEAST_CUES[kind];announce(cue[0],cue[1],2);audio.play('boss');}});
   const heldMaterials=new Set();hero.userData.hammerPivot.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])heldMaterials.add(m);});hammerMaterials=[...heldMaterials];hammerAura=createHammerAura();
@@ -2755,10 +2870,10 @@ async function init(){
   // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync){
     const blast=vehicleEffects.explosion;blast.mesh.visible=true;blast.geometry.setDrawRange(0,6);
-    beastRig.visible=true;beastCombat.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();occlusionDepth.warm(world.objects);
-    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();hydrantEffects.hide();levelStorm.hide();groundScars.reset();occlusionDepth.sync([]);blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
+    beastRig.visible=true;beastCombat.warm();mountWeapons.warm();vehicleEffects.warm();fragments.warm();impactClouds.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();occlusionDepth.warm(world.objects);
+    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();mountWeapons.reset();vehicleEffects.reset();fragments.clear();impactClouds.clear();hydrantEffects.hide();levelStorm.hide();groundScars.reset();occlusionDepth.sync([]);blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
   }
-  gameReady=true;forgeMenu.setReady(true);updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη. Το επόμενο χτύπημα είναι δικό σου.';
+  gameReady=true;forgeMenu.setReady(true);$('menuMountWorkshopButton').disabled=false;updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη για μάχη.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');
   requestAnimationFrame(frame);
 }
@@ -2768,4 +2883,4 @@ init().catch(error=>{
   forgeMenu?.setReady(false);resize();requestAnimationFrame(frame);
 });
 
-window.render_game_to_text=()=>JSON.stringify({coordinates:'Metres; X/Z ground plane, Y height',phase,player:{x:player.x,y:player.y,z:player.z,hp:player.hp},progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL},boss:boss&&!boss.dead?{x:boss.x,y:boss.y,z:boss.z,hp:boss.hp,state:boss.state,warning:beastCombat?.attack?{kind:beastCombat.attack.kind,remaining:Math.max(0,beastCombat.attack.windup-beastCombat.attack.time)}:null}:null,enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp})),projectiles:beastCombat?.projectiles.map(p=>({kind:p.kind,x:p.position.x,y:p.position.y,z:p.position.z,target:{x:p.to.x,z:p.to.z}}))||[]});
+window.render_game_to_text=()=>JSON.stringify({coordinates:'Metres; X/Z ground plane, Y height',phase,player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL},boss:boss&&!boss.dead?{x:boss.x,y:boss.y,z:boss.z,hp:boss.hp,state:boss.state,warning:beastCombat?.attack?{kind:beastCombat.attack.kind,remaining:Math.max(0,beastCombat.attack.windup-beastCombat.attack.time)}:null}:null,enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp})),projectiles:beastCombat?.projectiles.map(p=>({kind:p.kind,x:p.position.x,y:p.position.y,z:p.position.z,target:{x:p.to.x,z:p.to.z}}))||[]});

@@ -34,6 +34,13 @@ export class VehicleEffects{
   for(const mesh of [this.smoke,this.fire]){mesh.count=0;mesh.visible=false;mesh.frustumCulled=false;mesh.userData.noCollision=true;mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(mesh);}
   this.position=new THREE.Vector3();this.scale=new THREE.Vector3();this.rotation=new THREE.Quaternion();this.matrix=new THREE.Matrix4();this.origin=new THREE.Vector3();
  }
+ warm(){this.smoke.count=VEHICLE_EFFECT_LIMIT*8;this.fire.count=VEHICLE_EFFECT_LIMIT*6;this.smoke.visible=this.fire.visible=true;}
+ reset(){
+  if(this.disposed)return;
+  for(const [car]of this.sources)this.onBlink(car,0);
+  this.sources.clear();this.time=0;this.smoke.count=this.fire.count=0;this.smoke.visible=this.fire.visible=false;
+  this.explosion.mesh.visible=false;this.explosion.geometry.setDrawRange(0,0);
+ }
  damage(car){
   if(this.disposed||car.explosionComplete)return;
   const stage=vehicleDamageStage(car);if(!stage)return;

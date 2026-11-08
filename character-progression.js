@@ -2,11 +2,11 @@
 // changes here are deterministic and have no rendering or storage side effects.
 // awardCharacterXp, collectCharacterMaterial and forgeNextWeapon mutate the
 // supplied state; read helpers and serialization never do.
-export const MAX_CHARACTER_LEVEL = 15;
+export const MAX_CHARACTER_LEVEL = 30;
 export const MATERIAL_TYPES = Object.freeze(['wood', 'scrap', 'crystal']);
 const SAVE_VERSION = 1;
 const MATERIAL_LIMIT = 999999;
-const XP_TARGETS = Object.freeze([0, 8, 12, 18, 24, 30, 38, 46, 54, 62, 72, 82, 92, 102, 112, 0]);
+const XP_TARGETS = Object.freeze([0, 8, 12, 18, 24, 30, 38, 46, 54, 62, 72, 82, 92, 102, 112, 122, 134, 146, 158, 170, 184, 198, 212, 226, 240, 256, 272, 288, 304, 320, 0]);
 const emptyMaterials = () => ({wood: 0, scrap: 0, crystal: 0});
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const selectedLevel = value => Number.isFinite(value) ? Math.max(1, Math.min(MAX_CHARACTER_LEVEL, Math.floor(value))) : 1;

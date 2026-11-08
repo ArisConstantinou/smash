@@ -2,7 +2,7 @@
 // replaced by fractured, vertex-coloured slabs; no decal, texture or line mesh.
 // Tiny surface relief is visual: the approved flat navigation stays unchanged.
 import * as THREE from './vendor/three.module.js';
-export const GROUND_SCAR_LIMIT=14;
+export const GROUND_SCAR_LIMIT=29;
 const noise=(x,z)=>{const n=Math.sin(x*127.1+z*311.7)*43758.5453;return n-Math.floor(n);};
 // The same edge always splits at the same point, including the neighbouring
 // triangle. Irregular pieces avoid a visible subdivision grid in the fracture.

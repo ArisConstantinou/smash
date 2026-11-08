@@ -15,7 +15,7 @@ test('menu track measures XP inside the current level, not lifetime progress',()
   assert.deepEqual(character,before,'Reading the menu does not change saved XP or materials');
 });
 test('a new player starts at the left; max level has a meaningful full track',()=>{
-  const start=menuProgressSnapshot(null,progressOptions),end=menuProgressSnapshot(createCharacterProgression(15),progressOptions);
+  const start=menuProgressSnapshot(null,progressOptions),end=menuProgressSnapshot(createCharacterProgression(MAX_CHARACTER_LEVEL),progressOptions);
   assert.equal(start.hasSave,false);assert.equal(start.level,1);assert.equal(start.ratio,0);assert.equal(start.target,8);
   assert.equal(end.isMax,true);assert.equal(end.ratio,1);assert.equal(end.percent,100);assert.equal(end.target,0);
 });
