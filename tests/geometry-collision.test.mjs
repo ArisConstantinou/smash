@@ -208,6 +208,22 @@ test('actual progressive fracture shares its remaining piece index with movement
   close(collision.supportHeight(0,0,.44,20),0);
 });
 
+test('removing whole fracture cells reuses their solids while vertex edits invalidate them',()=>{
+  const geometry=new THREE.BufferGeometry(),a=new THREE.BoxGeometry(1,2,1).toNonIndexed(),b=a.clone();b.translate(3,0,0);
+  const positions=new Float32Array(a.attributes.position.array.length+b.attributes.position.array.length);positions.set(a.attributes.position.array);positions.set(b.attributes.position.array,a.attributes.position.array.length);
+  geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));const count=a.attributes.position.count;
+  geometry.userData.collisionParts=[{start:0,count},{start:count,count}];geometry.setIndex(Array.from({length:count*2},(_,i)=>i));
+  const {collision,mesh}=fixture(root=>root.add(new THREE.Mesh(geometry,new THREE.MeshBasicMaterial())));
+  collision.warm([{mesh,dead:false}]);const warmed=collision.diagnostics.cacheBuilds;
+  close(collision.supportHeight(0,0,.1,5),1);close(collision.supportHeight(3,0,.1,5),1);assert.equal(collision.diagnostics.partBuilds,2);
+  assert.equal(collision.diagnostics.cacheBuilds,warmed);
+  geometry.setIndex(Array.from({length:count},(_,i)=>i+count));close(collision.supportHeight(0,0,.1,5),0);close(collision.supportHeight(3,0,.1,5),1);assert.equal(collision.diagnostics.partBuilds,2);
+  mesh.position.y=2;close(collision.supportHeight(3,0,.1,6),3);
+  for(let i=count;i<count*2;i++)geometry.attributes.position.setY(i,geometry.attributes.position.getY(i)+1);geometry.attributes.position.needsUpdate=true;
+  close(collision.supportHeight(3,0,.1,6),4);assert.equal(collision.diagnostics.partBuilds,3);
+  geometry.setDrawRange(0,0);close(collision.supportHeight(3,0,.1,6),0);
+});
+
 test('render culling and visual hit shake do not change stable architectural support',()=>{
   const {collision,object,mesh}=realObject('shop');
   object.collisionAnchor={y:mesh.position.y,quaternion:mesh.quaternion.clone()};

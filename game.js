@@ -1,7 +1,7 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261108-mount1';
+import {createMountWorkshop} from './mount-workshop.js?v=20261108-startup1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-mount1';
 import {MountWeapons} from './mount-weapons.js?v=20261108-mount1';
-import {MountRide} from './mount-ride.js?v=20261108-mount1';
+import {MountRide} from './mount-ride.js?v=20261108-startup1';
 import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261108-mount1';
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
@@ -12,8 +12,8 @@ import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
-import {DestructionSystem} from './destruction.js?v=20261107-perf14-fix2';
-import {createForgeMenu} from './menu.js?v=20261108-mount1';
+import {DestructionSystem} from './destruction.js?v=20261108-startup1';
+import {createForgeMenu} from './menu.js?v=20261108-startup1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
@@ -21,7 +21,7 @@ import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,tr
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-mount1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261108-mount1';
+import {createWorld} from './world.js?v=20261108-startup1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -37,7 +37,7 @@ import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,
 import {beastObstacleContacts} from './beast-obstacles.js?v=20261108-colossus1';
 import {makeBeastMech} from './beast-mech.js?v=20261108-colossus1';
 import {BeastCombat,BEAST_ATTACKS,distanceToBeam} from './beast-combat.js?v=20261108-colossus1';
-import {createGeometryCollision} from './geometry-collision.js?v=20261107-perf14';
+import {createGeometryCollision} from './geometry-collision.js?v=20261108-startup1';
 
 const $ = id => document.getElementById(id);
 const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
@@ -69,6 +69,7 @@ let mountedAimYaw=0;
 let mountRide=null,mountWeapons=null,mountWorkshop=null,workshopPhase='menu',activeStartingLevel=1;
 let garage=restoreGarage(read('ironfall.character',null)?.garage),playerCustomization={hp:0,power:1,speed:1,defence:0};
 let forgeMenu=null,gameReady=false,menuBackdropReady=false;
+let pristineMenuWorld=false;
 let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker,throwIndicator,occlusionDepth;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
@@ -445,7 +446,7 @@ function updateHammerAura(){
   }
   hammerAura.bolts.geometry.attributes.position.needsUpdate=true;
 }
-function resetWorld(keepUpgrades=false,startLevel=1){
+function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   mountRide?.reset(hero);mountWeapons?.reset();
   levelStorm?.reset();
   groundScars?.reset();
@@ -465,17 +466,19 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
   vehicleEffects?.reset();
-  hydrantEffects?.dispose();
-  destruction?.dispose();
-  occlusionDepth?.reset();
-  world?.dispose();
-  world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
-  groundScars?.bind(world);
+  if(!reusePreparedWorld){
+    hydrantEffects?.dispose();destruction?.reset();occlusionDepth?.reset();world?.dispose();
+    world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
+    groundScars?.bind(world);
+    for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
+    hydrantEffects=new HydrantEffects(scene);
+  }
+  const rubbleLimit=settings.quality==='low'?44:settings.quality==='medium'?72:108;
+  if(destruction&&destruction.limit!==rubbleLimit){destruction.dispose();destruction=null;}
+  destruction??=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
+  pristineMenuWorld=!gameReady;
   scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
-  for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
-  destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
   if(!vehicleEffects||vehicleEffects.disposed)vehicleEffects=new VehicleEffects(scene,document,{onExplode:explodeVehicle,onBlink:(car,amount)=>flashMaterials(car,amount)});
-  hydrantEffects=new HydrantEffects(scene);
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
@@ -487,7 +490,11 @@ function resetWorld(keepUpgrades=false,startLevel=1){
 function startGame(startLevel=1,options={}){
   garage=restoreGarage(read('ironfall.character',null)?.garage);activeStartingLevel=Number.isFinite(startLevel)?clamp(Math.floor(startLevel),1,MAX_CHARACTER_LEVEL):1;
   const requested=typeof startLevel==='number'?startLevel:1;
-  activeCity=options.city??null;testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));resetWorld(false,requested);
+  activeCity=options.city??null;testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));
+  // The menu already rendered this untouched arena and its GPU resources.
+  // Rebuilding it on the first click discards that warmup and stalls play.
+  const reusePreparedWorld=pristineMenuWorld&&phase==='menu'&&world?.city===activeCity&&sector===1;
+  resetWorld(false,requested,reusePreparedWorld);
   if(options.resume){
     const stored=read('ironfall.character',null),restored=restoreCharacterProgression(stored?.character);
     if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();}
@@ -648,6 +655,7 @@ function movementStrength(){
 function manualAttackDirection(){
   if(pointer.active)return {...aim};
   if(touch.aimX||touch.aimY)return screenMovement(touch.aimX,touch.aimY);
+  if(mountRide?.active)return {x:Math.sin(mountRide.yaw),z:Math.cos(mountRide.yaw)};
   const move=movementDirection();return move.x||move.z?move:{...facing};
 }
 function weaponPoseRotation(){const q=hero.userData.weaponRig.quaternion.clone();return mountRide?.active?q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),-mountedAimYaw)):q;}
@@ -1018,7 +1026,7 @@ function syncMountHud(){
   $('dashName').textContent=v.active?'BOOST':'ΑΠΟΦΥΓΗ';
   $('leapDesktopName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΨΗΛΟ ΑΛΜΑ';$('leapTouchName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΑΛΜΑ';
   for(const id of ['stanceButton','mobileStanceButton'])if($(id))$(id).disabled=v.active;
-  if(v.active){$('attackName').textContent='ΜΟΝΟ ΧΕΡΙ';$('attackValue').textContent='ΚΡΑΤΑ · ΣΥΝΕΧΗ ΧΤΥΠΗΜΑΤΑ';$('dashValue').textContent='ΚΡΑΤΑ ΓΙΑ ΩΘΗΣΗ';$('leapValue').textContent=v.hover?'ΚΡΑΤΑ ΓΙΑ ΑΝΟΔΟ':'ΑΠΟΒΙΒΑΣΗ + ΑΛΜΑ';for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent='ΜΟΝΟ ΧΕΡΙ · ΤΙΜΟΝΙ';}
+  if(v.active){$('attackName').textContent='ΜΟΝΟ ΧΕΡΙ';$('attackValue').textContent='ΚΡΑΤΑ · ΣΥΝΕΧΗ ΧΤΥΠΗΜΑΤΑ';$('dashValue').textContent='ΚΡΑΤΑ ΓΙΑ ΩΘΗΣΗ';$('leapValue').textContent=v.hover?'ΚΡΑΤΑ ΓΙΑ ΑΝΟΔΟ':v.kind==='bicycle'?'ΑΛΜΑ ΜΕ ΠΟΔΗΛΑΤΟ':'ΑΠΟΒΙΒΑΣΗ + ΑΛΜΑ';for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent='ΜΟΝΟ ΧΕΡΙ · ΤΙΜΟΝΙ';}
   for(const [id,label]of [['dashButton','Κράτα για boost με κατανάλωση ενέργειας.'],['leapButton',v.hover?'Κράτα για άνοδο. X ή το κουμπί καθόδου για κάθοδο.':'Αποβίβαση από το όχημα και άλμα.']]){const b=$(id),text=v.active?label:b.dataset[touchLayout?'touchLabel':'desktopLabel'];b.setAttribute('aria-label',text);b.title=text;}
 
 }
@@ -1110,7 +1118,11 @@ function updateAimPreview(withThrow=!!(touchThrowAim||throwWindup)){
     {origin:start,maxHits:characterStats.canRicochet?characterStats.maxChainHits:1,radius:throwRadius,chainRadius:THROW_CHAIN_RADIUS}):[];
 }
 function startLeap(){
-  if(mountRide?.active){if(mountRide.stats.hover)return true;mountRide.dismount(player,hero);}
+  if(mountRide?.active){
+    if(mountRide.stats.hover)return true;
+    if(mountRide.kind==='bicycle'){if(phase!=='playing')return false;const jumped=mountRide.jump(world);if(jumped)audio.play('dash',.5);return jumped;}
+    mountRide.dismount(player,hero);
+  }
   if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
   if(phase!=='playing'||leap||leapCooldown>0||throwWindup||Math.abs(stance-stanceTarget)>.005)return false;
   punch=null;kick=null;cancelAttack();spinRecovery=null;guarding=false;guardHeld=false;swing=null;attackCooldown=0;landingRecovery=0;landingPose=null;
@@ -1911,6 +1923,7 @@ function updatePlayer(dt){
   if(guarding)guardAngle+=dt*19;
   if(mountRide?.active){
     mountRide.update(dt,{player,hero,world,move,strength:movementStrength(),up:keys.has('Space')||mountTouch.up,down:keys.has('KeyX')||keys.has('ControlLeft')||mountTouch.down,boost:keys.has('ShiftLeft')||keys.has('ShiftRight')||mountTouch.boost});
+    if(!swing&&!punch&&!kick&&!throwWindup&&!touchThrowAim)facing=manualAttackDirection();
     mountRide.contacts(enemies,(target,damage,dir,force)=>hitEnemy(target,damage,dir,force,1),world);
   }else if(leap){
     const l=leap;l.time+=dt;
@@ -2866,12 +2879,13 @@ async function init(){
   occlusionDepth=new OcclusionDepth(scene);groundScars=new GroundScars(scene);levelStorm=new LevelStorm(scene,{onStrike:levelUpStrike});
   fragments=new Fragments();impactClouds=new ImpactClouds();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
   resize();setPhase('menu');
+  world.warmCollision(player.x,player.z);
   $('gameCanvas').setAttribute('tabindex','-1');
   // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync){
     const blast=vehicleEffects.explosion;blast.mesh.visible=true;blast.geometry.setDrawRange(0,6);
-    beastRig.visible=true;beastCombat.warm();mountWeapons.warm();vehicleEffects.warm();fragments.warm();impactClouds.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();occlusionDepth.warm(world.objects);
-    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();mountWeapons.reset();vehicleEffects.reset();fragments.clear();impactClouds.clear();hydrantEffects.hide();levelStorm.hide();groundScars.reset();occlusionDepth.sync([]);blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
+    beastRig.visible=true;beastCombat.warm();mountWeapons.warm();vehicleEffects.warm();destruction.warm();fragments.warm();impactClouds.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();occlusionDepth.warm(world.objects);
+    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();mountWeapons.reset();vehicleEffects.reset();destruction.reset();fragments.clear();impactClouds.clear();hydrantEffects.hide();levelStorm.hide();groundScars.reset();occlusionDepth.sync([]);blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
   }
   gameReady=true;forgeMenu.setReady(true);$('menuMountWorkshopButton').disabled=false;updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη για μάχη.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');

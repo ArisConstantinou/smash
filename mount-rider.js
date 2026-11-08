@@ -8,7 +8,10 @@ const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 export function poseMountedRider(hero,mount,{kick=false}={}){
  const u=hero.userData,m=mount.userData;
  target.set(0,m.riderOffset,m.riderZ).applyQuaternion(mount.quaternion).add(mount.position);
- hero.position.copy(target);hero.quaternion.copy(mount.quaternion);
+ // Preserve the mount's authored yaw representation. Quaternion -> XYZ Euler
+ // decomposition past90 degrees introduces X/Z half-turns; later walking code
+ // updates only Y, which mirrors aiming after dismounting.
+ hero.position.copy(target);hero.rotation.copy(mount.rotation);
  u.body.rotation.x=clamp(u.body.rotation.x+.12,-.16,.34);u.body.rotation.y=clamp(u.body.rotation.y,-.48,.48);u.body.rotation.z=clamp(u.body.rotation.z,-.16,.16);
  hip.set(0,.74,0);rotatedHip.copy(hip).applyQuaternion(u.body.quaternion);u.body.position.copy(hip).sub(rotatedHip);
  hero.updateWorldMatrix(true,false);mount.updateWorldMatrix(true,true);
@@ -29,6 +32,7 @@ export function poseMountedRider(hero,mount,{kick=false}={}){
  u.setRidingAnchor?.(m.markers.leftGrip);
 }
 export function resetMountedRider(hero){
+ target.set(0,0,1).applyQuaternion(hero.quaternion);hero.rotation.set(0,Math.atan2(target.x,target.z),0);
  const u=hero.userData;u.setRidingAnchor?.(null);u.body.position.set(0,0,0);u.body.rotation.set(0,0,0);
  for(const [side,leg]of [[-1,u.leftLeg],[1,u.rightLeg]]){leg.position.set(side*(u.legRest?.spread??.25),u.legRest?.height??.62,0);leg.rotation.set(0,leg.userData.restYaw||0,leg.userData.restRoll||0);leg.userData.shin.rotation.x=0;}
 }

@@ -3,7 +3,7 @@ import { makeProp } from './models.js?v=20261108-mount1';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
-import { createGeometryCollision } from './geometry-collision.js?v=20261107-perf14';
+import { createGeometryCollision } from './geometry-collision.js?v=20261108-startup1';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
@@ -494,6 +494,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   update(0,0,{x:0,z:0},'rain');
   return {
     city,group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
+    warmCollision:(x,z,radius=12)=>collision.warm(nearObjects(x,z,radius)),
     supportHeight:collision.supportHeight,supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,
     moveBody:collision.moveBody,clearBody:collision.clearBody,collisionDiagnostics:collision.diagnostics,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,

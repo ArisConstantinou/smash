@@ -485,6 +485,12 @@ test('game initializes using its actual HTML ids, world and warrior, and renders
   assert.ok(renderedFrames > 0 && scheduledFrames > 0);
 });
 
+test('first play retains the exact pre-rendered pristine menu world, while a retry rebuilds it',()=>{
+ const prepared=api.world,quality=api.settings.quality;api.settings.quality='low';api.startGame(1,{test:false});assert.equal(api.world,prepared);assert.equal(api.destruction.limit,44);api.settings.quality=quality;
+ const building=api.world.buildingObjects[0];api.hurtObject(building,building.maxHp+1);
+ api.startGame(1,{test:false});assert.notEqual(api.world,prepared);assert.ok(api.world.buildingObjects.every(o=>!o.dead&&o.hp===o.maxHp));api.setPhase('menu');
+});
+
 test('the visible control deck maps Space to jump and exposes the illustrated nonmodal armory', () => {
   assert.equal(dataKeys.get('Space')?.id, 'leapButton');
   assert.equal(dataKeys.get('KeyE')?.id, 'kickButton');
@@ -3476,7 +3482,7 @@ test('actual low-damage car hits activate one alarm before any panel comes off; 
  api.hurtObject(car,1,0,null,'fist');api.hurtObject(car,1,0,null,'foot');
  assert.equal(car.destruction,undefined);assert.equal(api.destruction.alarms.size,1);
  api.destruction.update(.1,{x:car.x,z:car.z});assert.ok(audioEvents.some(e=>e.name==='carAlarm'));
- const old=api.destruction;reset(1,{test:false});assert.equal(old.disposed,true);assert.equal(old.alarms.size,0);assert.equal(old.debris.length,0);
+ const old=api.destruction,geometry=old.renderer.geometry;reset(1,{test:false});assert.equal(api.destruction,old);assert.equal(old.disposed,false);assert.equal(old.renderer.geometry,geometry);assert.equal(old.alarms.size,0);assert.equal(old.debris.length,0);
 });
 
 // forge9 controls: production handlers, not a simulated alternate state machine.
@@ -4227,4 +4233,26 @@ test('mount: touch boost consumes energy, pointer cancellation stops it and flig
 test('mount: the overhead turret damages a visible enemy through real contacts and round reset clears its shots',()=>{
  arena(21);const mounted=api.toggleMount();assert.ok(mounted,JSON.stringify({phase:api.phase,y:api.player.y,swing:!!api.swing,leap:!!api.leap,spin:!!api.spin,kick:!!api.kick,ride:api.mountRide.snapshot(),shape:api.mountRide.collision}));const enemy=resilientEnemy('zombie',0,6);for(let i=0;i<180;i++){api.updatePlayer(1/120);api.mountWeapons.update(1/120,api.mountRide,{enemies:api.enemies,world:api.world,camera:api.camera,hero:api.hero});}
  assert.ok(api.mountWeapons.fired>0,JSON.stringify({energy:api.mountRide.energy,targets:Object.keys(api.mountWeapons.targets),origin:api.mountWeapons.origin.toArray(),goal:api.mountWeapons.goal.toArray(),hits:api.mountWeapons.selfRay.intersectObject(api.hero,true).map(h=>({name:h.object.name,parent:h.object.parent?.name,point:h.point.toArray(),distance:h.distance}))}));assert.ok(enemy.hp<1000);arena(1);assert.equal(api.mountWeapons.shots.some(s=>s.active),false);assert.equal(api.mountWeapons.mesh.visible,false);
+});
+
+test('bicycle turn, attack and dismount retain physical mouse heading and damage',()=>{
+ arena(1,{test:false});assert.ok(api.toggleMount());api.mountRide.yaw=2.2;api.mountRide.model.rotation.y=2.2;api.mountRide.pose(api.hero);api.mountRide.dismount(api.player,api.hero);
+ const target=stationaryEnemy('zombie',0,1.5),before=target.hp;aimAt(0,5);mouseAttack(true);playerSteps(.12);mouseAttack(false);playerSteps(.45);
+ const forward=new THREE.Vector3(0,0,1).applyQuaternion(api.hero.quaternion);assert.ok(forward.x*api.aim.x+forward.z*api.aim.z>.999);assert.ok(target.hp<before);assert.equal(api.hero.rotation.x,0);assert.equal(api.hero.rotation.z,0);
+});
+
+test('Space and the touch jump button keep the bicycle attached through takeoff and landing',()=>{
+ for(const touchInput of [false,true]){
+  arena(1,{test:false});assert.ok(api.toggleMount());const model=api.mountRide.model;
+  if(touchInput)pointerEvent('leapButton','pointerdown',{pointerType:'touch',pointerId:771});else key('Space',true);
+  playerSteps(.16);assert.ok(api.mountRide.body.y>.5);assert.equal(api.mountRide.active,true);assert.equal(api.mountRide.model,model);assert.equal(api.leap,null);
+  if(touchInput)pointerEvent('leapButton','pointerup',{pointerType:'touch',pointerId:771});else key('Space',false);
+  mouseAttack(true);playerSteps(.03);assert.equal(api.swing?.twoHanded,false);mouseAttack(false);playerSteps(1.2);assert.equal(api.mountRide.active,true);assert.equal(api.mountRide.airborne,false);close(api.mountRide.body.y,0);
+ }
+});
+
+test('mounted keyboard steering keeps the manual arrow on the real chassis until a pointer owns aim',()=>{
+  arena(1);api.toggleMount();api.mountRide.yaw=0;api.mountRide.model.rotation.y=0;api.pointer.active=false;
+  key('KeyD',true);api.updatePlayer(1/120);const heading=api.manualAttackDirection();close(heading.x,Math.sin(api.mountRide.yaw));close(heading.z,Math.cos(api.mountRide.yaw));
+  aimAt(-3,0);const manual=api.manualAttackDirection();assert.ok(manual.x<-.9,'Mouse owns the hammer independently of the turning vehicle');key('KeyD',false);
 });

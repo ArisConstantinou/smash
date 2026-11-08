@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import {createMountModel} from './mount-models.js?v=20261108-mount1';
-import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-mount1';
+import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
 import {mountStats,resolveMount,configurationSignature} from './mount-rules.js?v=20261108-mount1';
 import {firstHammerHit} from './combat.js';
 
@@ -12,7 +12,7 @@ export class MountRide{
  constructor(scene,{notice=()=>{},onBreak=()=>{}}={}){
   this.scene=scene;this.notice=notice;this.onBreak=onBreak;this.active=false;
   this.condition={};this.body={x:0,y:0,z:0,radius:1.05};this.speed=0;this.yaw=0;
-  this.contactTimes=new WeakMap();this.clock=0;this.landing=false;this.vertical=0;
+  this.contactTimes=new WeakMap();this.clock=0;this.landing=false;this.vertical=0;this.airborne=false;this.jumpCooldown=0;
  }
  sync(garage,level){
   const kind=resolveMount(garage,level),signature=kind+configurationSignature(garage,kind);
@@ -30,10 +30,10 @@ export class MountRide{
   return true;
  }
  storeCondition(){if(this.stats)this.condition[this.kind]={hp:this.hp,maxHp:this.stats.hp,energy:this.energy};}
- reset(hero){if(this.active)resetMountedRider(hero);this.active=false;this.model?.userData.dispose();this.model=null;this.signature='';this.stats=null;this.kind=null;this.hp=0;this.energy=0;this.condition={};Object.assign(this.body,{x:0,y:0,z:0});this.speed=0;this.vertical=0;this.landing=false;this.contactTimes=new WeakMap();}
+ reset(hero){if(this.active)resetMountedRider(hero);this.active=false;this.model?.userData.dispose();this.model=null;this.signature='';this.stats=null;this.kind=null;this.hp=0;this.energy=0;this.condition={};Object.assign(this.body,{x:0,y:0,z:0});this.speed=0;this.vertical=0;this.landing=false;this.airborne=false;this.jumpCooldown=0;this.contactTimes=new WeakMap();}
  toggle(player,hero,world){
   if(this.active){
-   if(this.body.y>.15){this.landing=true;this.notice('ΠΡΟΣΓΕΙΩΣΗ','Κράτα χώρο κάτω από το όχημα για αποβίβαση.');return false;}
+   if(this.body.y>.15||this.airborne){this.landing=true;this.notice('ΠΡΟΣΓΕΙΩΣΗ','Κράτα χώρο κάτω από το όχημα για αποβίβαση.');return false;}
    this.dismount(player,hero);return true;
   }
   if(!this.model||this.hp<=0){this.notice('ΧΡΕΙΑΖΕΤΑΙ ΕΠΙΣΚΕΥΗ','Άνοιξε το εργαστήριο οχήματος.');return false;}
@@ -46,6 +46,12 @@ export class MountRide{
  dismount(player,hero){
   this.active=false;this.landing=false;this.speed=0;this.vertical=0;this.model.visible=false;
   player.y=this.body.y;player.vy=0;resetMountedRider(hero);this.storeCondition();
+ }
+ jump(world){
+  if(!this.active||this.kind!=='bicycle'||this.landing||this.airborne||this.jumpCooldown>0)return false;
+  const ground=world.supportHeight(this.body.x,this.body.z,this.collision.radius,this.body.y+.12);
+  if(Math.abs(this.body.y-ground)>.12)return false;
+  this.vertical=8;this.airborne=true;this.jumpCooldown=1;return true;
  }
  repair(materials,{test=false}={}){
   const missing=this.stats.hp-this.hp;if(missing<.01)return {ok:false,reason:'Το όχημα είναι πλήρως επισκευασμένο.'};
@@ -81,13 +87,19 @@ export class MountRide{
  }
  update(dt,{player,hero,world,move,strength,up=false,down=false,boost=false}){
   if(!this.active)return;
+  this.jumpCooldown=Math.max(0,this.jumpCooldown-dt);
   this.clock+=dt;const s=this.stats;
   this.energy=Math.min(s.energy,this.energy+s.regen*dt);
   const boosting=boost&&this.energy>18*dt&&strength>.01;
   if(boosting)this.energy=Math.max(0,this.energy-18*dt);
-  const desired=s.speed*strength*(boosting?1.35:1)*(this.landing?.45:1);
+  let retreat=false;
+  if(strength>.001){const target=Math.atan2(move.x,move.z),yaw=this.yaw+angleDelta(this.yaw,target)*(1-Math.exp(-s.handling*s.grip*dt));if(this.clear(world,this.body.x,this.body.z,this.body.y,yaw))this.yaw=yaw;
+   else retreat=move.x*Math.sin(this.yaw)+move.z*Math.cos(this.yaw)<-.15;
+  }
+  // A long chassis cannot turn around in a narrow street. Back along its
+  // current footprint until there is room, rather than driving into the wall.
+  const desired=(retreat?-Math.min(3,s.speed):s.speed*(boosting?1.35:1))*strength*(this.landing?.45:1);
   this.speed+=(desired-this.speed)*(1-Math.exp(-s.acceleration*s.grip*dt));
-  if(strength>.001){const target=Math.atan2(move.x,move.z),yaw=this.yaw+angleDelta(this.yaw,target)*(1-Math.exp(-s.handling*s.grip*dt));if(this.clear(world,this.body.x,this.body.z,this.body.y,yaw))this.yaw=yaw;}
   let dy;
   if(s.hover){
    const target=this.landing?-5:up?5.5:down?-5.5:0;
@@ -99,15 +111,16 @@ export class MountRide{
   const actual=this.move(world,Math.sin(this.yaw)*this.speed*dt+(player.vx||0)*dt/s.mass,Math.cos(this.yaw)*this.speed*dt+(player.vz||0)*dt/s.mass,dy);
   player.vx=(player.vx||0)*Math.exp(-9*dt);player.vz=(player.vz||0)*Math.exp(-9*dt);
   if(actual.ceilingHit||actual.grounded)this.vertical=0;
+  if(!s.hover)this.airborne=!actual.grounded;
   const distance=Math.hypot(this.body.x-x,this.body.z-z);
-  if(this.speed>1&&distance<dt*.1)this.speed*=Math.exp(-8*dt);
+  if(Math.abs(this.speed)>1&&distance<dt*.1)this.speed*=Math.exp(-8*dt);
   const steering=strength>.001?clamp(angleDelta(this.yaw,Math.atan2(move.x,move.z)),-.38,.38):0;
-  this.model.userData.animate(distance,steering);this.place(player);player.walk+=distance*6;
+  this.model.userData.animate(distance*Math.sign(this.speed||1),steering);this.place(player);player.walk+=distance*6;
   if(this.landing&&actual.grounded&&Math.abs(world.supportHeight(this.body.x,this.body.z,.44,this.body.y+.1)-this.body.y)<.15)this.dismount(player,hero);
  }
  pose(hero,{kick=false}={}){if(this.active)poseMountedRider(hero,this.model,{kick});}
  contacts(targets,hit,world){
-  if(!this.active||this.speed<2.4)return;
+  if(!this.active||Math.abs(this.speed)<2.4)return;
   const s=this.stats,m=this.model.userData,damage=s.frontContact+s.contact;
   if(!damage)return;
   const forward={x:Math.sin(this.yaw),z:Math.cos(this.yaw)};
@@ -119,14 +132,15 @@ export class MountRide{
    const top=(target.y||0)+(target.height||target.h||1.6);
    // Wheels must physically reach the body. Hover has no damaging tyres.
    const wheelHit=!s.hover&&s.contact>0&&this.body.y<=top&&this.body.y+m.radius*2>=(target.y||0);
-   const ramHit=s.frontContact>0&&along>0&&Math.abs((target.y||0)+.6-(this.body.y+1))<1.2;
+   const ramHit=this.speed>0&&s.frontContact>0&&along>0&&Math.abs((target.y||0)+.6-(this.body.y+1))<1.2;
    if(!wheelHit&&!ramHit)continue;
    const from={x:this.body.x,y:this.body.y+.6,z:this.body.z},to={x:target.x,y:(target.y||0)+.6,z:target.z};
    if(world&&firstHammerHit(from,to,world.nearObjects(this.body.x,this.body.z,3),.04))continue;
    this.contactTimes.set(target,this.clock+.65);
-   hit(target,Math.round((wheelHit?s.contact:0)+(ramHit?s.frontContact:0))*Math.min(1.8,this.speed/5),forward,this.speed*.5);
+   const travel={x:forward.x*Math.sign(this.speed),z:forward.z*Math.sign(this.speed)};
+   hit(target,Math.round((wheelHit?s.contact:0)+(ramHit?s.frontContact:0))*Math.min(1.8,Math.abs(this.speed)/5),travel,Math.abs(this.speed)*.5);
   }
  }
  get repairCost(){return this.stats&&this.stats.hp-this.hp>=.01?Math.max(1,Math.ceil((this.stats.hp-this.hp)/28)):0;}
- snapshot(){return this.stats?{active:this.active,kind:this.kind,hover:this.stats.hover,hp:Math.ceil(this.hp),maxHp:this.stats.hp,repairCost:this.repairCost,energy:Math.round(this.energy),maxEnergy:this.stats.energy,speed:+this.speed.toFixed(2),altitude:+this.body.y.toFixed(2),landing:this.landing}:null;}
+ snapshot(){return this.stats?{active:this.active,kind:this.kind,hover:this.stats.hover,hp:Math.ceil(this.hp),maxHp:this.stats.hp,repairCost:this.repairCost,energy:Math.round(this.energy),maxEnergy:this.stats.energy,speed:+this.speed.toFixed(2),altitude:+this.body.y.toFixed(2),landing:this.landing,airborne:this.airborne,jumpCooldown:this.jumpCooldown}:null;}
 }
