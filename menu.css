@@ -275,3 +275,77 @@ body[data-touch-controls="true"] .throw-aim-status {left:auto;right:var(--mobile
   .forge-secondary .forge-secondary-arrow { margin-left:auto; }
   #menu .forge-title { font-size:clamp(40px,8vw,54px); }
 }
+
+/* Readable type at native size, including compact phone layouts. */
+.forge-brand-group {display:flex;align-items:center;flex-wrap:wrap;gap:12px;min-width:0;}
+#menu .forge-version {flex:none;padding:5px 9px;border:1px solid #7ba99966;border-radius:4px;background:#112c32;color:#c4e5d7;font:700 12px/1.2 Arial,sans-serif;letter-spacing:.3px;}
+#menu .forge-header-brand {font-size:16px;}
+#menu .forge-header-brand small {font-size:12px;letter-spacing:.6px;}
+#menu .forge-eyebrow {font-size:12px;letter-spacing:1px;}
+#menu .forge-motto {font-size:14px;letter-spacing:1px;}
+#menu .forge-progress-heading {font-size:12px;height:26px;line-height:1.3;}
+#menu #menuXpLabel {font-size:12px;letter-spacing:0;}
+#menu #menuProgressPercent {font-size:14px;}
+#menu .forge-progress-foot {font-size:12px;line-height:1.4;letter-spacing:0;}
+#menu .forge-action-copy b {font-size:18px;white-space:normal;}
+#menu .forge-action-copy small {font:14px/1.35 Arial,sans-serif;letter-spacing:0;white-space:normal;}
+#menu .forge-action-symbol {flex-shrink:0;}
+#menu .forge-loading,#menu[data-ready="true"] .forge-loading {font:14px/1.45 Arial,sans-serif;color:#b5cec2;letter-spacing:0;min-height:21px;}
+#menu .forge-showcase-caption {font-size:12px;letter-spacing:1px;}
+#menu .forge-showcase-caption small {font-size:12px;letter-spacing:0;}
+#menu .forge-prop-tag {font-size:12px;letter-spacing:.3px;}
+#menu .forge-play-hint {font:14px/1.45 Arial,sans-serif;letter-spacing:0;white-space:normal;flex-wrap:wrap;text-align:center;gap:5px;margin:12px 0 0;}
+#menu .forge-play-hint strong {font-size:inherit;}
+#menu .forge-footer {min-height:64px;font-size:12px;letter-spacing:.3px;gap:16px;}
+#menu .forge-footer>span {font-size:12px;white-space:normal;}
+#menu .forge-audio-check {gap:12px;}
+#menu #menuAudioButton {font-size:14px;min-height:44px;padding:8px 12px;}
+#menu #menuAudioStatus {font-size:14px;color:#b0c8bc;max-width:360px;}
+#menu .forge-sound {min-width:44px;min-height:44px;}
+
+@media (max-width:1080px) {
+  #menu .forge-action-copy b {font-size:16px;}
+  #menu .forge-action-copy small {font-size:12px;}
+  #menu .forge-action {padding-left:9px;padding-right:9px;}
+  #menu .forge-action-symbol {width:40px;height:43px;}
+}
+@media (max-width:760px) and (min-height:501px) {
+  #menu .forge-header {min-height:60px;padding-top:max(8px,env(safe-area-inset-top));}
+  .forge-brand-group {gap:7px;}
+  #menu .forge-header-brand {font-size:14px;}
+  #menu .forge-version {padding:4px 6px;}
+  #menu .forge-eyebrow {margin-bottom:10px;}
+  #menu .forge-motto {gap:8px;margin-top:12px;font-size:12px;letter-spacing:.5px;}
+  #menu .forge-showcase {flex-direction:column;padding-top:2px;}
+  #menu .forge-play-hint {position:relative;inset:auto;transform:none;font-size:12px;margin:2px 0 0;}
+  #menu .forge-primary-actions {gap:9px;}
+  #menu .forge-action {min-height:82px;gap:4px;padding-left:8px;padding-right:8px;}
+  #menu .forge-action-symbol {width:24px;height:34px;}
+  #menu .forge-footer {min-height:60px;padding-top:6px;padding-bottom:max(8px,env(safe-area-inset-bottom));gap:10px;}
+  #menu .forge-footer>span {max-width:155px;}
+  #menu #menuAudioButton {font-size:12px;padding:7px 9px;}
+}
+@media (max-width:760px) and (min-height:501px) and (max-height:720px) {
+  #menu .forge-layout {grid-template-rows:auto minmax(70px,1fr) auto;padding-top:2px;}
+  #menu .forge-workshop {min-height:60px;max-height:85px;width:170px;}
+  #menu .forge-progress-track {height:56px;}
+  #menu .forge-action {min-height:72px;}
+  #menu .forge-secondary-actions {margin-top:10px;}
+  #menu .forge-loading {margin-top:6px;}
+  #menu .forge-footer {min-height:52px;}
+}
+@media (orientation:landscape) and (max-height:500px) {
+  #menu .forge-header {min-height:48px;height:48px;}
+  #menu .forge-header-brand small {display:none;}
+  #menu .forge-motto {font-size:12px;gap:6px;margin-top:8px;letter-spacing:0;}
+  #menu .forge-eyebrow {font-size:12px;margin-bottom:8px;letter-spacing:0;}
+  #menu .forge-layout {column-gap:24px;}
+  #menu .forge-progress-heading {height:22px;}
+  #menu .forge-progress-track {height:43px;}
+  #menu .forge-progress-foot {font-size:12px;}
+  #menu .forge-action {min-height:74px;}
+  #menu .forge-secondary-actions {margin-top:10px;}
+  #menu .forge-loading {margin-top:6px;}
+  #menu .forge-footer {min-height:50px;padding-bottom:4px;}
+  #menu #menuAudioStatus {font-size:12px;}
+}

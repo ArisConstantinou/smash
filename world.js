@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js?v=20261108-props1';
+import { makeProp } from './models.js?v=20261108-grip1';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';

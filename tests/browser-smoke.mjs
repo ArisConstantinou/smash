@@ -10,6 +10,7 @@ import {manualCombatQA,verifyManualCombat} from './browser-manual-combat.mjs';
 import {throwIndicatorQA,verifyThrowPicture} from './browser-throw-indicator.mjs';
 import {barbedCombatQA,verifyBarbedCombat} from './browser-barbed-combat.mjs';
 import {createCharacterProgression,xpForNextLevel} from '../character-progression.js';
+import {GAME_VERSION} from '../menu.js';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const output=resolve(process.env.CODEX_TEST_OUTPUT||resolve(root,'browser-evidence'),'smoke');await mkdir(output,{recursive:true});
@@ -93,6 +94,16 @@ try{
       await page.waitForFunction(expected=>parseFloat(document.querySelector('#menuProgressFill').style.width)>=expected-.2,character.xp/xpForNextLevel(character.level)*100,{timeout:15000});
       assert.equal(await page.locator('#menuProgressHero').getAttribute('data-renderer'),'webgl','The menu uses the real equipped warrior');
       assert.equal(await page.locator('#menuHeroFallback').isVisible(),false,'The fallback must not duplicate the live warrior');
+      assert.equal(await page.locator('#gameVersion').textContent(),`v${GAME_VERSION}`);
+      const tinyMenuText=await page.evaluate(()=>{
+        const tiny=[],walker=document.createTreeWalker(document.querySelector('#forgeLayout'),NodeFilter.SHOW_TEXT);
+        for(let node;node=walker.nextNode();){const parent=node.parentElement;
+          if(!node.textContent.trim()||parent.closest('svg,[hidden],[aria-hidden="true"]'))continue;
+          const range=document.createRange();range.selectNodeContents(node);const bounds=range.getBoundingClientRect();
+          if(bounds.width&&bounds.height&&getComputedStyle(parent).visibility!=='hidden'&&parseFloat(getComputedStyle(parent).fontSize)<12)tiny.push(node.textContent.trim());
+        }return tiny;
+      });
+      assert.deepEqual(tinyMenuText,[],'The main menu must retain readable text on compact layouts');
       await page.screenshot({path:resolve(output,config.name+'-menu.png')});
 
       // Floating props intentionally move; use an actual pointer at their visible center.

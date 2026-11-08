@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../vendor/three.module.js';
 import { makeWarrior, makeTreasure } from '../models.js';
-import { sampleHammerSwing, HAMMER_COMBOS } from '../hammer-motion.js';
+import { sampleHammerSwing, sampleSpinMotion, HAMMER_COMBOS } from '../hammer-motion.js';
 import { createCharacterProgression, getCharacterStats } from '../character-progression.js';
 
 const epsilon = 1e-7;
@@ -500,7 +500,7 @@ test('crafting drops have distinguishable material colors, silhouettes and compa
   assert.equal(signatures.size, 3); assert.equal(colors.size, 3);
 });
 
-test('mirrored palms point both thumbs up the handle while both wrist openings face their own elbow',()=>{
+test('visible mirrored thumbs face the head and wrist cuffs remain aligned to their forearms',()=>{
  const hero=makeWarrior(),u=hero.userData,shaft=new THREE.Vector3(),q=new THREE.Quaternion();
  for(const tier of [0,1,2,4])for(const stance of tier<2?[1]:[0,1]){
   u.setEquipment(tier);restingPose(hero,stance);
@@ -508,16 +508,43 @@ test('mirrored palms point both thumbs up the handle while both wrist openings f
    hero.rotation.y=heading;u.updateGrip();hero.updateMatrixWorld(true);
    for(const [arm,hand,anchor] of [[u.rightArm,u.rightGrip,u.rightGripAnchor],[u.leftArm,u.leftGrip,stance?u.leftGripAnchor:u.shieldGripAnchor]]){
     anchor.getWorldQuaternion(q);shaft.set(0,1,0).applyQuaternion(q);
-    hand.getWorldQuaternion(q);const thumb=new THREE.Vector3(arm.userData.side,0,0).applyQuaternion(q);
-    assert.ok(thumb.dot(shaft)>.999,'A left thumb must not point down the shaft while the right points up');
+    // Read the equipped thumb's actual vertices, independently of the rig's
+    // assumed local axis. Tier 4 retains the constructor's original hand.
+    const thumbCenter=new THREE.Vector3();let count=0;
+    hand.traverse(n=>{if(!n.isMesh)return;const p=n.geometry.attributes.position;
+      const part=n.geometry.userData.collisionParts.find(part=>Math.abs(part.matrix[12])>.11&&Math.abs(part.matrix[12])<.14);
+      if(part)for(let i=part.start;i<part.start+part.count;i++){thumbCenter.add(new THREE.Vector3().fromBufferAttribute(p,i));count++;}});
+    assert.ok(count>0,'The thumb must be measured from visible geometry');thumbCenter.divideScalar(count);
+    hand.getWorldQuaternion(q);const thumb=new THREE.Vector3(Math.sign(thumbCenter.x),0,0).applyQuaternion(q);
+    assert.ok(thumb.dot(shaft)>.70,'The actual visible thumb must point toward the head');
     const elbow=arm.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0));
     const towardElbow=elbow.sub(worldPosition(hand)).normalize();
-    const opening=new THREE.Vector3(0,-1,0).applyQuaternion(q);assert.ok(opening.dot(towardElbow)>.2,'The cuff must face the arm, not the opposite end of the weapon');
+    const opening=new THREE.Vector3(0,-1,0).applyQuaternion(q);assert.ok(opening.dot(towardElbow)>=Math.SQRT1_2-1e-6,'The wrist must not fold more than 45 degrees from its forearm');
     assert.ok(hand.matrixWorld.determinant()>0,'No negative-scale mirror or inside-out palm');
    }
   }
  }
 });
+test('both wrist cuffs remain connected and bounded throughout a full whirlwind',()=>{
+ const hero=makeWarrior(),u=hero.userData,q=new THREE.Quaternion();
+ for(const tier of [0,2,4])for(const stance of tier<2?[1]:[0,1]){
+  u.setEquipment(tier);restingPose(hero,stance);u.setReach(12);
+  for(let frame=0;frame<=96;frame++){
+   const p=sampleSpinMotion(frame/96*Math.PI*2,{twoHanded:!!stance});
+   u.body.rotation.set(p.bodyPitch,p.bodyYaw,p.bodyRoll);u.body.position.y=p.bodyDrop;
+   u.weaponRig.position.set(p.gripX,p.gripY,p.gripZ);
+   u.weaponRig.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),new THREE.Vector3(p.directionX,p.directionY,p.directionZ));
+   u.updateGrip();hero.updateMatrixWorld(true);armsConnected(hero);
+   for(const [arm,hand] of [[u.leftArm,u.leftGrip],[u.rightArm,u.rightGrip]]){
+    hand.getWorldQuaternion(q);const cuff=new THREE.Vector3(0,-1,0).applyQuaternion(q);
+    const elbow=arm.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0));
+    assert.ok(cuff.dot(elbow.sub(worldPosition(hand)).normalize())>=Math.SQRT1_2-1e-6,`Wrist reversed at tier ${tier}, stance ${stance}, frame ${frame}`);
+   }
+   contact(u.rightGrip,u.rightGripAnchor);if(stance)contact(u.leftGrip,u.leftGripAnchor);else contact(u.leftGrip,u.shieldGripAnchor);
+  }
+ }
+});
+
 test('elbow side does not depend on a previous reverse pose or full rotation',()=>{
  const hero=makeWarrior(),u=hero.userData;u.setEquipment(0);restingPose(hero,1);
  const positions=[u.leftArm,u.rightArm].map(a=>a.userData.fore.localToWorld(new THREE.Vector3(0,-.5,0)));

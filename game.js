@@ -8,15 +8,15 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261107-perf14-fix2';
-import {createForgeMenu} from './menu.js?v=20261107-cities10';
+import {createForgeMenu} from './menu.js?v=20261108-readable1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-storm1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-storm1';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-props1';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-grip1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261108-storm2';
+import {createWorld} from './world.js?v=20261108-grip1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
