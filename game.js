@@ -1457,14 +1457,14 @@ function releaseBeast(){
   if(boss?.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}
 }
 function beastBlast(point,radius,damage,{groundOnly=false}={}){
-  const distance=(x,z)=>Math.hypot(x-point.x,z-point.z);
   const bodyDistance=e=>Math.hypot(e.x-point.x,e.z-point.z,Math.max(0,point.y-(e.y+(e.height||1.88)),e.y-point.y));
   if(bodyDistance(player)<radius+player.radius&&(!groundOnly||player.y<1.1)){
     const dir=normalize(player.x-point.x,player.z-point.z);hurtPlayer(damage,dir.x,dir.z,false);
   }
   for(const e of [...enemies])if(!e.dead&&bodyDistance(e)<radius+e.radius&&(!groundOnly||e.y<1.1))hitEnemy(e,damage*2.5,normalize(e.x-point.x,e.z-point.z),6,1,null,{weapon:'explosion'});
   for(const o of nearbyObjects(point.x,point.z,radius+3))if(!o.dead){
-    const near=nearestPoint(point.x,point.z,o);if(distance(near.x,near.z)<radius)hurtObject(o,damage*4,.5,{x:near.x,y:clamp(point.y,o.baseY??0,(o.baseY??0)+o.h),z:near.z},'explosion');
+    const near=nearestPoint(point.x,point.z,o),y=clamp(point.y,o.baseY??0,(o.baseY??0)+o.h);
+    if(Math.hypot(near.x-point.x,near.z-point.z,y-point.y)<radius)hurtObject(o,damage*4,.5,{x:near.x,y,z:near.z},'explosion');
   }
   pulse(point.x,point.z,radius,0xff7b3c,.4);shake=Math.max(shake,.15);audio.play('break',.8);
 }

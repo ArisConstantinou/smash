@@ -4060,3 +4060,9 @@ test('stomp leaves an airborne player safe and hits a grounded player in the sam
  api.beastBlast(new THREE.Vector3(0,.2,0),7.5,38,{groundOnly:true});assert.equal(api.player.hp,hp);
  api.player.y=0;api.beastBlast(new THREE.Vector3(0,.2,0),7.5,38,{groundOnly:true});assert.ok(api.player.hp<hp);
 });
+
+test('an elevated ordnance blast cannot destroy a low prop outside its real vertical radius',()=>{
+ arena(1,{test:false});const wall=placeObject('wall',0,0,{w:2,d:2,h:2,hp:1000,maxHp:1000});
+ api.beastBlast(new THREE.Vector3(0,20,0),4,30);assert.equal(wall.hp,1000);assert.equal(wall.dead,false);
+ api.beastBlast(new THREE.Vector3(0,3,0),4,30);assert.ok(wall.hp<1000);
+});
