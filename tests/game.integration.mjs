@@ -4243,7 +4243,7 @@ test('bicycle turn, attack and dismount retain physical mouse heading and damage
 
 test('Space and the touch jump button keep the bicycle attached through takeoff and landing',()=>{
  for(const touchInput of [false,true]){
-  arena(1,{test:false});assert.ok(api.toggleMount());const model=api.mountRide.model;
+  arena(1,{test:false});assert.ok(api.toggleMount());assert.match(elements.get('leapButton').title,/ποδήλατο/);const model=api.mountRide.model;
   if(touchInput)pointerEvent('leapButton','pointerdown',{pointerType:'touch',pointerId:771});else key('Space',true);
   playerSteps(.16);assert.ok(api.mountRide.body.y>.5);assert.equal(api.mountRide.active,true);assert.equal(api.mountRide.model,model);assert.equal(api.leap,null);
   if(touchInput)pointerEvent('leapButton','pointerup',{pointerType:'touch',pointerId:771});else key('Space',false);
