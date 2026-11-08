@@ -187,14 +187,17 @@ try{
       assert.deepEqual(errors,[]);
       const barbedCombat=await verifyBarbedCombat(page,config,output);
       assert.deepEqual(errors,[]);
-      await page.evaluate(()=>{__ironfallQA.startGame(1,{test:true});__ironfallQA.gainXP(8);});
+        // Manual combat above can legitimately persist collected materials.
+        // Protect that complete earned save at this scenario's boundary.
+        const savedBeforeStorm=await page.evaluate(()=>{const earned=JSON.parse(localStorage.getItem('ironfall.character'));__ironfallQA.startGame(1,{test:true});__ironfallQA.gainXP(8);return earned;});
+        assert.equal(savedBeforeStorm.character.level,6);assert.equal(savedBeforeStorm.character.weaponId,'iron');
       await page.waitForFunction(()=>__ironfallQA.levelStorm.strikes===1);
       assert.equal(await page.evaluate(()=>__ironfallQA.character.level),2);
       await page.screenshot({path:resolve(output,config.name+'-level-storm.png'),timeout:60000});
       await page.waitForFunction(()=>__ironfallQA.levelStorm.active===null);
       assert.equal(await page.evaluate(()=>__ironfallQA.levelStorm.strikes),1);
         assert.ok(await page.evaluate(()=>__ironfallQA.groundScars.count===1&&__ironfallQA.groundScars.damaged.size>0),'Fractured floor must persist after the sky effect ends');
-      assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),saved,'Level-up test cannot replace the earned save');
+        assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),savedBeforeStorm,'Level-up test cannot replace or mutate any part of the earned save');
       assert.deepEqual(errors,[]);
       results.push({viewport:config.name,passed:true,hud,combat,throwPicture,barbedCombat,levelStorm:true});
     }catch(error){
