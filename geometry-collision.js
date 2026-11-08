@@ -39,14 +39,19 @@ function makePart(position, indices) {
   return {vertices,triangles,edges,bounds,closed,worldRevision:-1};
 }
 
-function buildGeometry(geometry, diagnostics) {
+function buildGeometry(geometry, diagnostics, previous) {
   const position=geometry.attributes.position, index=geometry.index;
   if(!position)return {parts:[],cells:new Map(),bounds:new THREE.Box3()};
   const specs=geometry.userData.collisionParts||geometry.userData.fractureParts;
   const first=Math.max(0,geometry.drawRange.start||0),end=Math.min(index?.count??position.count,first+geometry.drawRange.count);
   const visibleIndices=index?index.array.subarray(first,end):null;
   const active=visibleIndices?new Set(visibleIndices):null, parts=[];
-  const add=indices=>{const part=makePart(position,indices);if(part)parts.push(part);};
+  // A hit rewrites only the live-piece index. Reuse the immutable local solid
+  // of each surviving whole piece; rebuilding its vertices/edges every hit
+  // stalls dense destruction. Edited vertices or partial pieces still rebuild.
+  const reusable=previous?.geometry===geometry&&previous.position===position&&previous.positionVersion===position.version&&previous.specs===specs;
+  const localParts=reusable?previous.localParts:new Map();
+  const add=indices=>{diagnostics.partBuilds++;const part=makePart(position,indices);if(part)parts.push(part);return part;};
   if(specs?.length) {
     for(const spec of specs) {
       // A fracture removes whole pieces by rewriting the render index. The
@@ -57,7 +62,10 @@ function buildGeometry(geometry, diagnostics) {
         if(active&&(!active.has(i)||!active.has(i+1)||!active.has(i+2)))continue;
         ids.push(i,i+1,i+2);
       }
-      add(ids);
+      const whole=ids.length===spec.count;
+      const cached=whole&&localParts.get(spec);
+      if(cached)parts.push({...cached,worldRevision:-1});
+      else{const part=add(ids);if(whole&&part)localParts.set(spec,part);}
     }
   } else {
     const ids=index?Array.from(visibleIndices):Array.from({length:Math.max(0,end-first)},(_,i)=>i+first);
@@ -75,7 +83,7 @@ function buildGeometry(geometry, diagnostics) {
       }
   }
   diagnostics.cacheBuilds++;
-  return {geometry,position,positionVersion:position.version,index,indexVersion:index?.version,drawStart:geometry.drawRange.start,drawCount:geometry.drawRange.count,parts,cells,bounds,
+  return {geometry,position,positionVersion:position.version,specs,localParts,index,indexVersion:index?.version,drawStart:geometry.drawRange.start,drawCount:geometry.drawRange.count,parts,cells,bounds,
     matrix:new THREE.Matrix4().makeScale(0,0,0),inverse:new THREE.Matrix4(),worldBounds:new THREE.Box3(),revision:0};
 }
 
@@ -242,9 +250,18 @@ function sweepPart(part,start,direction,radius,maximum) {
 export function createGeometryCollision({nearObjects,bounds=117}={}) {
   if(typeof nearObjects!=='function')throw new TypeError('Geometry collision requires a nearby-object query');
   let meshes=new WeakMap(),objectMeshes=new WeakMap(),fallbacks=new WeakMap();
-  const diagnostics={cacheBuilds:0,queries:0,partsTested:0,triangleTests:0,gridCells:0};
+  const diagnostics={cacheBuilds:0,partBuilds:0,queries:0,partsTested:0,triangleTests:0,gridCells:0};
   const queryBox=new THREE.Box3(),localBox=new THREE.Box3(),rootInverse=new THREE.Matrix4(),correction=new THREE.Matrix4(),matrix=new THREE.Matrix4();
   const anchorMatrix=new THREE.Matrix4(),anchorPosition=new THREE.Vector3();
+  function cachedGeometry(node){
+    const geometry=node.geometry,position=geometry?.attributes?.position;if(!position)return null;
+    let cache=meshes.get(node);
+    if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version||cache.drawStart!==geometry.drawRange.start||cache.drawCount!==geometry.drawRange.count){cache=buildGeometry(geometry,diagnostics,cache);meshes.set(node,cache);}
+    return cache;
+  }
+  function warm(objects){
+    for(const object of objects){if(object.dead)continue;for(const node of entries(object))cachedGeometry(node);}
+  }
 
   function entries(object) {
     if(!object.mesh) {
@@ -283,12 +300,7 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
     for(const object of onlyObject?[onlyObject]:nearObjects(x,z,radius+2)) {
       if(object.dead)continue;
       for(const node of entries(object)) {
-        const geometry=node.geometry,position=geometry?.attributes?.position;
-        if(!position)continue;
-        let cache=meshes.get(node);
-        if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version||cache.drawStart!==geometry.drawRange.start||cache.drawCount!==geometry.drawRange.count) {
-          cache=buildGeometry(geometry,diagnostics);meshes.set(node,cache);
-        }
+        const cache=cachedGeometry(node);if(!cache)continue;
         if(!cache.parts.length)continue;
         matrix.multiplyMatrices(correction,node.matrixWorld);
         if(!cache.matrix.equals(matrix)) {
@@ -429,5 +441,5 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
     return {x:entity.x-start.x,z:entity.z-start.z,y:entity.y-start.y,grounded:onGround,landed,ceilingHit,blocked};
   }
   function clear(){meshes=new WeakMap();objectMeshes=new WeakMap();fallbacks=new WeakMap();}
-  return {support,supportHeight,ceilingHeight,geometryHit,moveBody,clearBody,diagnostics,clear};
+  return {support,supportHeight,ceilingHeight,geometryHit,moveBody,clearBody,diagnostics,clear,warm};
 }

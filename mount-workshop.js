@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior} from './models.js?v=20261108-mount1';
-import {createMountModel} from './mount-models.js?v=20261108-mount1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-mount1';
+import {createMountModel} from './mount-models.js?v=20261108-mount1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-mount1';
 import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261108-mount1';
 

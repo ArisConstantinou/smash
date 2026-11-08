@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import {DebrisRenderer} from './debris-renderer.js?v=20261107-perf14-fix1';
+import {DebrisRenderer} from './debris-renderer.js?v=20261108-startup1';
 
 // Damage is monotonic and based on remaining health, not on damage per hit.
 // Randomness is stable per instance: identical buildings never share holes.
@@ -224,6 +224,13 @@ export class DestructionSystem {
     this.renderer=new DebrisRenderer(this.group,this.material,this.limit);
     this.debris=[];this.alarms=new Map();this.time=0;this.disposed=false;
   }
+  warm(){this.renderer.geometry.setDrawRange(0,3);}
+  reset(){
+    for(const object of [...this.alarms.keys()])this.stopAlarm(object);
+    while(this.debris.length)this.removeDebris(0);
+    this.renderer.sync([]);this.renderer.geometry.setDrawRange(0,0);this.time=0;
+    this.audio?.stopEnvironment?.();
+  }
   hit(object,point,listener) {
     if(this.disposed)return null;
     if(vehicle(object)&&object.hp>0)this.alarm(object);
@@ -374,9 +381,7 @@ export class DestructionSystem {
   }
   dispose() {
     if(this.disposed)return;this.disposed=true;
-    for(const object of [...this.alarms.keys()])this.stopAlarm(object);
-    while(this.debris.length)this.removeDebris(0);
+    this.reset();
     this.renderer.dispose();this.group.removeFromParent();this.material.dispose();
-    this.audio?.stopEnvironment?.();
   }
 }

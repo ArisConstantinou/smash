@@ -189,3 +189,13 @@ test('destruction stages reuse fixed GPU index buffers and render only live piec
   }
   free(o);
 });
+
+test('round reset keeps the warmed rubble buffers and releases old physical pieces',()=>{
+  const scene=new THREE.Scene(),sys=new DestructionSystem(scene),o=object('office');
+  const geometry=sys.renderer.geometry,skeleton=sys.renderer.mesh.skeleton;
+  sys.warm();assert.equal(geometry.drawRange.count,3);sys.reset();assert.equal(geometry.drawRange.count,0);
+  o.hp=0;sys.hit(o,{x:0,y:3,z:0},{x:0,z:0});sys.update(.01);assert.ok(sys.debris.length>0);
+  const capacity=sys.renderer.capacity;sys.reset();assert.equal(sys.debris.length,0);assert.equal(sys.renderer.geometry.drawRange.count,0);
+  assert.equal(sys.renderer.mesh.skeleton,skeleton);assert.ok(sys.renderer.capacity>=capacity);assert.equal(sys.disposed,false);
+  sys.reset();sys.dispose();free(o);
+});

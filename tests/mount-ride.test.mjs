@@ -10,6 +10,14 @@ function fixture(level=1,hover=false){
  assert.ok(ride.toggle(player,hero,world));
  return {ride,player,hero,garage,world,objects,step:(dt,input={})=>ride.update(dt,{player,hero,world,move:{x:0,z:1},strength:1,...input})};
 }
+test('bicycle jump carries its rider, rejects an airborne repeat and lands against real geometry',()=>{
+ const f=fixture();assert.equal(f.ride.jump(f.world),true);assert.equal(f.ride.jump(f.world),false);
+ let peak=0;for(let n=0;n<150;n++){f.step(1/120);f.ride.pose(f.hero);peak=Math.max(peak,f.ride.body.y);assert.equal(f.ride.active,true);assert.ok(Math.abs(f.player.y-f.ride.body.y-f.ride.model.userData.riderOffset)<1e-8);}
+ assert.ok(peak>1.3&&peak<2);assert.equal(f.ride.body.y,0);assert.equal(f.ride.airborne,false);assert.ok(f.player.z>3);assert.equal(f.ride.jump(f.world),true);
+ f.ride.reset(f.hero);
+ const c=fixture(),roof=new THREE.Mesh(new THREE.BoxGeometry(12,.3,12),new THREE.MeshBasicMaterial());roof.position.set(0,c.ride.collision.height+.35,0);roof.updateMatrixWorld(true);c.objects.push({mesh:roof,x:0,z:0,w:12,d:12,h:roof.position.y+.15});assert.equal(c.ride.jump(c.world),true);
+ for(let n=0;n<100;n++)c.step(1/120,{strength:0});assert.ok(c.ride.body.y<.01);assert.equal(c.ride.airborne,false);c.ride.reset(c.hero);
+});
 test('mounted travel has continuous steering and the full vehicle stops at surviving walls',()=>{
  const f=fixture();for(let i=0;i<60;i++)f.step(1/120,{move:{x:.6,z:.8}});
  assert.ok(f.player.x>1&&f.player.z>1);assert.ok(f.ride.yaw>.5&&f.ride.yaw<.7);
@@ -18,6 +26,14 @@ test('mounted travel has continuous steering and the full vehicle stops at survi
  for(let i=0;i<300;i++)f.step(1/120);assert.ok(f.player.z<4.71);assert.equal(f.ride.body.y,0);
  f.ride.dismount(f.player,f.hero);assert.equal(f.player.y,0);assert.equal(f.ride.active,false);f.ride.reset(f.hero);
 });
+test('a bicycle facing a wall can back out when its turning envelope is blocked',()=>{
+ const f=fixture(),wall=new THREE.Mesh(new THREE.BoxGeometry(20,8,.5),new THREE.MeshBasicMaterial());wall.position.set(0,4,2.2);wall.updateMatrixWorld(true);f.objects.push({mesh:wall,x:0,z:2.2,w:20,d:.5,h:8});
+ for(const x of [-.8,.8]){const side=new THREE.Mesh(new THREE.BoxGeometry(.3,8,12),new THREE.MeshBasicMaterial());side.position.set(x,4,-2);side.updateMatrixWorld(true);f.objects.push({mesh:side,x,z:-2,w:.3,d:12,h:8});}
+ for(let n=0;n<100;n++)f.step(1/120);const atWall=f.player.z;
+ for(let n=0;n<360;n++)f.step(1/120,{move:{x:0,z:-1}});
+ assert.ok(f.player.z<atWall-.7,JSON.stringify({atWall,z:f.player.z,yaw:f.ride.yaw,speed:f.ride.speed}));assert.ok(f.ride.clear(f.world,f.ride.body.x,f.ride.body.z,0,f.ride.yaw));f.ride.reset(f.hero);
+});
+
 test('hover has freely controlled height, stops at ceilings and lands before dismounting',()=>{
  const f=fixture(21,true);for(let i=0;i<100;i++)f.step(1/120,{strength:0,up:true});assert.ok(f.ride.body.y>3);
  const y=f.ride.body.y;for(let i=0;i<120;i++)f.step(1/120,{strength:0});assert.ok(f.ride.body.y>y&&f.ride.body.y-y<.8);

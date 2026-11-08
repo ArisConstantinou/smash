@@ -1,5 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';import * as THREE from '../vendor/three.module.js';
 import {createGarage,purchasePart}from '../mount-rules.js';import{createMountModel}from '../mount-models.js';import{makeWarrior}from '../models.js';import{poseMountedRider,resetMountedRider}from '../mount-rider.js';
+test('rider heading remains a yaw through every quadrant and a subsequent walking turn',()=>{
+ const mount=createMountModel('bicycle'),hero=makeWarrior(),forward=new THREE.Vector3();
+ for(let n=0;n<16;n++){
+  const yaw=n*Math.PI/8;mount.rotation.set(0,yaw,0);poseMountedRider(hero,mount);
+  assert.ok(Math.abs(hero.rotation.x)<1e-8&&Math.abs(hero.rotation.z)<1e-8,'Mounting cannot leave hidden half-turns on the walking actor');
+  resetMountedRider(hero);
+  for(const heading of [-2.6,-1,.2,1.6,2.8]){hero.rotation.y=heading;forward.set(0,0,1).applyQuaternion(hero.quaternion);assert.ok(forward.x*Math.sin(heading)+forward.z*Math.cos(heading)>.999999);}
+ }
+ mount.userData.dispose();
+});
 test('all mount models have bounded real geometry and distinct moving part pivots',()=>{
  const g=createGarage();for(const kind of ['bicycle','motorcycle','scifi']){
   const m=createMountModel(kind,g),u=m.userData;let triangles=0,draws=0;m.traverse(n=>{if(n.isMesh){triangles+=n.geometry.attributes.position.count/3;draws++;assert.ok(n.geometry.boundingBox);}});
