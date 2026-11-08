@@ -4,7 +4,7 @@ import { RecordedSounds } from './audio-samples.js?v=20261106-audio2';
 const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
 const MAX_SOURCES = 64;
 const METAL_VOICES = new Set(['robot', 'mech', 'siegeMech', 'boss']);
-const ENVIRONMENT = new Set(['carAlarm','carTear','carWreck','buildingFracture','buildingCollapse','debrisLand']);
+const ENVIRONMENT = new Set(['levelStorm','carAlarm','carTear','carWreck','buildingFracture','buildingCollapse','debrisLand']);
 const SPACING = { menuFocus:.09,menuPress:.08,menuWood:.18,menuMetal:.18,menuOpen:.12,menuClose:.12,menuReady:.5,targetLock:.20,targetCancel:.1,carAlarm:.10, carTear:.15, carWreck:.22, buildingFracture:.16, buildingCollapse:.35, debrisLand:.095, hit: .045, break: .12, pickup: .075, hurt: .25, charge: .55, swing: .085, exert: .72, enemyHurt: .25, combo: .9 };
 
 export class GameAudio {
@@ -561,6 +561,12 @@ export class GameAudio {
       case 'charge':
         this._tone('triangle', 110, 330, .075, .48, 0, .08);
         this._tone('sine', 220, 660, .03, .5, .03, .08);
+        break;
+      case 'levelStorm':
+        this._noise(.28,.09,3600,'highpass');
+        this._tone('sine',95,33,.24,.65,0,.003);
+        this._noise(.30,.9,260,'lowpass',.035);
+        this._noise(.12,.45,950,'bandpass',.12,300);
         break;
       case 'boss':
         this._tone('sawtooth', 65.4, 49, .075, 1.6, 0, .13);

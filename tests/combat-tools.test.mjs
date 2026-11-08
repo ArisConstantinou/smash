@@ -95,11 +95,11 @@ test('punches alternate real fists, recover to guard and scale without weapon da
   assert.equal(before.active,false);assert.equal(end.active,false);
  }
 });
-test('each earned level grants exactly +2 base damage and +8 maximum health permanently',()=>{
+test('each earned level strengthens action damage beyond the old flat bonus and adds eight HP permanently',()=>{
  const state=createCharacterProgression();let last=getCharacterStats(state);
  for(let lv=2;lv<=15;lv++){
   awardCharacterXp(state,xpForNextLevel(state.level));const next=getCharacterStats(state);
-  assert.equal(next.power-last.power,2);assert.equal(next.maxHp-last.maxHp,8);
+  assert.ok(next.power-last.power>2);assert.equal(next.maxHp-last.maxHp,8);
   const restored=getCharacterStats(restoreCharacterProgression(serializeCharacterProgression(state)));
   assert.deepEqual(restored,next);last=next;
  }

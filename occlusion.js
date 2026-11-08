@@ -1,5 +1,5 @@
 import {firstHammerHit} from './combat.js?v=20261107-forge9';
-import {Raycaster,Vector3} from './vendor/three.module.js';
+import {Raycaster,Vector3,Mesh,InstancedMesh,MeshBasicMaterial} from './vendor/three.module.js';
 
 // Broad collision bounds include empty courtyards, pavements and roof aprons.
 // They are a candidate test, never proof that opaque rendered geometry hides a
@@ -61,4 +61,43 @@ export function applyOccluderFade(object, obstructed, dt) {
     material.opacity=baseline.opacity*(1-object.occlusionFade*.94);
     material.depthWrite=active?false:baseline.depthWrite;
   }
+}
+
+// Prime depth after ordinary transparent actors/effects have drawn, then blend
+// only the nearest building shell. Without this pass every hidden floor slab
+// accumulates through the transparent facade like another floating roof.
+// Geometry, fracture indices, textures and collision stay owned by the source.
+export class OcclusionDepth {
+  constructor(scene){
+    this.scene=scene;this.records=new Map();this.frame=0;this.activeCount=0;
+    this.material=new MeshBasicMaterial({transparent:true,opacity:1,colorWrite:false,depthWrite:true,depthTest:true});
+  }
+  ensure(source){
+    let record=this.records.get(source);if(record)return record;
+    const proxy=source.isInstancedMesh?new InstancedMesh(source.geometry,this.material,source.count):new Mesh(source.geometry,this.material);
+    proxy.name='Occluder nearest-surface depth';proxy.matrixAutoUpdate=false;proxy.renderOrder=100;proxy.visible=false;proxy.castShadow=false;proxy.receiveShadow=false;proxy.raycast=()=>{};
+    this.scene.add(proxy);record={source,proxy,order:source.renderOrder,seen:0};this.records.set(source,record);return record;
+  }
+  sync(objects){
+    const stamp=++this.frame;this.activeCount=0;
+    for(const object of objects){
+      if(object.dead||!(object.occlusionFade>.001)||!object.mesh?.visible)continue;
+      object.mesh.traverse(source=>{
+        if(!source.isMesh)return;
+        let visible=true;for(let node=source;node;node=node.parent){if(!node.visible){visible=false;break;}}
+        if(!visible)return;
+        const record=this.ensure(source),proxy=record.proxy;record.seen=stamp;
+        source.updateWorldMatrix(true,false);proxy.geometry=source.geometry;proxy.matrix.copy(source.matrixWorld);proxy.frustumCulled=source.frustumCulled;proxy.visible=true;
+        if(source.isInstancedMesh){proxy.count=source.count;proxy.instanceMatrix=source.instanceMatrix;proxy.boundingSphere=source.boundingSphere;}
+        source.renderOrder=101;this.activeCount++;
+      });
+    }
+    for(const record of this.records.values())if(record.seen!==stamp){record.proxy.visible=false;record.source.renderOrder=record.order;}
+  }
+  warm(objects){
+    const object=objects.find(o=>o.isBuilding&&o.mesh?.visible);let warmed=false;
+    object?.mesh.traverse(source=>{if(!warmed&&source.isMesh){source.updateWorldMatrix(true,false);const {proxy}=this.ensure(source);proxy.matrix.copy(source.matrixWorld);proxy.visible=true;warmed=true;}});
+  }
+  reset(){for(const {source,proxy,order}of this.records.values()){source.renderOrder=order;proxy.removeFromParent();}this.records.clear();this.activeCount=0;}
+  dispose(){this.reset();this.material.dispose();}
 }

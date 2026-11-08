@@ -32,15 +32,18 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
     return chunks.get(key);
   }
   function box(mat,x,y,z,w,h,d,rotation=0){
+    const kind=typeof mat==='string'?mat:'wear';
     if(typeof mat==='string')mat=floorMats[mat];
     const chunk=chunkFor(x,z),key=`${chunk.mesh.uuid}:${mat.uuid}`;
-    if(!batches.has(key))batches.set(key,{mat,chunk,matrices:[]});
+    if(!batches.has(key))batches.set(key,{mat,chunk,matrices:[],surfaces:[]});
     transform.position.set(x,y,z);transform.rotation.set(0,rotation,0);transform.scale.set(w,h,d);transform.updateMatrix();
     batches.get(key).matrices.push(transform.matrix.clone());
+    batches.get(key).surfaces.push({kind,top:y+h/2,bottom:y-h/2,paint:kind==='lane'||kind==='seam'||kind==='wear'||(kind==='curb'&&h<.02)});
   }
   function flushBatches(){
-    for(const {mat,chunk,matrices} of batches.values()){
+    for(const {mat,chunk,matrices,surfaces} of batches.values()){
       const mesh=new THREE.InstancedMesh(cube,mat,matrices.length);
+      mesh.userData.groundSurfaces=surfaces;mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.receiveShadow=true;mesh.computeBoundingSphere();chunk.mesh.add(mesh);
     }
     batches.clear();
@@ -52,12 +55,15 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
       if(!i)shape.moveTo(px,pz);else shape.lineTo(px,pz);
     }
     shape.closePath();const geo=own(new THREE.ShapeGeometry(shape));geo.rotateX(-Math.PI/2);
-    const mesh=new THREE.Mesh(geo,mat);mesh.position.set(x,height,z);mesh.receiveShadow=true;chunkFor(x,z).mesh.add(mesh);return mesh;
+    const mesh=new THREE.Mesh(geo,mat);mesh.position.set(x,height,z);mesh.receiveShadow=true;
+    if(!mat.transparent)mesh.userData.groundSurface={kind:'patch',bottom:height-.04};
+    chunkFor(x,z).mesh.add(mesh);return mesh;
   }
 
   // A continuous street grid connects every block and the outer ring road.
   const ground=new THREE.Mesh(own(new THREE.PlaneGeometry(260,260)),floorMats.grass);
   ground.rotation.x=-Math.PI/2;ground.position.y=-.04;ground.receiveShadow=true;group.add(ground);
+  ground.userData.groundSurface={kind:'grass',bottom:-.14};
   for(const road of layout.roads) for(let i=0;i<10;i++){
     const center=(i-4.5)*CITY_SPACING;
     box('asphalt',road,-.005,center,CITY_ROAD_WIDTH,.045,CITY_SPACING);

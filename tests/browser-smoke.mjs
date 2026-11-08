@@ -14,7 +14,7 @@ import {createCharacterProgression,xpForNextLevel} from '../character-progressio
 const root=fileURLToPath(new URL('../',import.meta.url));
 const output=resolve(process.env.CODEX_TEST_OUTPUT||resolve(root,'browser-evidence'),'smoke');await mkdir(output,{recursive:true});
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.wav':'audio/wav','.mp3':'audio/mpeg','.png':'image/png','.webp':'image/webp'};
-const qa=`\nwindow.__ironfallQA={get phase(){return phase},get settings(){return settings},get audio(){return audio},get player(){return player},get world(){return world},get hero(){return hero},get character(){return character},get menu(){return forgeMenu},get testRun(){return testRun},get aiming(){return !!touchThrowAim},get windup(){return !!throwWindup},get flight(){return !!throwFlight},get throwLock(){return throwLock},setPhase,startGame,persistCharacter,updateSavedCharacter,updatePlayer};\n`;
+const qa=`\nwindow.__ironfallQA={get phase(){return phase},get levelStorm(){return levelStorm},get groundScars(){return groundScars},gainXP,get settings(){return settings},get audio(){return audio},get player(){return player},get world(){return world},get hero(){return hero},get character(){return character},get menu(){return forgeMenu},get testRun(){return testRun},get aiming(){return !!touchThrowAim},get windup(){return !!throwWindup},get flight(){return !!throwFlight},get throwLock(){return throwLock},setPhase,startGame,persistCharacter,updateSavedCharacter,updatePlayer};\n`;
 const server=createServer(async(req,res)=>{
   try{
     const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
@@ -187,7 +187,19 @@ try{
       assert.deepEqual(errors,[]);
       const barbedCombat=await verifyBarbedCombat(page,config,output);
       assert.deepEqual(errors,[]);
-      results.push({viewport:config.name,passed:true,hud,combat,throwPicture,barbedCombat});
+        // Manual combat above can legitimately persist collected materials.
+        // Protect that complete earned save at this scenario's boundary.
+        const savedBeforeStorm=await page.evaluate(()=>{const earned=JSON.parse(localStorage.getItem('ironfall.character'));__ironfallQA.startGame(1,{test:true});__ironfallQA.gainXP(8);return earned;});
+        assert.equal(savedBeforeStorm.character.level,6);assert.equal(savedBeforeStorm.character.weaponId,'iron');
+      await page.waitForFunction(()=>__ironfallQA.levelStorm.strikes===1);
+      assert.equal(await page.evaluate(()=>__ironfallQA.character.level),2);
+      await page.screenshot({path:resolve(output,config.name+'-level-storm.png'),timeout:60000});
+      await page.waitForFunction(()=>__ironfallQA.levelStorm.active===null);
+      assert.equal(await page.evaluate(()=>__ironfallQA.levelStorm.strikes),1);
+        assert.ok(await page.evaluate(()=>__ironfallQA.groundScars.count===1&&__ironfallQA.groundScars.damaged.size>0),'Fractured floor must persist after the sky effect ends');
+        assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),savedBeforeStorm,'Level-up test cannot replace or mutate any part of the earned save');
+      assert.deepEqual(errors,[]);
+      results.push({viewport:config.name,passed:true,hud,combat,throwPicture,barbedCombat,levelStorm:true});
     }catch(error){
       await page.screenshot({path:resolve(output,config.name+'-failure.png')}).catch(()=>{});
       results.push({viewport:config.name,passed:false,error:error.stack,consoleErrors:errors});

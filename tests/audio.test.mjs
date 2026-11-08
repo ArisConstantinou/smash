@@ -30,7 +30,7 @@ class Node {
   }
   connect(other) { this.connections.add(other); return other; }
   disconnect() { this.connections.clear(); this.disconnected = true; }
-  start(time = 0) { assert.ok(Number.isFinite(time) && time >= 0); this.started = time; }
+  start(time = 0, offset = 0, duration) { assert.ok(Number.isFinite(time) && time >= 0); this.started = time; this.naturalEnd = duration===undefined?undefined:time+duration; }
   stop(time = 0) { assert.ok(Number.isFinite(time) && time >= 0); this.stopped = time; }
   finish() { this.onended?.(); }
 }
@@ -69,6 +69,13 @@ function environment(t, { supported = true, session = true } = {}) {
   return { audio, window, document, audioSession };
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+test('level thunder schedules finite crack and rumble layers, honors mute and stops with the world',async t=>{
+ const {audio}=environment(t);await audio.unlock();for(const source of [...audio._sources])source.finish();
+ assert.equal(audio.play('levelStorm',.8),true);assert.equal(audio._environmentSources.size,4);
+ for(const source of audio._sources)assert.ok((source.stopped??source.naturalEnd)<=audio.ctx.currentTime+1.1);
+ audio.stopEnvironment();assert.equal(audio._sources.size,0);audio.toggle();assert.equal(audio.play('levelStorm',.8),false);
+});
 
 test('menu music waits for a gesture, follows mute and backgrounding, and exits without stopping the game cue', async t => {
   const { audio, document } = environment(t);

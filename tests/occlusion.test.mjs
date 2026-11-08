@@ -1,7 +1,7 @@
 import test from 'node:test';
 import * as THREE from '../vendor/three.module.js';
 import assert from 'node:assert/strict';
-import {occludesBattlePoint,findBattleOccluders,applyOccluderFade} from '../occlusion.js';
+import {occludesBattlePoint,findBattleOccluders,applyOccluderFade,OcclusionDepth} from '../occlusion.js';
 
 const view={x:13,y:23,z:18};
 const tower={x:5,z:7,w:6,d:6,h:24,dead:false};
@@ -65,4 +65,23 @@ test('a cleared view restores a building promptly rather than leaving a ghost be
   applyOccluderFade(o,true,1);
   for(let i=0;i<24;i++)applyOccluderFade(o,false,1/60);
   assert.equal(o.occlusionFade,0);assert.equal(material.opacity,1);assert.equal(material.depthWrite,true);
+});
+
+
+test('occluder depth uses shared live geometry without adding duplicate building parts and restores draw order',()=>{
+ const scene=new THREE.Scene(),group=new THREE.Group();scene.add(group);
+ const geometry=new THREE.BoxGeometry(4,8,4),material=new THREE.MeshBasicMaterial(),source=new THREE.Mesh(geometry,material);source.renderOrder=7;group.add(source);
+ const object={mesh:group,occlusionFade:1},depth=new OcclusionDepth(scene);depth.sync([object]);
+ const record=depth.records.get(source);assert.equal(group.children.length,1);assert.equal(record.proxy.geometry,geometry);
+ assert.equal(depth.material.colorWrite,false);assert.equal(depth.material.depthWrite,true);assert.ok(record.proxy.renderOrder<source.renderOrder);assert.ok(record.proxy.renderOrder>45);
+ assert.equal(depth.activeCount,1);const fractured=new THREE.BoxGeometry(3,5,4);source.geometry=fractured;source.position.x=2;depth.sync([object]);
+ assert.equal(record.proxy.geometry,fractured);assert.equal(record.proxy.matrix.elements[12],2);
+ object.occlusionFade=0;depth.sync([object]);assert.equal(source.renderOrder,7);assert.equal(record.proxy.visible,false);
+ let disposed=0;fractured.addEventListener('dispose',()=>disposed++);depth.dispose();assert.equal(disposed,0,'Shared fracture geometry remains owned by the building');assert.equal(scene.children.length,1);geometry.dispose();fractured.dispose();material.dispose();
+});
+test('hidden and destroyed building surfaces cannot leave occluder depth ghosts',()=>{
+ const scene=new THREE.Scene(),mesh=new THREE.Mesh(new THREE.BoxGeometry(2,2,2),new THREE.MeshBasicMaterial());scene.add(mesh);
+ const object={mesh,occlusionFade:1},depth=new OcclusionDepth(scene);depth.sync([object]);assert.equal(depth.activeCount,1);
+ mesh.visible=false;depth.sync([object]);assert.equal(depth.activeCount,0);
+ mesh.visible=true;object.dead=true;depth.sync([object]);assert.equal(depth.activeCount,0);depth.reset();assert.equal(depth.records.size,0);depth.dispose();mesh.geometry.dispose();mesh.material.dispose();
 });
