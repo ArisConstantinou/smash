@@ -1100,3 +1100,19 @@ body[data-touch-controls="true"] .comic-burst { min-width:90px; min-height:54px;
 .audio-check a{justify-self:start}
 .audio-blocked{outline:1px solid #e6c181;outline-offset:2px}
 @media(orientation:landscape) and (max-height:500px){.audio-check{grid-template-columns:auto 1fr;align-items:center;gap:4px 10px}.audio-check small{grid-column:2}.audio-check a{grid-column:2}.menu-audio-check{margin-top:7px}}
+
+/* Region goal: both contributions stay readable on every control layout. */
+.goal-heading{font-size:12px;letter-spacing:.5px}.goal-heading>span{max-width:none}.goal-target{font-size:12px}
+.goal-breakdown{display:flex;justify-content:space-between;gap:6px;margin-top:5px;font:12px/1.25 system-ui,sans-serif;letter-spacing:0}
+.goal-breakdown>span{white-space:nowrap}.goal-breakdown b{color:#ffe4a0}
+body[data-touch-controls="true"]{--mobile-hud-space:calc(var(--mobile-safe-top) + 166px)}
+body[data-touch-controls="true"] .hud-top{grid-template-rows:74px 32px}
+body[data-touch-controls="true"] .hero-status,body[data-touch-controls="true"] .goal-panel{height:74px}
+body[data-touch-controls="true"] .goal-heading,body[data-touch-controls="true"] .goal-target{font-size:12px}
+@media(orientation:landscape) and (max-height:500px){
+ body[data-touch-controls="true"]{--mobile-hud-space:calc(var(--mobile-safe-top) + 106px)}
+ body[data-touch-controls="true"] .hud-top{grid-template-rows:50px}
+ body[data-touch-controls="true"] .hero-status,body[data-touch-controls="true"] .goal-panel{height:50px}
+ body[data-touch-controls="true"] .goal-panel{position:relative}
+ body[data-touch-controls="true"] .goal-breakdown{position:absolute;top:9px;left:96px;right:90px;margin:0}
+}

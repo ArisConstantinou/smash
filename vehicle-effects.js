@@ -3,8 +3,8 @@
 // no shadows, no additional physics bodies. Inactive/distant sources cost no GPU work.
 import * as THREE from './vendor/three.module.js';
 import {isVehicle} from './kick-physics.js?v=20261107-perf14';
-import {VehicleExplosionBatch} from './vehicle-explosion.js?v=20261108-explosion1';
-export {preloadVehicleExplosion} from './vehicle-explosion.js?v=20261108-explosion1';
+import {VehicleExplosionBatch} from './vehicle-explosion.js?v=20261108-colossus1';
+export {preloadVehicleExplosion} from './vehicle-explosion.js?v=20261108-colossus1';
 export const VEHICLE_SMOKE_HP=.55,VEHICLE_FIRE_HP=.28,VEHICLE_EFFECT_LIMIT=16;
 export const VEHICLE_FUSE_SECONDS=1.2,VEHICLE_BLAST_RADIUS=4.2;
 export function vehicleDamageStage(car){
