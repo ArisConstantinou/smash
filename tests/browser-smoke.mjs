@@ -43,6 +43,27 @@ async function insideViewport(page,id){
   assert.ok(box.height>=40,id+' needs a usable touch target');
 }
 
+async function verifyCompactHud(page,mobile){
+  await page.waitForFunction(()=>/^\d+ FPS$/.test(document.querySelector('#performanceHud').textContent));
+  const layout=await page.evaluate(()=>{
+    const box=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+    return {width:innerWidth,height:innerHeight,title:document.querySelector('.goal-heading>span').textContent,
+      top:box('.hud-top'),hero:box('.hero-status'),health:box('.health-track'),wave:box('.run-status'),
+      goal:box('.goal-panel'),bar:box('.goal-track'),value:box('.goal-heading>div'),map:box('.minimap-panel'),fps:box('#performanceHud'),
+      upgrade:box('#upgradesToggle'),joystick:box('#joystick'),actions:box('#combatDock')};
+  });
+  assert.equal(layout.title,'ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ');
+  assert.ok(layout.fps.x>=layout.map.x&&layout.fps.right<=layout.map.right&&layout.fps.y>=layout.map.y);
+  if(mobile){
+    assert.ok(layout.top.y<=8&&layout.top.height<=100,'No separate performance strip or full-width wave row');
+    assert.ok(layout.wave.y>=layout.health.bottom+2&&layout.wave.bottom<=layout.hero.bottom+1&&layout.wave.right<=layout.hero.right+1,'Wave counter stays under the player health bar');
+    assert.ok(layout.upgrade.x>=layout.joystick.right+6&&layout.upgrade.right<=layout.actions.x-6,'Upgrade access stays between both control groups');
+    assert.ok(Math.abs(layout.map.right-layout.actions.right)<1);
+    if(layout.width<360&&layout.width<layout.height)assert.ok(layout.bar.right+3<=layout.value.x,'The small-phone bar must clear its percentage');
+  }
+  return layout;
+}
+
 try{
   for(const config of [
     {name:'desktop',width:1440,height:900,mobile:false},
@@ -135,6 +156,12 @@ try{
       assert.equal(await page.evaluate(()=>window.__ironfallQA.testRun),true);
       assert.equal(await page.evaluate(()=>window.__ironfallQA.world.city.level),10,'The postcard launches its corresponding city');
       assert.equal(await page.evaluate(()=>window.__ironfallQA.audio._menuActive),false,'Entering battle stops the menu score');
+      const hud=await verifyCompactHud(page,config.mobile);
+      if(config.name==='small-phone'){
+        await page.setViewportSize({width:320,height:568});await page.evaluate(()=>new Promise(requestAnimationFrame));
+        await verifyCompactHud(page,true);await page.screenshot({path:resolve(output,'small-phone-compact-hud.png')});
+        await page.setViewportSize({width:config.width,height:config.height});await page.evaluate(()=>new Promise(requestAnimationFrame));
+      }
       if(config.mobile){
         await insideViewport(page,'joystick');await insideViewport(page,'throwButton');
         await page.locator('#throwButton').tap();
@@ -160,7 +187,7 @@ try{
       assert.deepEqual(errors,[]);
       const barbedCombat=await verifyBarbedCombat(page,config,output);
       assert.deepEqual(errors,[]);
-      results.push({viewport:config.name,passed:true,combat,throwPicture,barbedCombat});
+      results.push({viewport:config.name,passed:true,hud,combat,throwPicture,barbedCombat});
     }catch(error){
       await page.screenshot({path:resolve(output,config.name+'-failure.png')}).catch(()=>{});
       results.push({viewport:config.name,passed:false,error:error.stack,consoleErrors:errors});

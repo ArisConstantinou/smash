@@ -1490,7 +1490,7 @@ function spawnBoss(){
   boss.geometryHit=(start,end,radius)=>beastCollision.geometryHit(boss,start,end,radius);
   boss.telegraph=makeTelegraph(pos.x,pos.z,21,0xff9852);$('bossHud').hidden=false;
   announce('Ο ΣΙΔΕΡΕΝΙΟΣ ΚΟΛΟΣΣΟΣ','Χτύπα τα θωρακισμένα πόδια. Απόφυγε τις κόκκινες ζώνες.',4.2);audio.play('boss');
-  player.hp=Math.min(player.maxHp,player.hp+30);toast('ΣΤΟΧΟΣ ΠΕΡΙΟΧΗΣ: ΕΠΙΤΕΥΧΘΗΚΕ','+30 ζωή · Ο boss σημειώνεται κόκκινος στον χάρτη.');
+  player.hp=Math.min(player.maxHp,player.hp+30);toast('ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ · ΣΤΟΧΟΣ 60%','+30 ζωή · Ο boss σημειώνεται κόκκινος στον χάρτη.');
 }
 function moveBeast(b,next,dt){
   const u=b.mesh.userData,old={x:b.x,y:b.y,z:b.z,yaw:b.mesh.rotation.y,walk:b.walk};
@@ -2654,7 +2654,8 @@ function frame(now){
     debris:destruction?.debris.length||0,destruction:destructionPercent(world.objects)});
   if(measured){
     const badge=$('performanceHud');if(badge){badge.hidden=phase!=='playing';
-      badge.textContent=Math.round(measured.fps)+' FPS · '+measured.backend+' · '+(measured.wasm?'WASM':'JS');
+      badge.textContent=Math.round(measured.fps)+' FPS';
+      badge.dataset.backend=measured.backend;badge.dataset.wasm=String(measured.wasm);
       badge.dataset.slow=String(measured.fps<25);
       badge.title='CPU '+measured.cpuMs.toFixed(1)+' ms · physics '+measured.simulationMs.toFixed(1)+' ms · render submission '+measured.renderCpuMs.toFixed(1)+' ms · draws '+measured.calls+' · debris '+measured.debris;
     }
