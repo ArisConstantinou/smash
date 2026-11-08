@@ -245,7 +245,7 @@ export const __integration = {
   get kills(){return kills;}, get bolts(){return bolts;}, get score(){return score;},
   get scene(){return scene;}, get keys(){return keys;}, get pointer(){return pointer;},
   get touch(){return touch;}, get touchThrowAim(){return touchThrowAim;}, get touchThrowQueued(){return touchThrowQueued;},
-  get camera(){return camera;}, get renderer(){return renderer;},
+  get camera(){return camera;}, get cameraTarget(){return cameraTarget;},updateBattleCamera,shakeCamera, get renderer(){return renderer;},
   get wave(){return wave;}, get sector(){return sector;},
   get upgradeQueue(){return upgradeQueue;}, get upgradePanelOpen(){return upgradePanelOpen;},
   get nearbyTargets(){return nearbyTargets;}, get focusedTarget(){return focusedTarget;},
@@ -4132,4 +4132,32 @@ test('an elevated ordnance blast cannot destroy a low prop outside its real vert
  arena(1,{test:false});const wall=placeObject('wall',0,0,{w:2,d:2,h:2,hp:1000,maxHp:1000});
  api.beastBlast(new THREE.Vector3(0,20,0),4,30);assert.equal(wall.hp,1000);assert.equal(wall.dead,false);
  api.beastBlast(new THREE.Vector3(0,3,0),4,30);assert.ok(wall.hp<1000);
+});
+
+
+test('foreground towers keep complete roofs inside the camera frustum at the normal gameplay angle',()=>{
+ try{
+  setViewport(2061,841);reset(1);Object.assign(api.player,{x:9.5,y:1.35,z:-3});
+  const desired=new THREE.Vector3(api.player.x+api.facing.x*.8,.6+api.player.y,api.player.z+api.facing.z*.8);
+  api.updateBattleCamera(10,desired.clone());const camera=api.camera;camera.lookAt(api.cameraTarget);camera.updateMatrixWorld(true);
+  const oldCamera=new THREE.OrthographicCamera(camera.left,camera.right,camera.top,camera.bottom,.1,300);oldCamera.position.copy(api.cameraTarget).add(new THREE.Vector3(13,23,18));oldCamera.lookAt(api.cameraTarget);oldCamera.updateMatrixWorld(true);
+  const tower=api.world.objects.find(o=>o.type==='skyscraper'&&o.x===33&&o.z===11);assert.ok(tower);tower.mesh.updateWorldMatrix(true,true);
+  let clipped=0,maximumScreenChange=0;
+  tower.mesh.traverse(node=>{if(!node.isMesh)return;const p=node.geometry.attributes.position;for(let i=0;i<p.count;i++){
+   const world=new THREE.Vector3().fromBufferAttribute(p,i).applyMatrix4(node.matrixWorld),view=world.clone().applyMatrix4(camera.matrixWorldInverse);
+   if(-view.z<camera.near)clipped++;
+   const actual=world.clone().project(camera),previous=world.clone().project(oldCamera);maximumScreenChange=Math.max(maximumScreenChange,Math.abs(actual.x-previous.x),Math.abs(actual.y-previous.y));
+  }});
+  assert.equal(clipped,0,'The nearby intact tower must not be sliced by the near plane');assert.ok(maximumScreenChange<1e-6,'Retreat must preserve orthographic framing');
+  for(const point of [new THREE.Vector3(0,0,0),new THREE.Vector3(-30,0,-20),new THREE.Vector3(33,28,11)]){
+   const depth=-point.clone().applyMatrix4(camera.matrixWorldInverse).z,oldDepth=-point.clone().applyMatrix4(oldCamera.matrixWorldInverse).z;
+   close((depth-api.scene.fog.near)/(api.scene.fog.far-api.scene.fog.near),(oldDepth-34)/(88-34));
+  }
+ }finally{setViewport();}
+});
+
+test('camera retreat preserves the same shake projection and effect eye position',()=>{
+ reset(1);const target=new THREE.Vector3(9,2,-3);api.updateBattleCamera(10,target.clone());api.shakeCamera(.4);api.camera.lookAt(api.cameraTarget);api.camera.updateMatrixWorld(true);
+ const logical=new THREE.OrthographicCamera(api.camera.left,api.camera.right,api.camera.top,api.camera.bottom,.1,300);logical.position.copy(api.camera.userData.effectPosition);logical.lookAt(api.cameraTarget);logical.updateMatrixWorld(true);
+ for(const point of [new THREE.Vector3(0,0,0),new THREE.Vector3(33,28,11),new THREE.Vector3(-10,5,12)]){const before=point.clone().project(logical),after=point.clone().project(api.camera);close(before.x,after.x);close(before.y,after.y);}
 });

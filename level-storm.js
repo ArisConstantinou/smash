@@ -15,7 +15,7 @@ export class LevelStorm{
  update(dt,player,camera){
   if(this.disposed||dt<=0)return;
   if(this.active){this.active.age+=dt;if(this.active.age>=STORM_DURATION)this.active=null;}
-  if(!this.active&&this.pending.length){const level=this.pending.shift();this.active={level,age:0,x:player.x,y:player.y+.8,z:player.z,baseY:player.y,skyY:Math.max(player.y+34,camera.position.y+35)};this.strikes++;this.onStrike(this.active);}
+  if(!this.active&&this.pending.length){const level=this.pending.shift();this.active={level,age:0,x:player.x,y:player.y+.8,z:player.z,baseY:player.y,skyY:Math.max(player.y+34,(camera.userData?.effectPosition?.y??camera.position.y)+35)};this.strikes++;this.onStrike(this.active);}
   const a=this.active;if(!a){this.hide();return;}
   const vertex=(mesh,i,x,y,z,r,g,b)=>{mesh.geometry.attributes.position.setXYZ(i,x,y,z);mesh.geometry.attributes.color.setXYZ(i,r,g,b);};
   let bc=0,wc=0;

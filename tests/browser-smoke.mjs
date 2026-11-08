@@ -14,7 +14,7 @@ import {createCharacterProgression,xpForNextLevel} from '../character-progressio
 const root=fileURLToPath(new URL('../',import.meta.url));
 const output=resolve(process.env.CODEX_TEST_OUTPUT||resolve(root,'browser-evidence'),'smoke');await mkdir(output,{recursive:true});
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.wav':'audio/wav','.mp3':'audio/mpeg','.png':'image/png','.webp':'image/webp'};
-const qa=`\nwindow.__ironfallQA={get phase(){return phase},get levelStorm(){return levelStorm},get groundScars(){return groundScars},gainXP,get settings(){return settings},get audio(){return audio},get player(){return player},get world(){return world},get hero(){return hero},get character(){return character},get menu(){return forgeMenu},get testRun(){return testRun},get aiming(){return !!touchThrowAim},get windup(){return !!throwWindup},get flight(){return !!throwFlight},get throwLock(){return throwLock},setPhase,startGame,persistCharacter,updateSavedCharacter,updatePlayer};\n`;
+const qa=`\nwindow.__ironfallQA={get phase(){return phase},get levelStorm(){return levelStorm},get groundScars(){return groundScars},gainXP,get settings(){return settings},get audio(){return audio},get player(){return player},get world(){return world},roofClipping(){camera.updateMatrixWorld(true);const object=world.objects.find(o=>o.type==='skyscraper'&&o.x===33&&o.z===11),point=new THREE.Vector3();let clipped=0,minDistance=Infinity;object.mesh.updateWorldMatrix(true,true);object.mesh.traverse(node=>{if(!node.isMesh)return;const p=node.geometry.attributes.position;for(let i=0;i<p.count;i++){point.fromBufferAttribute(p,i).applyMatrix4(node.matrixWorld).applyMatrix4(camera.matrixWorldInverse);const depth=-point.z;minDistance=Math.min(minDistance,depth);if(depth<camera.near)clipped++;}});return {clipped,minDistance};},get hero(){return hero},get character(){return character},get menu(){return forgeMenu},get testRun(){return testRun},get aiming(){return !!touchThrowAim},get windup(){return !!throwWindup},get flight(){return !!throwFlight},get throwLock(){return throwLock},setPhase,startGame,persistCharacter,updateSavedCharacter,updatePlayer};\n`;
 const server=createServer(async(req,res)=>{
   try{
     const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
@@ -197,9 +197,13 @@ try{
       await page.waitForFunction(()=>__ironfallQA.levelStorm.active===null);
       assert.equal(await page.evaluate(()=>__ironfallQA.levelStorm.strikes),1);
         assert.ok(await page.evaluate(()=>__ironfallQA.groundScars.count===1&&__ironfallQA.groundScars.damaged.size>0),'Fractured floor must persist after the sky effect ends');
-        assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),savedBeforeStorm,'Level-up test cannot replace or mutate any part of the earned save');
+        await page.evaluate(()=>{__ironfallQA.startGame(1,{test:true});Object.assign(__ironfallQA.player,{x:9.5,y:1.35,z:-3});});
+      await page.waitForTimeout(150);
+      const roof=await page.evaluate(()=>__ironfallQA.roofClipping());assert.equal(roof.clipped,0,'Natural foreground towers must not be sliced by the camera');
+      await page.screenshot({path:resolve(output,config.name+'-roofs.png'),timeout:60000});
+      assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('ironfall.character'))),savedBeforeStorm,'Level-up test cannot replace or mutate any part of the earned save');
       assert.deepEqual(errors,[]);
-      results.push({viewport:config.name,passed:true,hud,combat,throwPicture,barbedCombat,levelStorm:true});
+      results.push({viewport:config.name,passed:true,hud,combat,throwPicture,barbedCombat,levelStorm:true,roof});
     }catch(error){
       await page.screenshot({path:resolve(output,config.name+'-failure.png')}).catch(()=>{});
       results.push({viewport:config.name,passed:false,error:error.stack,consoleErrors:errors});

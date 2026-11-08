@@ -13,3 +13,8 @@ test('earned levels queue separately, execute without recursion and freeze with 
  storm.update(STORM_DURATION,player,camera);assert.equal(callbacks,3);storm.update(STORM_DURATION,player,camera);assert.equal(storm.active,null);assert.equal(storm.beam.visible,false);
  storm.reset();assert.equal(storm.strikes,0);storm.dispose();assert.equal(storm.beam.parent,null);assert.equal(storm.wave.parent,null);
 });
+
+test('lightning keeps its authored sky height when only the clipping camera is moved back',()=>{
+ const storm=new LevelStorm(new THREE.Scene()),camera=new THREE.OrthographicCamera();camera.position.y=69;camera.userData.effectPosition=new THREE.Vector3(13,23,18);
+ storm.enqueue(1,2);storm.update(.01,{x:0,y:0,z:0},camera);assert.equal(storm.active.skyY,58);storm.dispose();
+});

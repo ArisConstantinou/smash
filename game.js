@@ -1,6 +1,6 @@
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-props1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
-import {LevelStorm,stormStats} from './level-storm.js?v=20261108-storm1';
+import {LevelStorm,stormStats} from './level-storm.js?v=20261108-camera1';
 import {GroundScars} from './ground-scars.js?v=20261108-storm2';
 import {createGameRenderer} from './renderer-policy.js?v=20261108-contact1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
@@ -99,12 +99,16 @@ const headPrevious=new THREE.Vector3(),headNow=new THREE.Vector3(),shaftUp=new T
 const guardHits=new Map();
 let player={x:0,z:0,y:0,vx:0,vz:0,radius:0.44,hp:120,maxHp:120,invincible:0,hurtAgo:100,walk:0};
 const cameraTarget=new THREE.Vector3(0,0,0),cameraOffset=new THREE.Vector3(13,23,18),tempV=new THREE.Vector3();
+// Orthographic framing is independent of eye distance. The old close eye plane
+// sliced foreground towers into diagonal roof fragments. Retreat on the same
+// axis; compensate fog and camera-dependent effects to keep the authored view.
+const CAMERA_DISTANCE_SCALE=3,CAMERA_FOG_SHIFT=cameraOffset.length()*(CAMERA_DISTANCE_SCALE-1),cameraShakeOffset=new THREE.Vector3();
 const beastCameraBox=new THREE.Box3(),beastCameraSize=new THREE.Vector3();
 const cameraRight=new THREE.Vector3(cameraOffset.z,0,-cameraOffset.x).normalize();
 const cameraBack=cameraOffset.clone().normalize(),cameraUp=new THREE.Vector3().crossVectors(cameraBack,cameraRight).normalize();
 function updateBattleCamera(dt,desired){
-  let zoom=1,distance=1;
-  if(boss&&!boss.dead){
+  let zoom=1;const bossView=!!(boss&&!boss.dead),effectDistance=bossView?3:1;
+  if(bossView){
     beastCameraBox.setFromObject(boss.mesh);const box=beastCameraBox,point=new THREE.Vector3();
     let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
     const include=p=>{const x=p.dot(cameraRight),y=p.dot(cameraUp);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);};
@@ -113,11 +117,18 @@ function updateBattleCamera(dt,desired){
     const center=box.getCenter(beastCameraSize),depth=center.dot(cameraBack);
     desired.copy(cameraRight).multiplyScalar((minX+maxX)/2).addScaledVector(cameraUp,(minY+maxY)/2).addScaledVector(cameraBack,depth);
     const usableHeight=touchLayout?.62:.69;
-    zoom=Math.min(1,(camera.top-camera.bottom)*usableHeight/(maxY-minY+3),(camera.right-camera.left)*.86/(maxX-minX+3));distance=3;
+    zoom=Math.min(1,(camera.top-camera.bottom)*usableHeight/(maxY-minY+3),(camera.right-camera.left)*.86/(maxX-minX+3));
   }
   const blend=1-Math.exp(-dt*3.5);camera.zoom=lerp(camera.zoom,zoom,blend);camera.updateProjectionMatrix();
-  cameraTarget.lerp(desired,1-Math.exp(-dt*5.6));camera.position.copy(cameraTarget).addScaledVector(cameraOffset,distance);
-  if(scene.fog){scene.fog.near=lerp(scene.fog.near,distance===3?100:34,blend);scene.fog.far=lerp(scene.fog.far,distance===3?210:88,blend);}
+  cameraTarget.lerp(desired,1-Math.exp(-dt*5.6));camera.position.copy(cameraTarget).addScaledVector(cameraOffset,CAMERA_DISTANCE_SCALE);
+  (camera.userData.effectPosition??=new THREE.Vector3()).copy(cameraTarget).addScaledVector(cameraOffset,effectDistance);
+  camera.userData.shakeScale=CAMERA_DISTANCE_SCALE/effectDistance;
+  if(scene.fog){scene.fog.near=lerp(scene.fog.near,bossView?100:34+CAMERA_FOG_SHIFT,blend);scene.fog.far=lerp(scene.fog.far,bossView?210:88+CAMERA_FOG_SHIFT,blend);}
+}
+function shakeCamera(amount){
+  cameraShakeOffset.set((Math.random()-.5)*amount,(Math.random()-.5)*amount*.5,(Math.random()-.5)*amount);
+  camera.position.addScaledVector(cameraShakeOffset,camera.userData.shakeScale??1);
+  camera.userData.effectPosition?.add(cameraShakeOffset);
 }
 const fx=$('fxCanvas'),fxContext=fx.getContext('2d'),map=$('minimap'),mapContext=map.getContext('2d');
 let screenW=innerWidth,screenH=innerHeight,fxDpr=1;
@@ -357,7 +368,7 @@ function weaponTrail(a,b,width=.3,tint=0xffc473,physical=characterStats.weaponTi
   }
   // A camera-facing ribbon has width even on a vertical overhead stroke.
   // Offsetting only along world Y collapses that stroke into a zero-area line.
-  const side=trailSide.subVectors(b,a).cross(trailCamera.subVectors(camera.position,a));
+  const side=trailSide.subVectors(b,a).cross(trailCamera.subVectors(camera.userData?.effectPosition??camera.position,a));
   if(side.lengthSq()<1e-8)side.set(1,0,0);side.normalize().multiplyScalar(width);
   const {mesh}=trail,positions=mesh.geometry.attributes.position;
   positions.setXYZ(0,a.x-side.x,a.y-side.y,a.z-side.z);
@@ -2678,7 +2689,7 @@ function frame(now){
   updateEffects(phase==='paused'||phase==='settings'?0:realDt);
   const desired=phase==='menu'?new THREE.Vector3(-5,.6,3.5):new THREE.Vector3(player.x+facing.x*.8,.6+player.y,player.z+facing.z*.8);
   updateBattleCamera(realDt,desired);
-  if(settings.shake&&shake>0){camera.position.x+=(Math.random()-.5)*shake;camera.position.y+=(Math.random()-.5)*shake*.5;camera.position.z+=(Math.random()-.5)*shake;}
+  if(settings.shake&&shake>0)shakeCamera(shake);
   camera.lookAt(cameraTarget);
   camera.updateMatrixWorld(true);world.updateVisibility?.(player,camera);updateBattleVisibility(realDt);
   sun.position.set(player.x-15,28,player.z+8);sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
@@ -2721,8 +2732,8 @@ async function init(){
   await preloadVehicleExplosion();
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.22;
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=renderer.backend?.isWebGPUBackend?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
-  scene=new THREE.Scene();scene.background=new THREE.Color(0x223c40);scene.fog=new THREE.Fog(0x344c4c,34,88);
-  camera=new THREE.OrthographicCamera(-20,20,13,-13,.1,300);cameraTarget.set(-5,.6,3.5);camera.position.copy(cameraTarget).add(cameraOffset);camera.lookAt(cameraTarget);
+  scene=new THREE.Scene();scene.background=new THREE.Color(0x223c40);scene.fog=new THREE.Fog(0x344c4c,34+CAMERA_FOG_SHIFT,88+CAMERA_FOG_SHIFT);
+  camera=new THREE.OrthographicCamera(-20,20,13,-13,.1,300);cameraTarget.set(-5,.6,3.5);camera.position.copy(cameraTarget).addScaledVector(cameraOffset,CAMERA_DISTANCE_SCALE);camera.lookAt(cameraTarget);
   fillLight=new THREE.HemisphereLight(0xb9dcd9,0x536650,1.45);scene.add(fillLight);
   sun=new THREE.DirectionalLight(0xffdfb1,2.25);sun.position.set(-15,28,8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-23;sun.shadow.camera.right=23;sun.shadow.camera.top=23;sun.shadow.camera.bottom=-23;sun.shadow.camera.far=75;sun.shadow.normalBias=.04;sun.shadow.bias=-.0002;scene.add(sun,sun.target);
   const rim=new THREE.DirectionalLight(0x80c7dd,1.15);rim.position.set(8,14,-18);scene.add(rim);
