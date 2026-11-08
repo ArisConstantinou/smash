@@ -13,6 +13,22 @@ const midpoint=(a,b)=>{
 };
 const bounds=points=>({minX:Math.min(...points.map(p=>p[0])),maxX:Math.max(...points.map(p=>p[0])),minZ:Math.min(...points.map(p=>p[2])),maxZ:Math.max(...points.map(p=>p[2]))});
 const overlaps=(b,s)=>Math.hypot(Math.max(b.minX-s.x,0,s.x-b.maxX),Math.max(b.minZ-s.z,0,s.z-b.maxZ))<s.radius;
+const structural=new Set(['asphalt','sidewalk','soil','ash','frost','brick']);
+// Partition a floor polygon around a higher rectangular slab. Keeping only
+// exposed tops prevents the second road strip from filling the first's cracks.
+function outsideRect(polygon,rect){
+ const result=[];let remaining=polygon;
+ for(const [axis,edge,sign]of [[0,rect.minX,1],[0,rect.maxX,-1],[2,rect.minZ,1],[2,rect.maxZ,-1]]){
+  const inside=[],outside=[];
+  for(let i=0;i<remaining.length;i++){
+   const a=remaining[i],b=remaining[(i+1)%remaining.length],da=(a[axis]-edge)*sign,db=(b[axis]-edge)*sign;
+   (da>=0?inside:outside).push(a);
+   if((da>=0)!==(db>=0)){const t=da/(da-db),p=a.map((v,j)=>v+(b[j]-v)*t);inside.push(p);outside.push(p);}
+  }
+  if(outside.length>=3)result.push(outside);remaining=inside;if(!remaining.length)break;
+ }
+ return result;
+}
 export class GroundScars{
  constructor(scene){
   this.count=0;this.records=[];this.strikes=[];this.footprints=[];this.damaged=new Set();
@@ -57,6 +73,16 @@ export class GroundScars{
   this.rebuild();this.setDamagedVisible(true);return true;
  }
  strength(x,z){let value=0;for(const s of this.footprints){const dx=x-s.x,dz=z-s.z;if(Math.abs(dx)>s.radius||Math.abs(dz)>s.radius)continue;const a=Math.atan2(dz,dx),edge=.9+.06*Math.sin(a*5)+.04*Math.sin(a*9);value=Math.max(value,Math.max(0,1-Math.hypot(dx,dz)/(s.radius*edge)));}return value;}
+ exposedTop(record){
+  if(record.exposed)return record.exposed;
+  let polygons=record.triangles;
+  if(structural.has(record.kind))for(const upper of this.records){
+   const a=record.bounds,b=upper.bounds;
+   if(!structural.has(upper.kind)||upper.top<=record.top+.0001||b.minX>=a.maxX||b.maxX<=a.minX||b.minZ>=a.maxZ||b.maxZ<=a.minZ)continue;
+   polygons=polygons.flatMap(poly=>outsideRect(poly,b));
+  }
+  return record.exposed=polygons.flatMap(poly=>poly.slice(1,-1).map((p,i)=>[poly[0],p,poly[i+2]])).filter(([a,b,c])=>Math.abs((b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]))>1e-8);
+ }
  rebuild(){
   const positions=[],colors=[],strengths=new WeakMap();
   const strengthAt=p=>{if(!strengths.has(p))strengths.set(p,this.strength(p[0],p[2]));return strengths.get(p);};
@@ -64,7 +90,7 @@ export class GroundScars{
   const visit=(tri,record,depth=0)=>{
    const b=bounds(tri),hit=this.footprints.some(s=>overlaps(b,s));
    const longest=Math.max(...[0,1,2].map(i=>Math.hypot(tri[i][0]-tri[(i+1)%3][0],tri[i][2]-tri[(i+1)%3][2])));
-   if(hit&&longest>.95&&depth<12){
+   if(hit&&longest>1.3&&depth<12){
     const [a,b,c]=tri,ab=midpoint(a,b),bc=midpoint(b,c),ca=midpoint(c,a);
     for(const t of [[a,ab,ca],[ab,b,bc],[ca,bc,c],[ab,bc,ca]])visit(t,record,depth+1);return;
    }
@@ -73,25 +99,25 @@ export class GroundScars{
    // The actual painted instance loses chips, exposing the altered road below.
    if(record.paint&&power>.15&&(power>.5||noise(center[0],center[2])<power))return;
    const rough=noise(center[0],center[2]);
-   const colorAt=p=>{const strength=strengthAt(p),shade=1-Math.min(.72,strength*1.25);return record.color.map(c=>c*shade);};
+   const colorAt=p=>{const strength=strengthAt(p),shade=1-Math.min(.64,strength*1.1);return record.color.map(c=>c*shade);};
    const color=colorAt(center);
-   // Only a few central chunks break free. The rest remain a continuous burnt,
-   // buckled surface, rather than turning every tessellation edge into a crack.
-   const crack=record.paint||power<.4||rough<.73?0:Math.min(.045,longest*.05)*power;
+   // Open, shallow fractures inside the burnt zone. Each irregular slab has
+   // visible thickness and a small independent tilt, exposing fresh aggregate.
+   const crack=record.paint||record.kind==='grass'||power<.32?0:Math.min(.09,longest*.075)*power;
    const top=tri.map(p=>{
     const dx=center[0]-p[0],dz=center[2]-p[2],length=Math.hypot(dx,dz)||1;
-    const local=strengthAt(p),dip=record.paint?0:local*(.012+.016*(.5+.5*Math.sin(p[0]*4.7+p[2]*3.1)));
+    const local=strengthAt(p),dip=record.paint?0:record.kind==='grass'?local*.18:local*(rough>.88?-.045:.025+rough*.075);
     return [p[0]+dx/length*crack,p[1]-dip,p[2]+dz/length*crack];
    });
    for(let i=0;i<3;i++){positions.push(...top[i]);colors.push(...colorAt(tri[i]));}
    // Genuine cut edges below each separated slab, rather than drawn cracks.
    if(crack>.001){
-    const dark=color.map(c=>c*.32),bottom=Math.min(record.bottom,Math.min(...top.map(p=>p[1]))-.018);
+    const dark=record.color.map((c,i)=>c*.35+[.075,.085,.075][i]*(.7+rough*.4)),bottom=Math.min(record.bottom,Math.min(...top.map(p=>p[1]))-.07);
     for(let i=0;i<3;i++){const a=top[i],b=top[(i+1)%3],c=[a[0],bottom,a[2]],d=[b[0],bottom,b[2]];emit([a,c,b],dark);emit([b,c,d],dark);}
    }
   };
   for(const record of this.damaged){
-   for(const tri of record.triangles)visit(tri,record);
+   for(const tri of this.exposedTop(record))visit(tri,record);
    if(record.corners){
     // Keep the original outer slab faces; only its top is fractured.
     for(let i=0;i<4;i++){const a=record.corners[i],b=record.corners[(i+1)%4],c=[a[0],record.bottom,a[2]],d=[b[0],record.bottom,b[2]];emit([a,c,b],record.color);emit([b,c,d],record.color);}

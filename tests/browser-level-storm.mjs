@@ -31,6 +31,12 @@ window.__stormQA={get ready(){return gameReady},
  award(value=8){gainXP(value);return this.state;},
  scarImage(visible){if(typeof groundScars==='undefined')return '';groundScars.setDamagedVisible(visible);renderer.render(scene,camera);return renderer.domElement.toDataURL('image/png');},
  moveAway(){player.x=9;player.z=-1;poseHero(0);renderer.render(scene,camera);},
+ roofFixture(){this.clear();const office=world.objects.find(o=>o.type==='office');world.relocateObject(office,0,0);office.mesh.visible=true;this.office=office;camera.zoom=1.6;camera.updateProjectionMatrix();cameraTarget.set(0,7,0);camera.position.copy(cameraTarget).add(cameraOffset);camera.lookAt(cameraTarget);renderer.render(scene,camera);return this.roofState;},
+ roofFade(value){applyOccluderFade(this.office,value,1);occlusionDepth.sync([this.office]);renderer.render(scene,camera);return this.roofState;},
+ roofDepth(value){occlusionDepth.sync(value?[this.office]:[]);renderer.render(scene,camera);return this.renderStats;},
+ get renderStats(){return {calls:renderer.info.render.drawCalls??renderer.info.render.calls,triangles:renderer.info.render.triangles,geometries:renderer.info.memory.geometries,depth:occlusionDepth.activeCount};},
+ roofDamage(){hurtObject(this.office,this.office.maxHp*.55,.1,{x:this.office.x+this.office.w/2,y:5,z:this.office.z},'hammer');occlusionDepth.sync([this.office]);renderer.render(scene,camera);return {hp:this.office.hp,dead:this.office.dead,aligned:[...occlusionDepth.records.values()].filter(r=>r.proxy.visible).every(r=>r.proxy.geometry===r.source.geometry),...this.renderStats};},
+ get roofState(){let meshes=0,vertices=0;this.office.mesh.traverse(n=>{if(n.isMesh){meshes++;vertices+=n.geometry.attributes.position.count;}});return {meshes,vertices,opacity:this.office.materials.map(m=>m.opacity),fade:this.office.occlusionFade||0};},
  live(dt){updatePlayer(dt);updateMovingVehicles(dt);updateEnemies(dt);updateObjects(dt);world.update(dt,visualTime,player,'rain');vehicleEffects.update(dt,player,camera);hydrantEffects.update(dt,player,camera);if(typeof levelStorm!=='undefined'){levelStorm.update(dt,player,camera);sun.intensity=2.25+levelStorm.flash;fillLight.intensity=1.45+levelStorm.flash*.45;}destruction.update(dt,player);updateEffects(dt);visualTime+=dt;},
  probe(on){stormProbe=on;stormFrames=[];stormCpu=[];},get performance(){return {frames:stormFrames,cpu:stormCpu};},
  get state(){return {level,weapon:character.weaponId,hp:player.hp,maxHp:player.maxHp,scars:typeof groundScars==='undefined'?null:groundScars.count,enemies:(this.targets||[]).map(e=>({hp:e.hp,x:e.x,z:e.z,dead:e.dead})),props:this.props&&Object.fromEntries(Object.entries(this.props).map(([k,o])=>[k,{hp:o.hp,maxHp:o.maxHp,dead:o.dead,ruptured:!!o.ruptured,exploding:!!o.exploding}])),storm:typeof levelStorm==='undefined'?null:{pending:levelStorm.pending.length,strikes:levelStorm.strikes,active:!!levelStorm.active},backend:renderer.userData.backend,wasm:collisionWasmStatus()};}
@@ -71,6 +77,19 @@ try{
   assert.equal(results.strike.level,2);assert.equal(results.strike.storm.strikes,1);assert.ok(results.strike.enemies[0].hp<10000);assert.equal(results.strike.enemies[2].hp,10000);
   assert.ok(results.strike.props.building.hp<results.intact.props.building.hp);assert.equal(results.strike.props.hydrant.ruptured,true);assert.equal(results.strike.props.barrel.exploding,true);
  }
+ if(label==='after'){await page.setViewportSize({width:1280,height:900});results.roofOpaque=await page.evaluate(()=>__stormQA.roofFixture());await page.screenshot({path:resolve(out,'roof-opaque.png')});results.roofFaded=await page.evaluate(()=>__stormQA.roofFade(true));await page.screenshot({path:resolve(out,'roof-faded-fixed.png')});assert.equal(results.roofOpaque.meshes,results.roofFaded.meshes);assert.equal(results.roofOpaque.vertices,results.roofFaded.vertices);
+  results.roofPerformance=[];
+  for(const enabled of [false,true]){
+   await page.evaluate(value=>__stormQA.roofDepth(value),enabled);
+   const sample=await page.evaluate(()=>new Promise(resolve=>{const values=[],start=performance.now();let previous;const next=t=>{if(previous!==undefined)values.push(t-previous);previous=t;if(performance.now()-start<1800)requestAnimationFrame(next);else resolve({values,render:__stormQA.renderStats});};requestAnimationFrame(next);}));
+   const ordered=sample.values.sort((a,b)=>a-b);results.roofPerformance.push({enabled,...sample.render,p95:ordered[Math.floor(ordered.length*.95)],max:ordered.at(-1)});
+  }
+  assert.ok(results.roofPerformance[1].depth>0);assert.equal(results.roofPerformance[1].calls,results.roofPerformance[0].calls+results.roofPerformance[1].depth);assert.equal(results.roofPerformance[1].geometries,results.roofPerformance[0].geometries);
+  results.roofDamaged=await page.evaluate(()=>__stormQA.roofDamage());assert.equal(results.roofDamaged.aligned,true);assert.equal(results.roofDamaged.dead,false);await page.screenshot({path:resolve(out,'roof-damaged-fixed.png')});
+  await page.evaluate(()=>__stormQA.roofFade(false));assert.equal(await page.evaluate(()=>__stormQA.renderStats.depth),0);
+  results.gpuErrors=await page.evaluate(()=>__stormGpuErrors);assert.deepEqual(results.gpuErrors,[]);
+ }
+
  assert.match(results.strike.backend,/WebGPU/);assert.equal(results.strike.wasm.active,true);assert.deepEqual(results.errors,[]);
 }finally{await writeFile(resolve(out,label+'-results.json'),JSON.stringify(results,null,2));await context?.close();await session.cleanup();await new Promise(r=>setTimeout(r,1000));}
 console.log(JSON.stringify(results));

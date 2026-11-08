@@ -1,7 +1,7 @@
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-props1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
 import {LevelStorm,stormStats} from './level-storm.js?v=20261108-storm1';
-import {GroundScars} from './ground-scars.js?v=20261108-storm1';
+import {GroundScars} from './ground-scars.js?v=20261108-storm2';
 import {createGameRenderer} from './renderer-policy.js?v=20261108-contact1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
@@ -19,7 +19,7 @@ import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge
 import {createWorld} from './world.js?v=20261108-storm2';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
-import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-perf14';
+import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261108-props1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
@@ -61,7 +61,7 @@ audio.preload?.();
 for(const id of ['testAudioButton','menuAudioButton'])if($(id))$(id).onclick=testGameAudio;
 let destruction=null;
 let forgeMenu=null,gameReady=false,menuBackdropReady=false;
-let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker,throwIndicator;
+let renderer,scene,camera,world,hero,sun,fillLight,chargeRing,directionMarker,throwIndicator,occlusionDepth;
 let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=1, kills=0, relics=0, level=1, xp=0, xpTarget=12, score=0;
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
 const freeWeaponTrails=[],weaponTrailRecords=new WeakMap(),trailSide=new THREE.Vector3(),trailCamera=new THREE.Vector3();
@@ -255,6 +255,7 @@ function updateBattleVisibility(dt){
     heroOccluded=battleOccluders.size>0||!!bossOccludes;
   }
   for(const o of world.objects)if(!o.dead&&(battleOccluders.has(o)||o.occlusionFade>0))applyOccluderFade(o,battleOccluders.has(o),dt);
+  occlusionDepth?.sync(world.objects);
   if(!heroSilhouette)rebuildHeroSilhouette();
   heroSilhouette.visible=phase==='playing'&&heroOccluded;
   if(heroSilhouette.visible){
@@ -444,6 +445,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   vehicleEffects?.dispose();
   hydrantEffects?.dispose();
   destruction?.dispose();
+  occlusionDepth?.reset();
   world?.dispose();
   world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
   groundScars?.bind(world);
@@ -2735,15 +2737,15 @@ async function init(){
   guardRing=new THREE.Mesh(new THREE.RingGeometry(1.68,1.72,64),new THREE.MeshBasicMaterial({color:0x9ee4db,side:THREE.DoubleSide,transparent:true,opacity:.15,depthWrite:false}));guardRing.visible=false;scene.add(guardRing);
   landingMarker=makeTelegraph(0,0,1,0xffc371);landingMarker.visible=false;
   groundShadow=new THREE.Mesh(new THREE.CircleGeometry(.65,24),new THREE.MeshBasicMaterial({color:0x081719,transparent:true,opacity:.32,depthWrite:false}));groundShadow.rotation.x=-Math.PI/2;scene.add(groundShadow);
-  groundScars=new GroundScars(scene);levelStorm=new LevelStorm(scene,{onStrike:levelUpStrike});
+  occlusionDepth=new OcclusionDepth(scene);groundScars=new GroundScars(scene);levelStorm=new LevelStorm(scene,{onStrike:levelUpStrike});
   fragments=new Fragments();impactClouds=new ImpactClouds();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
   resize();setPhase('menu');
   $('gameCanvas').setAttribute('tabindex','-1');
   // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync){
     const blast=vehicleEffects.explosion;blast.mesh.visible=true;blast.geometry.setDrawRange(0,6);
-    beastRig.visible=true;beastCombat.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();
-    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();hydrantEffects.hide();levelStorm.hide();groundScars.reset();blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
+    beastRig.visible=true;beastCombat.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();occlusionDepth.warm(world.objects);
+    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();hydrantEffects.hide();levelStorm.hide();groundScars.reset();occlusionDepth.sync([]);blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
   }
   gameReady=true;forgeMenu.setReady(true);updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη. Το επόμενο χτύπημα είναι δικό σου.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');

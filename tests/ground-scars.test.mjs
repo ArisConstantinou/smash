@@ -30,3 +30,18 @@ test('all fourteen earned strikes keep earlier damage and high airborne strikes 
  assert.equal(scars.count,14);assert.equal(scars.strikes[0].x,0);assert.equal(scars.damaged.size,1);
  const geometry=scars.geometry;assert.equal(scars.add({x:100,y:.8,z:0,level:15},5),false);assert.equal(scars.geometry,geometry);scars.dispose();
 });
+test('intersecting road strips fracture only their exposed tops rather than filling one another',()=>{
+ const scene=new THREE.Scene(),group=new THREE.Group();scene.add(group);
+ const mat=new THREE.MeshLambertMaterial({color:0x263c43});
+ for(const [width,depth,y]of [[10,4,0],[4,10,.001]]){
+  const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),mat,1);
+  mesh.setMatrixAt(0,new THREE.Matrix4().compose(new THREE.Vector3(0,y,0),new THREE.Quaternion(),new THREE.Vector3(width,.05,depth)));
+  mesh.userData.groundSurfaces=[{kind:'asphalt',top:y+.025,bottom:y-.025}];group.add(mesh);
+ }
+ const scars=new GroundScars(scene);scars.bind({group});
+ const area=triangles=>triangles.reduce((sum,[a,b,c])=>sum+Math.abs((b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]))/2,0);
+ assert.ok(Math.abs(area(scars.exposedTop(scars.records[0]))-24)<1e-6);
+ assert.ok(Math.abs(area(scars.exposedTop(scars.records[1]))-40)<1e-6);
+ assert.equal(scars.add({x:0,y:.8,z:0,level:2},5.36),true);
+ assert.equal(scars.damaged.size,2);assert.ok(scars.geometry.attributes.position.count>100);scars.dispose();
+});
