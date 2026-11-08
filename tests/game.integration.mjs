@@ -36,6 +36,11 @@ import * as vehicleEffectsModule from '../vehicle-effects.js';
 import * as hydrantEffectsModule from '../hydrant-effects.js';
 import * as levelStormModule from '../level-storm.js';
 import * as groundScarsModule from '../ground-scars.js';
+import * as mountRideModule from '../mount-ride.js';
+import * as mountRulesModule from '../mount-rules.js';
+import * as mountWorkshopModule from '../mount-workshop.js';
+import * as playerCustomizationModule from '../player-customization.js';
+import * as mountWeaponsModule from '../mount-weapons.js';
 import * as performanceModule from '../performance-hud.js';
 import * as weaponPoseModule from '../weapon-pose.js';
 
@@ -190,6 +195,11 @@ function synthetic(exports, identifier) {
   return new vm.SyntheticModule(names, function () { for (const name of names) this.setExport(name, exports[name]); }, { context: sandbox, identifier });
 }
 const imports = new Map([
+  ['./mount-workshop.js', synthetic(mountWorkshopModule, 'real-mount-workshop')],
+  ['./player-customization.js', synthetic(playerCustomizationModule, 'real-player-customization')],
+  ['./mount-weapons.js', synthetic(mountWeaponsModule, 'real-mount-weapons')],
+  ['./mount-ride.js', synthetic(mountRideModule, 'real-mount-ride')],
+  ['./mount-rules.js', synthetic(mountRulesModule, 'real-mount-rules')],
   ['./vehicle-effects.js', synthetic({...vehicleEffectsModule,preloadVehicleExplosion:async()=>{}}, 'real-vehicle-effects')],
   ['./hydrant-effects.js', synthetic(hydrantEffectsModule, 'real-hydrant-effects')],
   ['./level-storm.js', synthetic(levelStormModule, 'real-level-storm')],
@@ -229,6 +239,7 @@ const imports = new Map([
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get mountRide(){return mountRide;},get garage(){return garage;},get mountWeapons(){return mountWeapons;},toggleMount,
   get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
   get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},get hydrantEffects(){return hydrantEffects;},get levelStorm(){return levelStorm;},get groundScars(){return groundScars;},
@@ -1122,7 +1133,7 @@ test('a genuine level-up queues one sky strike and shocks enemies and scenery wi
  assert.ok(wall.hp<1000);assert.equal(barrel.exploding,true);assert.equal(hydrant.ruptured,true);assert.equal(api.player.hp,oldHp+8);
  api.gainXP(0);api.levelStorm.update(.1,api.player,api.camera);assert.equal(api.levelStorm.strikes,1);
  api.levelStorm.update(2,api.player,api.camera);assert.equal(api.levelStorm.active,null);assert.equal(api.groundScars.count,1);assert.deepEqual(api.groundScars.geometry.attributes.position.array,scar);
- const storm=api.levelStorm;arena(15);assert.equal(storm.pending.length,0);assert.equal(storm.active,null);api.gainXP(1000);assert.equal(api.levelStorm.pending.length,0);
+ const storm=api.levelStorm;arena(characterProgression.MAX_CHARACTER_LEVEL);assert.equal(storm.pending.length,0);assert.equal(storm.active,null);api.gainXP(1000);assert.equal(api.levelStorm.pending.length,0);
 });
 
 test('multiple earned levels queue finite strikes and level-up kills append without nested strikes',()=>{
@@ -2781,8 +2792,11 @@ test('city cards launch distinct pictured cities with full war and storm presets
   }
   assert.notDeepEqual(descriptions[0], descriptions[1]);
   assert.notDeepEqual(descriptions[1], descriptions[2]);
-  assert.equal(elements.get('characterXpFill').style.width, '100%');
-  assert.match(elements.get('characterXpText').textContent, /ΜΕΓΙΣΤΟ/);
+  assert.equal(elements.get('characterXpFill').style.width, '0%');
+  assert.match(elements.get('characterXpText').textContent, /122/);
+  arena(characterProgression.MAX_CHARACTER_LEVEL);api.renderCharacterProgress();
+  assert.equal(elements.get('characterXpFill').style.width,'100%');
+  assert.match(elements.get('characterXpText').textContent,/ΜΕΓΙΣΤΟ/);
 });
 
 test('actual kills award experience and physical materials which must be collected before a recipe can be forged', () => {
@@ -3226,6 +3240,27 @@ test('a kick cannot damage a distant or rear enemy or strike through the first w
   const wall=fixture==='wall'?placeObject('wall',0,.67,{w:3,d:.04,h:3,hp:1000,maxHp:1000}):null;
   api.startKick();playerSteps(.45);assert.equal(e.hp,1000,fixture);if(wall)assert.ok(wall.hp<1000);
  }
+});
+
+test('kick reaches close front-flank targets and its longer reach includes the visible forward step',()=>{
+ for(const [x,z] of [[-.55,1.45],[.15,1.95]]){
+  arena(1,{test:false});const e=resilientEnemy('zombie',x,z);
+  assert.equal(api.startKick(),true);playerSteps(.24);
+  assert.ok(e.hp<1000,`Close target at ${x},${z} was missed`);
+  assert.ok(api.player.z>.2,'The extra reach must include a real body step');
+ }
+});
+
+test('materials collect at the wider radius and attract from six units without duplicate awards',()=>{
+ arena(1,{test:false});const before=api.character.materials.wood;
+ api.spawnDrop(0,1.15,'wood');api.drops.at(-1).age=.5;api.updateDrops(0);
+ assert.equal(api.character.materials.wood,before+1,'Nearby materials should not require walking on the exact point');
+ api.spawnDrop(0,5.5,'wood');api.drops.at(-1).age=.5;
+ for(let i=0;i<75;i++)api.updateDrops(1/60);
+ assert.equal(api.character.materials.wood,before+2,'Materials within the expanded magnet must reach the stationary player');
+ assert.equal(api.drops.filter(d=>d.kind==='wood').length,0);
+ for(let i=0;i<30;i++)api.updateDrops(1/60);
+ assert.equal(api.character.materials.wood,before+2,'Each material must award once');
 });
 test('direct kicks give heavier enemies less displacement than light enemies',()=>{
  const speeds=[];for(const type of ['zombie','brute','titan']){
@@ -3927,14 +3962,17 @@ test('aim13: early wood equipment keeps its blunt close contact without wire',()
   }
 });
 
-test('perf14: a base kick moves a car metres and higher ranks travel farther without changing the player',()=>{
+test('perf14: kicks launch cars metres without dragging the kicker after the bounded forward step',()=>{
  const distances=[];
  for(const rank of [0,2]){
   arena(1,{test:false});api.levels.kick=rank;
   const car=placeObject('car',0,2.25,{w:1.8,d:2.8,h:1.4,hp:10000,maxHp:10000}),start=car.z;
-  api.startKick();playerSteps(.25);for(let i=0;i<600;i++)api.updateMovingVehicles(1/120);
+  api.startKick();playerSteps(.25);
+  const stepped={x:api.player.x,z:api.player.z};
+  assert.ok(stepped.z>=0&&stepped.z<=kickPhysics.kickStats(1,rank).range-1.30+1e-6);
+  for(let i=0;i<600;i++)api.updateMovingVehicles(1/120);
   distances.push(car.z-start);assert.ok(car.z-start>5,'A car must slide several metres on an open road');
-  close(api.player.x,0);close(api.player.z,0);close(car.mesh.position.z,car.z);
+  close(api.player.x,stepped.x);close(api.player.z,stepped.z);close(car.mesh.position.z,car.z);
  }
  assert.ok(distances[1]>distances[0]+1);console.log('Vehicle displacement (metres), base and rank+2:',distances);
 });
@@ -3956,7 +3994,9 @@ test('perf14: damaged cars smoke then burn, effects follow movement and release 
  car.x+=8;car.mesh.position.x=car.x;effects.update(.1,api.player,api.camera);effects.fire.getMatrixAt(0,matrix);
  assert.ok(matrix.elements[12]-before>7);
  api.hurtObject(car,1000);effects.update(10.1,api.player,api.camera);assert.equal(effects.sources.size,0);assert.equal(effects.fire.count,0);
- arena();assert.equal(effects.disposed,true);assert.equal(effects.smoke.parent,null);assert.equal(effects.fire.parent,null);assert.equal(effects.explosion.mesh.parent,null);
+ const geometry=effects.geometry;arena();assert.equal(api.vehicleEffects,effects,'Round reset reuses the prewarmed GPU pool');assert.equal(effects.disposed,false);assert.equal(effects.geometry,geometry);assert.equal(effects.sources.size,0);assert.equal(effects.smoke.count,0);assert.equal(effects.fire.count,0);assert.equal(effects.smoke.visible,false);assert.equal(effects.fire.visible,false);assert.equal(effects.explosion.mesh.visible,false);assert.equal(effects.explosion.geometry.drawRange.count,0);
+ effects.warm();assert.equal(effects.smoke.count,128);assert.equal(effects.fire.count,96);effects.reset();assert.equal(effects.smoke.visible,false);assert.equal(effects.fire.visible,false);
+ effects.dispose();assert.equal(effects.smoke.parent,null);assert.equal(effects.fire.parent,null);assert.equal(effects.explosion.mesh.parent,null);
 });
 test('perf14: huge-hammer wielding, strikes and slam keep reachable hands and original bone lengths',()=>{
  for(const twoHanded of [false,true]){
@@ -4160,4 +4200,31 @@ test('camera retreat preserves the same shake projection and effect eye position
  reset(1);const target=new THREE.Vector3(9,2,-3);api.updateBattleCamera(10,target.clone());api.shakeCamera(.4);api.camera.lookAt(api.cameraTarget);api.camera.updateMatrixWorld(true);
  const logical=new THREE.OrthographicCamera(api.camera.left,api.camera.right,api.camera.top,api.camera.bottom,.1,300);logical.position.copy(api.camera.userData.effectPosition);logical.lookAt(api.cameraTarget);logical.updateMatrixWorld(true);
  for(const point of [new THREE.Vector3(0,0,0),new THREE.Vector3(33,28,11),new THREE.Vector3(-10,5,12)]){const before=point.clone().project(logical),after=point.clone().project(api.camera);close(before.x,after.x);close(before.y,after.y);}
+});
+
+
+test('mount: C drives the actual vehicle with one steering hand and repeated one-handed hammer strokes',()=>{
+ arena(1);Object.assign(api.garage,mountRulesModule.createGarage());api.applyStats();emit('keydown',{code:'KeyC'});assert.ok(api.mountRide.active);
+ emit('keydown',{code:'KeyW'});emit('keydown',{code:'KeyD'});playerSteps(.4);emit('keyup',{code:'KeyW'});emit('keyup',{code:'KeyD'});assert.ok(Math.hypot(api.player.x,api.player.z)>.5);
+ mouseAttack(true);let strokes=0;playerSteps(1,1/120,()=>{assert.equal(api.spin,null);if(api.swing){assert.equal(api.swing.twoHanded,false);strokes++;}const u=api.hero.userData;assert.ok(worldPosition(u.leftGrip).distanceTo(worldPosition(api.mountRide.model.userData.markers.leftGrip))<1e-6);});mouseAttack(false);assert.ok(strokes>5);
+ playerSteps(.6);emit('keydown',{code:'KeyC'});assert.equal(api.mountRide.active,false);assert.equal(api.player.y,0);
+});
+test('mount: a sideways E kick uses the actual free leg while the steering hand stays attached',()=>{
+ arena(1);api.toggleMount();const enemy=resilientEnemy('zombie',1.15,.2);aimAt(enemy.x,enemy.z);const started=api.startKick(),samples=[];playerSteps(.5,1/120,()=>{if(api.kick&&api.kick.time>.1&&api.kick.time<.3)samples.push({time:api.kick.time,dir:api.kick.dir,foot:worldPosition(api.hero.userData.rightLeg.userData.foot).toArray(),enemy:[enemy.x,enemy.y,enemy.z],yaw:api.hero.rotation.y});});assert.ok(enemy.hp<1000,JSON.stringify({started,samples}));
+ assert.ok(worldPosition(api.hero.userData.leftGrip).distanceTo(worldPosition(api.mountRide.model.userData.markers.leftGrip))<1e-6);
+});
+test('mount: automatic progression changes chassis at11 and21 without deleting an owned earlier frame',()=>{
+ arena(10);api.toggleMount();assert.equal(api.mountRide.kind,'bicycle');api.gainXP(characterProgression.xpForNextLevel(10));assert.equal(api.mountRide.kind,'motorcycle');assert.ok(api.mountRide.active);
+ arena(20);api.toggleMount();api.gainXP(characterProgression.xpForNextLevel(20));assert.equal(api.mountRide.kind,'scifi');assert.ok(api.mountRide.stats.weapons.some(w=>w.id==='turret'));
+ api.garage.selectedMount='bicycle';api.applyStats();assert.equal(api.mountRide.kind,'bicycle');
+});
+test('mount: touch boost consumes energy, pointer cancellation stops it and flight damage can eject the rider',()=>{
+ arena(1);api.toggleMount();emit('keydown',{code:'KeyW'});pointerEvent('dashButton','pointerdown',{pointerId:90});playerSteps(.6);assert.ok(api.mountRide.energy<api.mountRide.stats.energy-3);assert.ok(api.mountRide.speed>api.mountRide.stats.speed);
+ pointerEvent('dashButton','pointercancel',{pointerId:90});const energy=api.mountRide.energy;playerSteps(.4);assert.ok(api.mountRide.energy>energy);emit('keyup',{code:'KeyW'});
+ arena(21);mountRulesModule.purchasePart(api.garage,{},'scifi','mobility','hover',{level:21,test:true});api.applyStats();api.toggleMount();pointerEvent('leapButton','pointerdown',{pointerId:91});playerSteps(.6);pointerEvent('leapButton','pointerup',{pointerId:91});assert.ok(api.mountRide.body.y>2);
+ api.mountRide.hp=1;api.player.hp=500;api.player.invincible=0;api.hurtPlayer(20,1,0,false);assert.equal(api.mountRide.active,false);assert.ok(api.player.hp>0);playerSteps(1.2);assert.equal(api.player.y,0);
+});
+test('mount: the overhead turret damages a visible enemy through real contacts and round reset clears its shots',()=>{
+ arena(21);const mounted=api.toggleMount();assert.ok(mounted,JSON.stringify({phase:api.phase,y:api.player.y,swing:!!api.swing,leap:!!api.leap,spin:!!api.spin,kick:!!api.kick,ride:api.mountRide.snapshot(),shape:api.mountRide.collision}));const enemy=resilientEnemy('zombie',0,6);for(let i=0;i<180;i++){api.updatePlayer(1/120);api.mountWeapons.update(1/120,api.mountRide,{enemies:api.enemies,world:api.world,camera:api.camera,hero:api.hero});}
+ assert.ok(api.mountWeapons.fired>0,JSON.stringify({energy:api.mountRide.energy,targets:Object.keys(api.mountWeapons.targets),origin:api.mountWeapons.origin.toArray(),goal:api.mountWeapons.goal.toArray(),hits:api.mountWeapons.selfRay.intersectObject(api.hero,true).map(h=>({name:h.object.name,parent:h.object.parent?.name,point:h.point.toArray(),distance:h.distance}))}));assert.ok(enemy.hp<1000);arena(1);assert.equal(api.mountWeapons.shots.some(s=>s.active),false);assert.equal(api.mountWeapons.mesh.visible,false);
 });

@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js?v=20261108-grip1';
+import { makeProp } from './models.js?v=20261108-mount1';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
@@ -42,6 +42,14 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   }
   function flushBatches(){
     for(const {mat,chunk,matrices,surfaces} of batches.values()){
+      // The pinned WebGPU uniform-array path renders a one-instance batch at
+      // identity. Bake that sole transform instead; retain the real surface so
+      // lightning can still fracture and restore it through GroundScars.
+      if(matrices.length===1){
+        const geometry=own(cube.clone().applyMatrix4(matrices[0]));
+        const mesh=new THREE.Mesh(geometry,mat);mesh.name='Single city ground surface';
+        mesh.userData.groundSurface=surfaces[0];mesh.receiveShadow=true;chunk.mesh.add(mesh);continue;
+      }
       const mesh=new THREE.InstancedMesh(cube,mat,matrices.length);
       mesh.userData.groundSurfaces=surfaces;mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       matrices.forEach((m,i)=>mesh.setMatrixAt(i,m));mesh.receiveShadow=true;mesh.computeBoundingSphere();chunk.mesh.add(mesh);

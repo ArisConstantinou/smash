@@ -1,0 +1,34 @@
+import * as THREE from './vendor/three.module.js';
+
+const target=new THREE.Vector3(),hip=new THREE.Vector3(),rotatedHip=new THREE.Vector3();
+const ARCH_Y=-.30,ARCH_Z=.075,THIGH=.30,SHIN=Math.hypot(ARCH_Y,ARCH_Z),BETA=Math.atan2(ARCH_Z,-ARCH_Y);
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+/** Rider and mount share a parent. Keep the pelvis on the authored saddle,
+ * solve real leg joints to the pedal/peg, and let the existing arm IK steer. */
+export function poseMountedRider(hero,mount,{kick=false}={}){
+ const u=hero.userData,m=mount.userData;
+ target.set(0,m.riderOffset,m.riderZ).applyQuaternion(mount.quaternion).add(mount.position);
+ hero.position.copy(target);hero.quaternion.copy(mount.quaternion);
+ u.body.rotation.x=clamp(u.body.rotation.x+.12,-.16,.34);u.body.rotation.y=clamp(u.body.rotation.y,-.48,.48);u.body.rotation.z=clamp(u.body.rotation.z,-.16,.16);
+ hip.set(0,.74,0);rotatedHip.copy(hip).applyQuaternion(u.body.quaternion);u.body.position.copy(hip).sub(rotatedHip);
+ hero.updateWorldMatrix(true,false);mount.updateWorldMatrix(true,true);
+ for(const [side,leg,pedal]of [[-1,u.leftLeg,m.markers.leftPedal],[1,u.rightLeg,m.markers.rightPedal]]){
+  leg.position.set(side*m.pedalSpread,u.legRest?.height??.62,0);
+  if(kick&&side===1)continue;
+  leg.rotation.set(0,0,0);
+  pedal.getWorldPosition(target);target.y+=.025;hero.worldToLocal(target);target.sub(leg.position);
+  const dy=target.y,dz=target.z,d=clamp(Math.hypot(dy,dz),.005,THIGH+SHIN-.000001);
+  const bend=Math.acos(clamp((d*d-THIGH*THIGH-SHIN*SHIN)/(2*THIGH*SHIN),-1,1));
+  const shoulder=Math.atan2(SHIN*Math.sin(bend),THIGH+SHIN*Math.cos(bend));
+  leg.rotation.x=-(Math.atan2(dz,-dy)+shoulder);leg.userData.shin.rotation.x=BETA+bend;
+  // Pedals have their own spindle. Align the platform to the boot sole;
+  // rotating the crank must not turn the rider's foot upside down.
+  pedal.rotation.x=leg.rotation.x+leg.userData.shin.rotation.x-(m.kind==='bicycle'?m.crank.rotation.x:0);
+  if(!leg.userData.pedalContact){const marker=new THREE.Object3D();marker.name='pedalContact';marker.position.set(0,ARCH_Y,ARCH_Z);leg.userData.shin.add(marker);leg.userData.pedalContact=marker;}
+ }
+ u.setRidingAnchor?.(m.markers.leftGrip);
+}
+export function resetMountedRider(hero){
+ const u=hero.userData;u.setRidingAnchor?.(null);u.body.position.set(0,0,0);u.body.rotation.set(0,0,0);
+ for(const [side,leg]of [[-1,u.leftLeg],[1,u.rightLeg]]){leg.position.set(side*(u.legRest?.spread??.25),u.legRest?.height??.62,0);leg.rotation.set(0,leg.userData.restYaw||0,leg.userData.restRoll||0);leg.userData.shin.rotation.x=0;}
+}

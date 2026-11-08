@@ -1,6 +1,6 @@
 // Pure, bounded helpers shared by production combat and regression tests.
 import {firstHammerHit} from './combat.js?v=20261107-forge9';
-import {actionGrowth} from './character-progression.js?v=20261108-storm1';
+import {actionGrowth} from './character-progression.js?v=20261108-mount1';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const smooth=v=>{const t=clamp(v,0,1);return t*t*(3-2*t);};
 

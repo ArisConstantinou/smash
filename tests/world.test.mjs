@@ -6,12 +6,30 @@ import { createCityLayout, CITY_BUILDING_COUNT, CITY_BOUNDS, CITY_ROADS } from '
 import { createCityNavigation } from '../city-navigation.js';
 import { segmentBoxHit } from '../combat.js';
 import { moveCircle } from '../core.js';
+import { GroundScars } from '../ground-scars.js';
 
 const scene=new THREE.Scene();
 const world=createWorld(scene,{seed:41,round:1});
 const distanceToBox=(x,z,o)=>Math.hypot(Math.max(0,Math.abs(x-o.x)-o.w/2),Math.max(0,Math.abs(z-o.z)-o.d/2));
 const kinds=['townhouse','apartment','shop','office','townhall','police','hospital','skyscraper','construction','warehouse'];
 test.after(()=>world.dispose());
+
+test('single ground surfaces keep their authored location and remain fractureable without an identity instance',()=>{
+  const singles=[];
+  world.group.traverse(mesh=>{
+    if(mesh.userData.groundSurfaces)assert.ok(mesh.count>1,'A singleton must not enter the broken WebGPU uniform-array path');
+    if(mesh.name==='Single city ground surface')singles.push(mesh);
+  });
+  assert.ok(singles.length>0);
+  const mesh=singles.find(m=>m.userData.groundSurface.top<.18&&!m.material.transparent);
+  const bounds=new THREE.Box3().setFromObject(mesh),center=bounds.getCenter(new THREE.Vector3());
+  assert.ok(Math.hypot(center.x,center.z)>1,'The real surface belongs away from the spawn origin');
+  const scars=new GroundScars(scene);scars.bind(world);
+  assert.ok(scars.records.some(r=>r.mesh===mesh));
+  scars.add({x:center.x,y:.8,z:center.z,level:2},2);
+  assert.equal(mesh.visible,false);assert.ok(scars.mesh.visible);
+  scars.reset();assert.equal(mesh.visible,true);assert.ok(new THREE.Box3().setFromObject(mesh).equals(bounds));scars.dispose();
+});
 
 test('hydrant cap pivots remain live inside the otherwise cached static city',()=>{
  const o=world.objects.find(o=>o.type==='hydrant');assert.ok(o);

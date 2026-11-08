@@ -27,7 +27,7 @@ test('lightning replaces actual floor surfaces with burnt recessed slabs and res
 test('all fourteen earned strikes keep earlier damage and high airborne strikes cannot reach the floor',()=>{
  const {scars}=fixture();assert.equal(scars.add({x:0,y:20,z:0,level:2},5),false);
  for(let i=0;i<GROUND_SCAR_LIMIT;i++)assert.equal(scars.add({x:i*.1,y:.8,z:0,level:i+2},5),true);
- assert.equal(scars.count,14);assert.equal(scars.strikes[0].x,0);assert.equal(scars.damaged.size,1);
+ assert.equal(scars.count,GROUND_SCAR_LIMIT);assert.equal(scars.strikes[0].x,0);assert.equal(scars.damaged.size,1);
  const geometry=scars.geometry;assert.equal(scars.add({x:100,y:.8,z:0,level:15},5),false);assert.equal(scars.geometry,geometry);scars.dispose();
 });
 test('intersecting road strips fracture only their exposed tops rather than filling one another',()=>{

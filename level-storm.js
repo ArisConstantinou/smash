@@ -1,8 +1,9 @@
 // One queued strike per earned level. Fixed world-space ribbons avoid r170
 // instanced-transform hazards. No new lights, physics bodies or asset downloads.
 import * as THREE from './vendor/three.module.js';
+import {MAX_CHARACTER_LEVEL} from './character-progression.js?v=20261108-mount1';
 export const STORM_DURATION=.85;
-export function stormStats(level=2,power=24){return {radius:5.2+Math.max(1,Math.min(15,level))*.08,damage:Math.round(power*1.25+20)};}
+export function stormStats(level=2,power=24){return {radius:5.2+Math.max(1,Math.min(MAX_CHARACTER_LEVEL,level))*.08,damage:Math.round(power*1.25+20)};}
 function batch(scene,name,capacity){
  const geometry=new THREE.BufferGeometry();for(const a of ['position','color'])geometry.setAttribute(a,new THREE.BufferAttribute(new Float32Array(capacity*3),3).setUsage(THREE.DynamicDrawUsage));geometry.setDrawRange(0,0);
  const material=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:1,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,toneMapped:false,fog:false});
@@ -10,7 +11,7 @@ function batch(scene,name,capacity){
 }
 export class LevelStorm{
  constructor(scene,{onStrike=()=>{}}={}){this.onStrike=onStrike;this.pending=[];this.strikes=0;this.active=null;this.disposed=false;this.beam=batch(scene,'level-up-sky-lightning',1024);this.wave=batch(scene,'level-up-ground-discharge',2048);}
- enqueue(from,to){for(let level=Math.max(2,from+1);level<=Math.min(15,to);level++)if(!this.pending.includes(level)&&this.active?.level!==level)this.pending.push(level);}
+ enqueue(from,to){for(let level=Math.max(2,from+1);level<=Math.min(MAX_CHARACTER_LEVEL,to);level++)if(!this.pending.includes(level)&&this.active?.level!==level)this.pending.push(level);}
  get flash(){return this.active?Math.max(0,1-this.active.age/.19)*.9:0;}
  update(dt,player,camera){
   if(this.disposed||dt<=0)return;

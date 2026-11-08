@@ -149,14 +149,15 @@ test('XP thresholds advance gradually and the first forged tier is reachable aft
     if (level > 1) assert.ok(target > xpForNextLevel(level - 1));
     sum += target;
   }
-  assert.ok(sum >= 500 && sum <= 1000, 'The full starting progression stays finite and playable');
+  assert.ok(Array.from({length:14},(_,i)=>xpForNextLevel(i+1)).reduce((a,b)=>a+b,0)<=1000,'The existing path to storm gear retains its original pacing');
+  assert.ok(sum > 3000 && sum <= 5000, 'All thirty levels have finite, increasing thresholds');
   assert.equal(xpForNextLevel(MAX_CHARACTER_LEVEL), 0);
 });
 
 test('the level cap discards overflow without losing equipment or corrupting the XP bar', () => {
   const state = createCharacterProgression(14), materials = copy(state.materials);
   const result = awardCharacterXp(state, Number.MAX_VALUE);
-  assert.equal(result.levelsGained, 1);
+  assert.equal(result.levelsGained, MAX_CHARACTER_LEVEL-14);
   assert.equal(state.level, MAX_CHARACTER_LEVEL);
   assert.equal(state.xp, 0);
   assert.equal(state.weaponId, 'war', 'Even a huge award cannot auto-forge storm gear');
@@ -225,14 +226,14 @@ test('save round trips preserve an earned high-level character still carrying a 
 test('save validation rejects damaged or incompatible data instead of silently granting upgrades', () => {
   const valid = createCharacterProgression();
   for (const raw of [null, undefined, false, [], '{}', '', '{broken', 'null',
-    {...valid, version: 999}, {...valid, level: 0}, {...valid, level: 16}, {...valid, level: 3.5},
+    {...valid, version: 999}, {...valid, level: 0}, {...valid, level: MAX_CHARACTER_LEVEL+1}, {...valid, level: 3.5},
     {...valid, level: NaN}, {...valid, xp: -1}, {...valid, xp: 1.5}, {...valid, xp: Infinity},
     {...valid, xp: xpForNextLevel(1)}, {...valid, weaponId: 'storm'}, {...valid, weaponId: 'unknown'},
     {...valid, materials: null}, {...valid, materials: []}, {...valid, materials: {}},
     {...valid, materials: {wood: -1, scrap: 0, crystal: 0}},
     {...valid, materials: {wood: 0, scrap: Infinity, crystal: 0}},
     {...valid, materials: {wood: 0, scrap: 0, crystal: '6'}},
-    {...createCharacterProgression(15), xp: 1}]) {
+    {...createCharacterProgression(MAX_CHARACTER_LEVEL), xp: 1}]) {
     assert.equal(restoreCharacterProgression(raw), null, `Accepted invalid save ${JSON.stringify(raw)}`);
   }
   assert.throws(() => serializeCharacterProgression({...valid, weaponId: 'storm'}), TypeError);
@@ -254,6 +255,6 @@ test('out-of-range starting selections remain finite legal presets', () => {
   for (const value of [-30, 0, NaN, Infinity, -Infinity, undefined, null]) {
     assert.deepEqual(createCharacterProgression(value), createCharacterProgression(1));
   }
-  assert.deepEqual(createCharacterProgression(200), createCharacterProgression(15));
+  assert.deepEqual(createCharacterProgression(200), createCharacterProgression(MAX_CHARACTER_LEVEL));
   assert.deepEqual(createCharacterProgression(6.9), createCharacterProgression(6));
 });
