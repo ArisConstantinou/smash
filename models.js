@@ -716,7 +716,7 @@ export function makeWarrior() {
   const getHeadHalfExtents = () => headContactDimensions().halfExtents;
   const barbedInstance = new THREE.Matrix4();
   function barbedCoilCount(reach = reachScale) {
-    if (equipmentTier < 2) return 0;
+    if (equipmentTier < 2 || root.userData.armoryWeaponId) return 0;
     measureContactGeometry();
     const headY = .43 + reach;
     // Stop before the actual head underside and the retaining collar. Large
@@ -1150,6 +1150,9 @@ export function makeWarrior() {
   }
   const getEquipmentMaterials = () => equipmentCache.get(equipmentTier).materials;
   const getWeaponMaterials = () => equipmentCache.get(equipmentTier).weaponMaterials;
+  const armorySlots={head:hammerHead,handle,shaft,collar,guard:handGuard,shield};
+  function resetArmoryParts(names){for(const name of names){const slot=armorySlots[name];if(!slot)continue;for(const child of slot.children.slice())if(child.userData.armoryVisual)child.removeFromParent();for(const child of equipmentCache.get(equipmentTier).parts.get(slot)||[])slot.add(child);}contactCache.tier=-1;localBoundsCache.key='';localMatrices.clear();}
+  function installArmoryPart(name,object){const slot=armorySlots[name];if(!slot)return;for(const child of equipmentCache.get(equipmentTier).parts.get(slot)||[])child.removeFromParent();for(const child of slot.children.slice())if(child.userData.armoryVisual)child.removeFromParent();object.position.set(0,0,0);object.rotation.set(0,0,0);object.scale.set(1,1,1);object.userData.armoryVisual=true;slot.add(object);contactCache.tier=-1;localBoundsCache.key='';localMatrices.clear();}
 
   root.userData = {
     body, leftLeg, rightLeg, legRest, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, handGuard, barbedWrap, cape,
@@ -1158,7 +1161,7 @@ export function makeWarrior() {
     setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld, getThrowMetrics,
     getSpinRadius, getHeadContactRadius, getHeadForwardExtent, getShaftContactRadius, getHeadHalfExtents, getHeadFloorY,
     getBarbedContactSegment, getBarbedContactRadius,
-    weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,
+    weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,installArmoryPart,resetArmoryParts,
     invalidateEquipmentBounds(){contactCache.tier=-1;localBoundsCache.key='';localMatrices.clear();},
     stance: 0, shieldStored: false, weaponHeld: true, reachScale: 1,
     hammerRest: { x: 0, y: 0, z: 0 },

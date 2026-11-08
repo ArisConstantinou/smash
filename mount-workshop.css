@@ -53,3 +53,7 @@ body[data-touch-controls=true] #mountControls button{min-height:72px;padding-bot
 @media(max-height:550px) and (min-width:701px){.workshop-content{grid-template-columns:130px minmax(0,1fr) 280px}.workshop-parts .part-art{width:28px}}
 #menuMountWorkshopButton img{width:38px;height:38px;object-fit:contain;grid-row:1/3;filter:drop-shadow(0 2px 2px #0008)}
 body[data-touch-controls=true] #mountControls{width:170px}body[data-touch-controls=true] #mountControls button{min-height:85px}body[data-touch-controls=true] #mountControls .mount-hud-art{width:60px;height:60px}body[data-touch-controls=true] #mountControls button>img{width:56px;height:56px}
+
+/* Five illustrated sections fit inside the same fixed shell. */
+.workshop-tabs button{min-width:0}.workshop-tabs .card-label{overflow-wrap:normal}
+@media(max-width:700px){.workshop-tabs button{flex-direction:column;gap:0;padding:2px;font-size:12px;line-height:14px}.workshop-tabs button>.part-art,.workshop-tabs .tool-art{width:26px;height:26px}.workshop-tabs{min-height:46px}.workshop-content{grid-template-rows:minmax(180px,1fr) minmax(180px,1fr)}}

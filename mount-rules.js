@@ -1,4 +1,5 @@
 // Deterministic garage rules shared by gameplay and the two workshop entry points.
+import {createArmory,restoreArmory} from './armory-rules.js?v=20261108-armory1';
 export const MAX_PART_RANK=5;
 export const MOUNT_FAMILIES=Object.freeze([
  {id:'bicycle',name:'ΠΟΔΗΛΑΤΟ',level:1,speed:8.4,hp:130,energy:32,regen:6,mass:1},
@@ -58,9 +59,9 @@ const ids=MOUNT_FAMILIES.map(f=>f.id);
 export const familyForLevel=level=>level>=21?'scifi':level>=11?'motorcycle':'bicycle';
 export const familyUnlocked=(id,level)=>ids.includes(id)&&level>=MOUNT_FAMILIES.find(f=>f.id===id).level;
 const freshParts=parts=>Object.fromEntries(parts.map(p=>[p.id,{selected:p.options[0].id,owned:{[p.options[0].id]:1}}]));
-export function createGarage(){const g={version:1,selectedMount:'auto',mounts:Object.fromEntries(ids.map(id=>[id,freshParts(MOUNT_PARTS)])),player:freshParts(PLAYER_PARTS)};g.mounts.scifi.rearModule.owned.turret=1;g.mounts.scifi.rearModule.selected='turret';return g;}
+export function createGarage(){const g={version:2,selectedMount:'auto',mounts:Object.fromEntries(ids.map(id=>[id,freshParts(MOUNT_PARTS)])),player:freshParts(PLAYER_PARTS),armory:createArmory()};g.mounts.scifi.rearModule.owned.turret=1;g.mounts.scifi.rearModule.selected='turret';return g;}
 export function restoreGarage(saved){
- const state=createGarage();if(!saved||typeof saved!=='object')return state;
+ const state=createGarage();if(!saved||typeof saved!=='object')return state;state.armory=restoreArmory(saved.armory);
  state.selectedMount=saved.selectedMount==='auto'||ids.includes(saved.selectedMount)?saved.selectedMount:'auto';
  for(const [key,parts] of [...ids.map(id=>[id,MOUNT_PARTS]),['player',PLAYER_PARTS]]){
   const source=key==='player'?saved.player:saved.mounts?.[key],target=key==='player'?state.player:state.mounts[key];

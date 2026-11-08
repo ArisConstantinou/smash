@@ -6,11 +6,11 @@
   "rank": 1,
   "chassisCell": 63,
   "inputs": {
-    "models.js": "0ecd9366db6d9ee7f0d9364f86ad012e8abcf5e718fa6403b381d97537f4c0c8",
+    "models.js": "ff343c9aebe1221a9e9895ae206449e5ec532cb61f8b5cf9b7b4bd48724bbb4a",
     "mount-models.js": "6c6d90d7de33116979f3129b1c123703fe3d9117efcc2518fc662e7b2bc2c674",
-    "player-customization.js": "aff6c1b63abd7f190b9a154e0960fa0d0c9a3601a372933b6db0687ad9961298",
+    "player-customization.js": "b7bdb8fc62ff1afc59b4f5ccf1ad6e54993aa7ecd0254684e5157a5493df5170",
     "equipment-shapes.js": "651f26789f7beb1d34439facdab33db3d6a99762fc2cd8a4523050c88d5a532b",
-    "mount-rules.js": "e341acda5cfac887d8b621ef9c513c50f85156a55612a5725564ec8a0e81603a",
+    "mount-rules.js": "9a8d8c27c9d4ac95960b3c29fe516310600cd384976d1e23e0d2110c6b4d55d7",
     "tools/workshop-atlas.js": "71b23a6be2bf9aeb80fd00f376341c068f30755521d57a7b134076a53d15fcd5",
     "tools/render-workshop-art.mjs": "98b6a3c1b65ca75a848dbba3d1df6d30fabefbe52d54d4bd6037bb90e90e4a1c"
   },

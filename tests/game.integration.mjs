@@ -38,6 +38,12 @@ import * as levelStormModule from '../level-storm.js';
 import * as groundScarsModule from '../ground-scars.js';
 import * as mountRideModule from '../mount-ride.js';
 import * as mountRulesModule from '../mount-rules.js';
+import * as saveStoreModule from '../save-store.js';
+import * as armoryCustomizationModule from '../armory-customization.js';
+import * as armoryContactsModule from '../armory-contacts.js';
+import * as armoryEffectsModule from '../armory-effects.js';
+import * as armoryModelsModule from '../armory-models.js';
+import * as armoryRulesModule from '../armory-rules.js';
 import * as mountWorkshopModule from '../mount-workshop.js';
 import * as playerCustomizationModule from '../player-customization.js';
 import * as mountWeaponsModule from '../mount-weapons.js';
@@ -197,6 +203,12 @@ function synthetic(exports, identifier) {
   return new vm.SyntheticModule(names, function () { for (const name of names) this.setExport(name, exports[name]); }, { context: sandbox, identifier });
 }
 const imports = new Map([
+  ['./save-store.js', synthetic(saveStoreModule, 'real-save-store')],
+  ['./armory-customization.js', synthetic(armoryCustomizationModule, 'real-armory-customization')],
+  ['./armory-models.js', synthetic(armoryModelsModule, 'real-armory-models')],
+  ['./armory-contacts.js', synthetic(armoryContactsModule, 'real-armory-contacts')],
+  ['./armory-effects.js', synthetic(armoryEffectsModule, 'real-armory-effects')],
+  ['./armory-rules.js', synthetic(armoryRulesModule, 'real-armory-rules')],
   ['./mount-workshop.js', synthetic(mountWorkshopModule, 'real-mount-workshop')],
   ['./player-customization.js', synthetic(playerCustomizationModule, 'real-player-customization')],
   ['./mount-weapons.js', synthetic(mountWeaponsModule, 'real-mount-weapons')],
@@ -241,7 +253,7 @@ const imports = new Map([
 const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
-  get mountRide(){return mountRide;},get garage(){return garage;},get mountWeapons(){return mountWeapons;},toggleMount,
+  armoryImpact, catalogHeadHits, actualEquipmentRay, shieldSurface, get armoryEffects(){return armoryEffects;}, get armoryWeaponStats(){return armoryWeaponStats;}, get armoryShieldStats(){return armoryShieldStats;}, get mountRide(){return mountRide;},get garage(){return garage;},get mountWeapons(){return mountWeapons;},toggleMount,
   get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
   get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},get hydrantEffects(){return hydrantEffects;},get levelStorm(){return levelStorm;},get groundScars(){return groundScars;},
@@ -4257,4 +4269,36 @@ test('mounted keyboard steering keeps the manual arrow on the real chassis until
   arena(1);api.toggleMount();api.mountRide.yaw=0;api.mountRide.model.rotation.y=0;api.pointer.active=false;
   key('KeyD',true);api.updatePlayer(1/120);const heading=api.manualAttackDirection();close(heading.x,Math.sin(api.mountRide.yaw));close(heading.z,Math.cos(api.mountRide.yaw));
   aimAt(-3,0);const manual=api.manualAttackDirection();assert.ok(manual.x<-.9,'Mouse owns the hammer independently of the turning vehicle');key('KeyD',false);
+});
+
+
+test('catalog ring gap, separate piston damage and two wrecking faces reach the actual damage path',()=>{
+ function fixture(id,w=.07,h=.07){arena(30);api.garage.armory.weapon=id;api.applyStats();api.hero.userData.hammerHead.matrixWorld.identity();const o=placeObject('wall',0,1,{w,d:.07,h,hp:10000,maxHp:10000});o.mesh.position.y=-h/2;o.baseY=-h/2;const s={damage:100,knockback:3,lift:0,hits:new Set(),q:0,fx:0,fz:1,time:.1,duration:.3,variant:'one-side'};return{o,s};}
+ let f=fixture('w12');f.o.mesh.position.y=.25-.035;f.o.baseY=.25-.035;api.armoryImpact(f.s,{x:0,y:0,z:0},{x:0,y:0,z:2},false);assert.equal(f.o.hp,10000,'Empty ring centre must not damage scenery');
+ f.o.x=.425;f.o.mesh.position.x=.425;api.world.rebuildSpatialIndex();api.armoryImpact(f.s,{x:0,y:0,z:0},{x:0,y:0,z:2},false);assert.equal(f.o.hp,9900,'The same post on the material rim is hit');
+ f=fixture('w08',.9,.8);api.armoryImpact(f.s,{x:0,y:0,z:0},{x:0,y:0,z:2},false);assert.equal(f.o.hp,9880,'Two touching pistons each deal60 damage, never two full100 hits');
+ f=fixture('w08');f.o.mesh.position.y=.20-.035;f.o.baseY=.20-.035;api.armoryImpact(f.s,{x:0,y:0,z:0},{x:0,y:0,z:2},false);assert.equal(f.o.hp,9965,'Bridge-only contact is weak and closes this target for the stroke');f.o.x=.30;f.o.mesh.position.x=.30;api.world.rebuildSpatialIndex();f.s.blocked=false;api.armoryImpact(f.s,{x:0,y:0,z:0},{x:0,y:0,z:2},false);assert.equal(f.o.hp,9965,'A later piston cannot stack on an earlier bridge impact');
+ f=fixture('w11');api.armoryImpact(f.s,{x:-1,y:0,z:1},{x:1,y:0,z:1},false);const flat=10000-f.o.hp;
+ f=fixture('w11');api.armoryImpact(f.s,{x:1,y:0,z:1},{x:-1,y:0,z:1},false);const spikes=10000-f.o.hp;assert.equal(flat,90);assert.equal(spikes,118);
+ api.garage.armory.weapon='auto';api.applyStats();
+});
+
+test('every catalog weapon remains attached to real grips during swing, mount and throw',()=>{
+ arena(30);for(const b of armoryRulesModule.WEAPON_BLUEPRINTS){api.garage.armory.weapon=b.id;api.applyStats();assert.equal(api.hero.userData.armoryWeaponId,b.id);api.setFacing(0,1);api.poseHero(.2);const u=api.hero.userData;close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)),0,.001);const thrown=u.createThrownHammer();assert.ok(thrown.getObjectByName('hammerHead'));assert.ok(thrown.userData.radius>.1);thrown.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of Array.isArray(n.material)?n.material:[n.material])m.dispose();});}
+ api.garage.armory.weapon='auto';api.applyStats();
+});
+
+
+test('tower shield has a real clear viewport; equipped shield blocks produce counter damage and frost',()=>{
+ arena(30);api.garage.armory.shield='s15';const parts=api.garage.armory.items.s15.parts;parts.rim.selected='serrated';parts.rim.owned.serrated=1;parts.core.selected='frost';parts.core.owned.frost=2;api.applyStats();api.poseHero(1);const model=api.hero.userData.armoryShieldModel;
+ const ray=(x,y)=>api.actualEquipmentRay(model,model.localToWorld(new THREE.Vector3(x,y,2)),model.localToWorld(new THREE.Vector3(x,y,-2)));
+ assert.equal(ray(0,.445),null,'No invisible plane in the tower viewport');assert.notEqual(ray(.35,.445),null,'Actual surrounding plate stops the ray');
+ const e=stationaryEnemy('robot',0,2);e.hp=e.maxHp=1000;api.player.hp=api.player.maxHp;api.player.invincible=0;const before=api.player.hp;
+ api.hurtPlayer(100,0,-1,true,{attacker:e,shieldHit:true,from:{x:0,y:1,z:2}});assert.ok(before-api.player.hp<70);assert.ok(e.hp<1000&&e.slowTime>0&&e.slowFactor<1);
+ const enemyHp=e.hp;api.player.invincible=0;api.hurtPlayer(100,0,1,true,{attacker:e,from:{x:0,y:1,z:-2}});assert.equal(e.hp,enemyHp,'Rear hit does not trigger shield retaliation');api.garage.armory.shield='auto';api.applyStats();
+});
+
+test('weapon core adapter burns real enemy HP, chains real HP through LOS and clears on round reset',()=>{
+ arena(30);const a=stationaryEnemy('robot',0,2),b=stationaryEnemy('robot',1,2);for(const e of [a,b])e.hp=e.maxHp=1000;
+ api.armoryEffects.hit(a,{core:'fire',coreRank:2},100,{x:0,y:1,z:2});for(let i=0;i<6;i++)api.armoryEffects.update(.4);assert.ok(a.hp<1000);assert.equal(api.armoryEffects.burning.size,0);const hp=b.hp;api.armoryEffects.hit(a,{core:'arc',coreRank:1},100,{x:0,y:1,z:2});assert.ok(b.hp<hp);api.armoryEffects.hit(a,{core:'fire',coreRank:2},100);api.resetWorld();assert.equal(api.armoryEffects.burning.size,0);
 });

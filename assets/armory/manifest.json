@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "tile": 160,
+  "columns": 8,
+  "rows": 8,
+  "rank": 1,
+  "shapeCell": 63,
+  "inputs": {
+    "armory-models.js": "7d3f3a0eb40a3b69082e38ce7ef9868e243dacb2a98f85a7034b1907b6452bf5",
+    "armory-geometry.js": "b3541b313906f67d1f87cd23331e9aedd37b8446ab58b8acb81940b661d89f5f",
+    "armory-materials.js": "1f3e5d2089de4961bc3fa8fb4345885606f82316f168bddedaef6aac91888a1c",
+    "armory-rules.js": "e8a3ad040db489c55a43b74a261c7352d986d42d3261ab5fa7e41b11d01477d4",
+    "tools/armory-atlas.js": "e1ceff752eff9a6925537535d332c8aeedd0c93d222639e859d2904cbb96ef03",
+    "tools/render-armory-atlas.mjs": "c2309ac232dd3b833008f0f5be00833d8543aa3aef5ffb5e8def4fd32cb42c3f"
+  },
+  "images": {
+    "w01.png": "41158e236882442ad4fd339e6dd31ceda3056480a05f16554640491322948d6f",
+    "w02.png": "a0b8f41edaa7723cede47114e8cac5686c4822da5a46b74f33d7e1c92b83fe6a",
+    "w03.png": "fe77f1bfd5fc3c7235fe37713949fba5c6fcebcbbe4e214ce0b42e04475ca4f4",
+    "w04.png": "0fe00f643ff81956def8417765540e422e766c8577fb593f52ceb89461514657",
+    "w05.png": "860afbdc3672dbb8a519c14f26d8a4ce8c8c05eddea1307f42c6209ac07e0d38",
+    "w06.png": "308a6d16f472bcceadb7152af617351e28c186a1a77a8fcb0c341cee5e12f747",
+    "w07.png": "e2f1c638434d90a589845fee3c910f6966dd912aebd81f2974fc89629f590808",
+    "w08.png": "90e3a4b1624f67ad358a6869bd817a931d3d265bc1e86ea49af3fd0fb7846a00",
+    "w09.png": "d7f2bd18b4bd36dd0e862cc17478ac93763ce5bee59ca040bb8f2fc00269d444",
+    "w10.png": "30fd17e1dcdcd679c0eb92b6ff2bb3eceb804301d0112e96ea2ccb7a0854f3da",
+    "w11.png": "25cde4973c5257d2e466ca08968c4384f0a493664c602682feb560ea27835d35",
+    "w12.png": "7c6d65af271a4fd42d3dc5f809d7739139c345bc55c968c3f5e74c16f6d0545c",
+    "s13.png": "a22febe315c85761dd5b50bc98ababb7d3d9f33b846d22d7a16df62689b4b033",
+    "s14.png": "e4019c27ec9c6786e647a791fbf2728bfb78e89b434a530e83c4a0631c5b8a93",
+    "s15.png": "f58c7dea1c3dda45bc453d8ab7491063817d9b7533b8ab3f2ef6a624a9aa8b4c",
+    "s16.png": "4a88dcc227bb90661fc4efd7514ac787eae6a710ef219e592afa855f32cdef42",
+    "s17.png": "a6971fec07eb9ef43e49ecb9e67c4a43e08556a4d996f325073fe66daff7717f",
+    "s18.png": "3ddbb3bb83fdd52b71a866ff0e324d74da590ba67606c9612e4e762eaccc8af3"
+  }
+}
