@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import {createGarage} from './mount-rules.js?v=20261108-mount1';
+import {createGarage} from './mount-rules.js?v=20261108-workshop1';
 
 const BOX=new THREE.BoxGeometry(1,1,1),CYLINDER=new THREE.CylinderGeometry(1,1,1,10),CONE=new THREE.ConeGeometry(1,1,4);
 const RAW=new THREE.MeshBasicMaterial();

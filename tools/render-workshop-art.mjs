@@ -1,0 +1,13 @@
+import {mkdir,writeFile,readFile} from 'node:fs/promises';import {resolve} from 'node:path';import {pathToFileURL,fileURLToPath} from 'node:url';import {createHash} from 'node:crypto';
+// Existing local dependencies and the project's single port only. No download.
+const stage=process.env.CODEX_GENERATED_OUTPUT||'E:/CodexGenerated/smash/staging',out=resolve(stage,'work/workshop-art'),skill=resolve(process.env.USERPROFILE,'.codex/skills/develop-web-game');process.env.TEMP=process.env.TMP=resolve(stage,'work/temp');await mkdir(out,{recursive:true});
+const {chromium}=await import(pathToFileURL(resolve(skill,'node_modules/playwright/index.mjs'))),{launchManagedBrowser}=await import(pathToFileURL(resolve(skill,'scripts/browser_lifecycle.mjs')));const managed=await launchManagedBrowser(chromium,{headless:true,channel:'chrome',screenshotDir:out});let context;
+try{
+ context=await managed.browser.newContext();const page=await context.newPage();await page.route('**/atlas-render.html',r=>r.fulfill({contentType:'text/html',body:'<html><body></body></html>'}));await page.goto('http://127.0.0.1:8000/candidate/atlas-render.html');const errors=[],images={};page.on('pageerror',e=>errors.push(e.message));
+ const store=async(name,data)=>{const bytes=Buffer.from(data.split(',')[1],'base64');await writeFile(resolve(out,name),bytes);images[name]=createHash('sha256').update(bytes).digest('hex');};
+ for(const [kind,tier]of [['bicycle',0],['motorcycle',0],['scifi',0],...[0,1,2,3,4].map(t=>['player',t])]){
+  const data=await page.evaluate(async({kind,tier})=>(await import('./tools/workshop-atlas.js')).renderAtlas(kind,tier),{kind,tier}),name=(kind==='player'?'player-'+tier:kind)+'.png';await store(name,data);
+  if(kind!=='player'){const icon=await page.evaluate(async png=>{const img=new Image();img.src=png;await img.decode();const c=document.createElement('canvas');c.width=c.height=160;c.getContext('2d').drawImage(img,1120,1120,160,160,0,0,160,160);return c.toDataURL('image/png');},data);await store('chassis-'+kind+'.png',icon);}console.log(name);
+ }
+ if(errors.length)throw Error(errors.join('\n'));const inputs={},root=fileURLToPath(new URL('../',import.meta.url));for(const name of ['models.js','mount-models.js','player-customization.js','equipment-shapes.js','mount-rules.js','tools/workshop-atlas.js','tools/render-workshop-art.mjs'])inputs[name]=createHash('sha256').update((await readFile(resolve(root,name),'utf8')).replaceAll('\r\n','\n')).digest('hex');await writeFile(resolve(out,'manifest.json'),JSON.stringify({format:1,tile:160,columns:8,rows:8,rank:1,chassisCell:63,inputs,images},null,2)+'\n');
+}finally{await context?.close();await managed.cleanup();await new Promise(r=>setTimeout(r,1000));}

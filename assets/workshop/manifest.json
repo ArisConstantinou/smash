@@ -1,0 +1,30 @@
+{
+  "format": 1,
+  "tile": 160,
+  "columns": 8,
+  "rows": 8,
+  "rank": 1,
+  "chassisCell": 63,
+  "inputs": {
+    "models.js": "ff343c9aebe1221a9e9895ae206449e5ec532cb61f8b5cf9b7b4bd48724bbb4a",
+    "mount-models.js": "6c6d90d7de33116979f3129b1c123703fe3d9117efcc2518fc662e7b2bc2c674",
+    "player-customization.js": "b7bdb8fc62ff1afc59b4f5ccf1ad6e54993aa7ecd0254684e5157a5493df5170",
+    "equipment-shapes.js": "651f26789f7beb1d34439facdab33db3d6a99762fc2cd8a4523050c88d5a532b",
+    "mount-rules.js": "9a8d8c27c9d4ac95960b3c29fe516310600cd384976d1e23e0d2110c6b4d55d7",
+    "tools/workshop-atlas.js": "71b23a6be2bf9aeb80fd00f376341c068f30755521d57a7b134076a53d15fcd5",
+    "tools/render-workshop-art.mjs": "98b6a3c1b65ca75a848dbba3d1df6d30fabefbe52d54d4bd6037bb90e90e4a1c"
+  },
+  "images": {
+    "bicycle.png": "749e259509be51e9a84830337711357d258547f89739597662c0991b769538c2",
+    "chassis-bicycle.png": "ced29def21e50270b813cdaaeb3e7e3cec6a77d48c79980ebb5530432e448492",
+    "motorcycle.png": "ce27c38a78b9939a4d2572dd915486787020943674453b6090d4d418586284b5",
+    "chassis-motorcycle.png": "e1f67fefffbd8ed0e8b86ae6700f6cf15382aab1390e535bad44b45cdf8eca80",
+    "scifi.png": "14560bc9e13bbc34e12967312e6b4361c096fbbe8618fcf11bb3f94e3e96dd62",
+    "chassis-scifi.png": "18f54df1d045f77ebd31ffa9dce0be806b96cca07e998efd51f2d281c05a9009",
+    "player-0.png": "fa0c43bc4344285d5a5b220288bca336b20d91219076331ac5b30a7f42e43183",
+    "player-1.png": "e78f363f427adfe894f1e9dc4cd8b6ba444d48b30111040250c6c34c3e35e745",
+    "player-2.png": "46d65d2ba7945a02a103cda02dc8f50f4ac35397ab6f4432461eb3cb5265325c",
+    "player-3.png": "2d788a0620fecb2c7ad877ae39f6e77f2c2863b05bc508d7f8c2420ae07b41a5",
+    "player-4.png": "e990e90b13e166c08a5babdf6c234b975076c5975c483d0d93f7ecabd1f13cd8"
+  }
+}

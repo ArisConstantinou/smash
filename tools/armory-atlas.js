@@ -1,0 +1,12 @@
+import * as THREE from '../vendor/three.module.js';import {createArmory,armoryParts} from '../armory-rules.js';import {createWeaponModel,createShieldModel} from '../armory-models.js';
+let renderer,scene,camera;
+export async function renderArmoryAtlas(id){
+ if(!renderer){renderer=new THREE.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true});renderer.setSize(160,160);renderer.outputColorSpace=THREE.SRGBColorSpace;scene=new THREE.Scene();scene.add(new THREE.HemisphereLight(0xe2f6ff,0x334851,2.4));const light=new THREE.DirectionalLight(0xffe3b0,3.2);light.position.set(-3,5,6);scene.add(light);const rim=new THREE.DirectionalLight(0x9ce9ff,1.8);rim.position.set(4,2,-4);scene.add(rim);camera=new THREE.OrthographicCamera(-1,1,1,-1,.01,100);}
+ const canvas=document.createElement('canvas');canvas.width=canvas.height=1280;const ctx=canvas.getContext('2d');let index=0;
+ function capture(model,slot,i){const subject=new THREE.Group();model.updateMatrixWorld(true);const weapon=id[0]==='w',parts=model.userData.parts,source=weapon?(slot==='haft'?parts.shaft:slot==='grip'?parts.handle:slot==='strike'||slot==='core'?parts.head:model):model;
+  source.traverse(m=>{if(!m.isMesh||!m.visible)return;const mesh=new THREE.Mesh(m.geometry.clone(),m.material);mesh.geometry.applyMatrix4(m.matrixWorld);subject.add(mesh);});scene.add(subject);subject.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(subject),center=box.getCenter(new THREE.Vector3());subject.position.sub(center);box.translate(center.negate());camera.position.set(3,1.8,4).normalize().multiplyScalar(15);camera.lookAt(0,0,0);camera.updateMatrixWorld(true);let r=.1;for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const v=new THREE.Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse);r=Math.max(r,Math.abs(v.x),Math.abs(v.y));}r*=1.12;camera.left=camera.bottom=-r;camera.right=camera.top=r;camera.updateProjectionMatrix();renderer.render(scene,camera);ctx.drawImage(renderer.domElement,(i%8)*160,Math.floor(i/8)*160);scene.remove(subject);subject.traverse(m=>m.geometry?.dispose());model.userData.dispose();
+ }
+ const make=a=>id[0]==='w'?createWeaponModel(id,a):createShieldModel(id,a);
+ for(const part of armoryParts(id))for(const option of part.options){const a=createArmory(),p=a.items[id].parts[part.id];p.selected=option.id;p.owned[option.id]=1;capture(make(a),part.id,index++);}
+ capture(make(createArmory()),'shape',63);return canvas.toDataURL('image/png');
+}

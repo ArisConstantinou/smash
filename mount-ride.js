@@ -1,7 +1,7 @@
 import * as THREE from './vendor/three.module.js';
-import {createMountModel} from './mount-models.js?v=20261108-mount1';
+import {createMountModel} from './mount-models.js?v=20261108-workshop1';
 import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
-import {mountStats,resolveMount,configurationSignature} from './mount-rules.js?v=20261108-mount1';
+import {mountStats,resolveMount,configurationSignature} from './mount-rules.js?v=20261108-workshop1';
 import {firstHammerHit} from './combat.js';
 
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
