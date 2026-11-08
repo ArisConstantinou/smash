@@ -3,6 +3,7 @@
 // creates energy. Buildings stay static. Every kick can move a car; upgrades
 // increase the impulse rather than unlock a barely visible displacement.
 import {segmentBoxHit} from './combat.js?v=20261107-forge9';
+import {actionGrowth} from './character-progression.js?v=20261108-storm1';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const safe=(v,f=0)=>Number.isFinite(v)?v:f;
 const MASSES=Object.freeze({zombie:1,crawler:.75,robot:1.65,brute:3.5,mutant:2.7,mech:5,titan:9,siegeMech:12,boss:24,car:14,policecar:16,ambulance:22});
@@ -20,15 +21,17 @@ export function enemyHealthColor(level=1){
 }
 export function kickStats(characterLevel=1,upgrades=0){
   const rank=clamp(Math.floor(safe(upgrades)),0,30),growth=1+.025*(Math.max(1,safe(characterLevel,1))-1);
-  return {rank:rank+1,damage:Math.round((14+rank*7)*growth),impulse:Math.min(24,8+rank*2.4),
-    range:1.30,radius:.23,duration:.38,cooldown:Math.max(.44,.65-rank*.025),
-    canMoveCars:true,carSpeed:Math.min(18,7.5+rank*1.25)};
+  const action=actionGrowth(characterLevel);
+  return {rank:rank+1,damage:Math.round((30+rank*10)*growth*action.damageScale),impulse:(14+rank*3.8)*action.forceScale,
+    range:1.30,radius:.23,duration:.38,cooldown:Math.max(.44,.65-rank*.025)*action.cooldownScale,
+    canMoveCars:true,carSpeed:(14+rank*3)*action.forceScale};
 }
 export function kickVelocity(target,stats){
   const mass=bodyMass(target);
   if(!Number.isFinite(mass))return 0;
-  if(isVehicle(target))return stats.canMoveCars?stats.carSpeed*14/mass:0;
-  return Math.min(11,stats.impulse/mass);
+  const raw=isVehicle(target)?(stats.canMoveCars?stats.carSpeed*14/mass:0):stats.impulse/mass;
+  // A smooth physical ceiling keeps every rank useful without unbounded speed.
+  return 64*raw/(64+raw);
 }
 /** Mutates velocity, not position. n points from A towards B. */
 export function transferMomentum(a,b,normal,restitution=.12){

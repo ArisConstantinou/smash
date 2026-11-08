@@ -1,5 +1,6 @@
 // Pure, bounded helpers shared by production combat and regression tests.
 import {firstHammerHit} from './combat.js?v=20261107-forge9';
+import {actionGrowth} from './character-progression.js?v=20261108-storm1';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const smooth=v=>{const t=clamp(v,0,1);return t*t*(3-2*t);};
 
@@ -53,7 +54,7 @@ export function previewThrowChain(first,targets,objects,{maxHits=1,radius=.2,cha
 export function punchStats(level=1,powerUpgrades=0,variant=0){
   const index=Math.abs(Math.floor(variant))%4;
   return {variant:index,hand:index%2?'right':'left',duration:index===2?.32:.28,
-    damage:Math.round((10+Math.max(0,level-1))*(1+.12*Math.max(0,powerUpgrades))*(index===1?1.2:index===2?1.12:1)),
+    damage:Math.round((10+Math.max(0,level-1))*(1+.12*Math.max(0,powerUpgrades))*(index===1?1.2:index===2?1.12:1)*actionGrowth(level).damageScale),
     radius:.18};
 }
 export function samplePunchMotion(progress,variant=0){

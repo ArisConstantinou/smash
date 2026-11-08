@@ -34,6 +34,8 @@ import * as throwIndicatorModule from '../throw-indicator.js';
 import * as barbedContact from '../barbed-contact.js';
 import * as vehicleEffectsModule from '../vehicle-effects.js';
 import * as hydrantEffectsModule from '../hydrant-effects.js';
+import * as levelStormModule from '../level-storm.js';
+import * as groundScarsModule from '../ground-scars.js';
 import * as performanceModule from '../performance-hud.js';
 import * as weaponPoseModule from '../weapon-pose.js';
 
@@ -190,6 +192,8 @@ function synthetic(exports, identifier) {
 const imports = new Map([
   ['./vehicle-effects.js', synthetic({...vehicleEffectsModule,preloadVehicleExplosion:async()=>{}}, 'real-vehicle-effects')],
   ['./hydrant-effects.js', synthetic(hydrantEffectsModule, 'real-hydrant-effects')],
+  ['./level-storm.js', synthetic(levelStormModule, 'real-level-storm')],
+  ['./ground-scars.js', synthetic(groundScarsModule, 'real-ground-scars')],
   ['./renderer-policy.js', synthetic({createGameRenderer: async ({canvas}) => new FakeRenderer({canvas})}, 'renderer-test-surface')],
   ['./collision-wasm.js', synthetic({loadCollisionWasm: async () => false, collisionWasmStatus: () => ({active:false})}, 'wasm-bootstrap-test-surface')],
   ['./performance-hud.js', synthetic(performanceModule, 'real-performance-hud')],
@@ -227,7 +231,7 @@ const testingExports = `
 export const __integration = {
   get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
-  get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},get hydrantEffects(){return hydrantEffects;},
+  get destruction(){return destruction;},get forgeMenu(){return forgeMenu;},get hydrantEffects(){return hydrantEffects;},get levelStorm(){return levelStorm;},get groundScars(){return groundScars;},
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,segmentObjects,
   get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},get vehicleEffects(){return vehicleEffects;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
@@ -527,8 +531,8 @@ test('Q toggles only the upgrade drawer, ignores key repeat and editable focus, 
   assert.equal(api.swing,null);assert.equal(api.spin,null);assert.equal(api.kick,null);
 });
 
-test('wave one gives breathing room and enemies survive a single hit even from the test hammer', () => {
-  reset(); advance(5.5);
+test('wave one gives a new level-one warrior breathing room and enemies survive its first hit', () => {
+  reset(1); advance(5.5);
   assert.equal(api.enemies.length, 0, 'The opening must allow time to learn the controls before the first spawn');
   advance(1);
   assert.equal(api.enemies.length, 2, 'The first wave arrives in its first scheduled batch of two');
@@ -542,9 +546,10 @@ test('wave one gives breathing room and enemies survive a single hit even from t
   enemy.x = api.player.x; enemy.z = api.player.z + 2.3; enemy.speed = 0; enemy.state = 'idle';
   api.setFacing(0, 1); api.poseHero(1);
   mouseAttack(true); mouseAttack(false); playerSteps(.35);
-  assert.equal(enemy.dead, false, 'Even the test hammer should register contact before the enemy falls');
+  assert.equal(enemy.dead, false, 'The starting log should register contact before the enemy falls');
+  api.gainXP(10000);assert.equal(api.character.weaponId,'log','Earned levels improve the same weapon');
   playerSteps(.12);mouseAttack(true);mouseAttack(false);playerSteps(.5);
-  assert.equal(enemy.dead, true, 'The stronger test hammer defeats an opening zombie in two contacts');
+  assert.equal(enemy.dead, true, 'The earned high-level base damage now finishes the opening zombie');
   assert.equal(api.kills, 1);
 });
 
@@ -1099,13 +1104,33 @@ test('jump steering follows arbitrary joystick angles and real diagonal keys wit
   moveStick('pointermove',.31,-.95);const desired=core.screenMovement(.31,-.95),start={...api.player};
   playerSteps(.15);assert.ok(api.leap&&api.player.y>0);
   assert.ok(api.leap.dir.x*desired.x+api.leap.dir.z*desired.z>.95,'A changed airborne thumb direction must steer this jump');
-  const distance=Math.hypot(api.player.x-start.x,api.player.z-start.z);assert.ok(distance<=8.2*.15+.001,'Steering must not add diagonal speed');
+  const distance=Math.hypot(api.player.x-start.x,api.player.z-start.z);assert.ok(distance<=8.2*api.characterStats.mobilityScale*.15+.001,'Steering must not add speed beyond the earned mobility stat');
  });
  arena(1);key('KeyW',true);key('KeyD',true);api.startLeap();playerSteps(.05);
  key('KeyW',false);key('KeyD',false);key('KeyS',true);key('KeyA',true);playerSteps(.25);
  const desired=core.screenMovement(-1,1);assert.ok(api.leap.dir.x*desired.x+api.leap.dir.z*desired.z>.95);
  api.dodge();const heading={...api.leap.dir};key('KeyS',false);key('KeyA',false);key('KeyW',true);playerSteps(.08);
  close(api.leap.dir.x,heading.x);close(api.leap.dir.z,heading.z);assert.equal(api.dodge(),false);
+});
+
+test('a genuine level-up queues one sky strike and shocks enemies and scenery without hurting its owner',()=>{
+ arena(1,{test:false});const near=stationaryEnemy('zombie',0,3),far=stationaryEnemy('zombie',0,10);near.hp=near.maxHp=far.hp=far.maxHp=1000;
+ const wall=placeObject('wall',-2,0,{hp:1000,maxHp:1000}),barrel=placeObject('barrel',2,2,{hp:10,maxHp:60}),hydrant=placeObject('hydrant',3,0);
+ const oldHp=api.player.hp;api.gainXP(8);assert.equal(api.level,2);assert.deepEqual(api.levelStorm.pending,[2]);assert.equal(near.hp,1000);
+ api.levelStorm.update(.01,api.player,api.camera);assert.equal(api.levelStorm.strikes,1);assert.ok(near.hp<1000);assert.ok(near.vz>0);assert.equal(far.hp,1000);
+ assert.equal(api.groundScars.count,1);assert.ok(api.groundScars.damaged.size>0);assert.ok(api.groundScars.geometry.attributes.position.count>100);const scar=api.groundScars.geometry.attributes.position.array.slice();
+ assert.ok(wall.hp<1000);assert.equal(barrel.exploding,true);assert.equal(hydrant.ruptured,true);assert.equal(api.player.hp,oldHp+8);
+ api.gainXP(0);api.levelStorm.update(.1,api.player,api.camera);assert.equal(api.levelStorm.strikes,1);
+ api.levelStorm.update(2,api.player,api.camera);assert.equal(api.levelStorm.active,null);assert.equal(api.groundScars.count,1);assert.deepEqual(api.groundScars.geometry.attributes.position.array,scar);
+ const storm=api.levelStorm;arena(15);assert.equal(storm.pending.length,0);assert.equal(storm.active,null);api.gainXP(1000);assert.equal(api.levelStorm.pending.length,0);
+});
+
+test('multiple earned levels queue finite strikes and level-up kills append without nested strikes',()=>{
+ arena(1,{test:false});api.gainXP(23);assert.equal(api.level,3);assert.deepEqual(api.levelStorm.pending,[2,3]);
+ const victim=stationaryEnemy('zombie',0,2);victim.hp=1;victim.xp=40;
+ api.levelStorm.update(.01,api.player,api.camera);assert.equal(victim.dead,true);assert.equal(api.levelStorm.strikes,1);assert.ok(api.levelStorm.pending.length>=2);
+ assert.equal(new Set(api.levelStorm.pending).size,api.levelStorm.pending.length);assert.ok(api.levelStorm.pending.length<=14);
+ const age=api.levelStorm.active.age;api.levelStorm.update(0,api.player,api.camera);assert.equal(api.levelStorm.active.age,age);
 });
 
 test('mobile air smash requires a fresh attack during the jump and its one button follows the landing state', () => {
@@ -2152,7 +2177,7 @@ test('dashing alongside a roof edge never ejects the player through a remote bui
   playerSteps(.4, 1 / 120, dt => {
     close(api.player.x, start.x); close(api.player.y, roof.h);
     assert.ok(api.player.z >= previousZ - 1e-6, 'A forward dash must never snap to the opposite building face');
-    assert.ok(api.player.z - previousZ <= 19 * dt + 1e-6);
+    assert.ok(api.player.z - previousZ <= 19 * api.characterStats.mobilityScale * dt + 1e-6);
     previousZ = api.player.z;
   });
   assert.ok(api.player.z - start.z > 4, 'The real dash must cover its forward distance on the roof');
@@ -2186,14 +2211,15 @@ test('a high forward jump catches a descending roof crossing once and stays at i
   let previous = { x: api.player.x, y: api.player.y, z: api.player.z }, apex = 0;
   for (let i = 0; api.leap && i < 240; i++) {
     api.updatePlayer(1 / 120); apex = Math.max(apex, api.player.y);
-    assert.ok(Math.hypot(api.player.x - previous.x, api.player.z - previous.z) <= 8.2 / 120 + 1e-6,
+    assert.ok(Math.hypot(api.player.x - previous.x, api.player.z - previous.z) <= 8.2 * api.characterStats.mobilityScale / 120 + 1e-6,
       'A roof landing must preserve the jump trajectory without a horizontal correction across the building');
     if (api.leap) assert.equal(roof.hp, 10000, 'The roof receives its landing impact only at contact');
     else assert.ok(previous.y >= roof.h, 'Landing catches a descending crossing, not an upward roof snap');
     previous = { x: api.player.x, y: api.player.y, z: api.player.z };
   }
   assert.equal(api.leap, null); assert.ok(apex > 7.5); close(api.player.y, roof.h);
-  assert.ok(api.player.z > 9 && api.player.z < 12);
+  const v=api.characterStats.jumpVelocity,expectedZ=8.2*api.characterStats.mobilityScale*(v+Math.sqrt(v*v-60*roof.h))/30;
+  close(api.player.z,expectedZ,.15);
   assert.ok(roof.hp < 10000 && !roof.dead);
   const landing = { x: api.player.x, z: api.player.z, hp: roof.hp };
   mouseGuard(true); playerSteps(.45); mouseGuard(false);
@@ -2205,8 +2231,9 @@ test('Space makes a high forward leap and damages nearby targets once on its ord
   arena();
   const direction = core.screenMovement(1, 0);
   aimAt(direction.x * 12, direction.z * 12); playerSteps(.05);
-  const enemy = stationaryEnemy('brute', direction.x * 10.8 - direction.z * 1.7, direction.z * 10.8 + direction.x * 1.7);
-  const distant = stationaryEnemy('brute', direction.x * 10.8 - direction.z * 6, direction.z * 10.8 + direction.x * 6);
+  const landingDistance=8.2*api.characterStats.mobilityScale*2*api.characterStats.jumpVelocity/30;
+  const enemy = stationaryEnemy('brute', direction.x * landingDistance - direction.z * 1.7, direction.z * landingDistance + direction.x * 1.7);
+  const distant = stationaryEnemy('brute', direction.x * landingDistance - direction.z * 6, direction.z * landingDistance + direction.x * 6);
   const hp = enemy.hp;
   key('KeyD', true); key('Space', true); key('Space', false); key('KeyD', false);
   assert.ok(api.leap); assert.equal(api.leap.slam, false);
@@ -2216,7 +2243,7 @@ test('Space makes a high forward leap and damages nearby targets once on its ord
     if (api.leap) assert.equal(enemy.hp, hp, 'The leap damages the ground on landing, not while airborne');
   }
   assert.equal(api.leap, null); assert.ok(apex > 7.5, `Expected a clearly visible high jump; apex was ${apex}`);
-  assert.ok(flightTime <= 1.65, `The high jump took ${flightTime.toFixed(2)} seconds to land`);
+  assert.ok(flightTime <= 2*api.characterStats.jumpVelocity/30+.025, `The high jump took ${flightTime.toFixed(2)} seconds to land`);
   assert.ok(api.player.x * direction.x + api.player.z * direction.z > 9);
   close(api.player.x * direction.z - api.player.z * direction.x, 0);
   close(api.player.y, 0); assert.ok(enemy.hp < hp, 'An ordinary jump must still land with damage');
@@ -2635,7 +2662,7 @@ test('real enemy rigs visibly flinch and hop a short distance away from a hammer
       close(enemy.z, startZ, 1e-6);
     }
     const distance = enemy.x - startX; travel.set(type, distance);
-    assert.ok(distance > .1 && distance < 1.1, `${type}: expected a short bounce back, moved ${distance} metres`);
+    assert.ok(distance > .1 && distance < 1.1*api.characterStats.forceScale, `${type}: expected a short bounce back, moved ${distance} metres`);
     assert.ok(maxHeight > .015 && maxHeight < .4, `${type}: expected a small impact hop, reached ${maxHeight}`);
     assert.ok(maxTilt > .06, `${type}: the actual rig must recoil visibly after its species animation runs`);
     close(enemy.mesh.rotation.x, 0, .001); close(enemy.mesh.rotation.z, 0, .001);
@@ -3378,10 +3405,10 @@ test('turning off auto assist suppresses automatic target changes on ricochet',(
 test('permanent level bonuses update max HP, heal only the added capacity, and survive resume',()=>{
  arena(1,{test:false});api.player.hp=70;const before=api.stats.power;
  api.gainXP(characterProgression.xpForNextLevel(1));assert.equal(api.level,2);
- assert.equal(api.stats.power,before+2);assert.equal(api.player.maxHp,128);assert.equal(api.player.hp,78);
+ close(api.stats.power,24.48);assert.equal(api.player.maxHp,128);assert.equal(api.player.hp,78);
  const saved=JSON.parse(storage.get('ironfall.character'));assert.equal(saved.character.level,2);
- api.startGame(1,{resume:true});assert.equal(api.player.maxHp,128);assert.equal(api.stats.power,before+2);
- for(let i=0;i<4;i++)api.applyStats();assert.equal(api.player.maxHp,128);assert.equal(api.stats.power,before+2);
+ api.startGame(1,{resume:true});assert.equal(api.player.maxHp,128);close(api.stats.power,24.48);
+ for(let i=0;i<4;i++)api.applyStats();assert.equal(api.player.maxHp,128);close(api.stats.power,24.48);
  api.renderCharacterProgress();assert.match(elements.get('permanentStats').textContent,/\+2/);assert.match(elements.get('permanentStats').textContent,/\+8/);
 });
 test('kick opening rewards the next different attack only once, without boosting repeated kicks',()=>{

@@ -32,7 +32,7 @@ test('an ordinary new game starts with a short-jumping log user and no magical a
   assert.ok(starter.jumpVelocity ** 2 / advanced.jumpVelocity ** 2 < .25,
     'At the same gravity the starting jump is less than one quarter of the storm jump height');
   assert.ok(starter.power < advanced.power / 2);
-  assert.equal(starter.speed, advanced.speed, 'Early locomotion stays responsive');
+  assert.equal(starter.speed,5.9);assert.ok(advanced.speed>starter.speed,'Earned levels now improve base locomotion');
 });
 
 test('experience can cross several levels in one award but cannot forge equipment', () => {

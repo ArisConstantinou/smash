@@ -90,18 +90,30 @@ export function getCharacterStats(state) {
   const valid = restoreCharacterProgression(state) || createCharacterProgression();
   const weaponTier = CHARACTER_WEAPONS.findIndex(item => item.id === valid.weaponId);
   const equipped = CHARACTER_WEAPONS[weaponTier];
+  const growth=actionGrowth(valid.level),power=(equipped.stats.power+(valid.level-1)*2)*growth.damageScale;
   return {
     ...equipped.stats,
-    power: equipped.stats.power + (valid.level - 1) * 2,
-    levelDamageBonus: (valid.level - 1) * 2,
+    ...growth,
+    power,
+    levelDamageBonus: Math.round(power-equipped.stats.power),
     levelHealthBonus: (valid.level - 1) * 8,
-    speed: 5.9,
+    speed: 5.9*growth.mobilityScale,
+    jumpVelocity:equipped.stats.jumpVelocity*growth.mobilityScale,
+    jumpCooldown:equipped.stats.jumpCooldown*growth.cooldownScale,
+    throwRange:equipped.stats.throwRange*growth.mobilityScale,
     maxHp: 120 + (valid.level - 1) * 8 + equipped.stats.armorTier * 6,
     quake: Math.max(0, weaponTier - 2),
     weaponId: equipped.id,
     weaponName: equipped.name,
     weaponTier,
   };
+}
+
+// Derived from the existing earned level, never stored as mutable save stats.
+// Damage/force improve contact actions; mobility/recovery improve jump/dodge.
+export function actionGrowth(level=1){
+  const n=selectedLevel(level)-1;
+  return {damageScale:1+n*.02,forceScale:1+n*.035,mobilityScale:1+n*.01,cooldownScale:1/(1+n*.02)};
 }
 
 export function getForgeStatus(state) {

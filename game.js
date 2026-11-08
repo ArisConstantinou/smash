@@ -1,5 +1,7 @@
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-props1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
+import {LevelStorm,stormStats} from './level-storm.js?v=20261108-storm1';
+import {GroundScars} from './ground-scars.js?v=20261108-storm1';
 import {createGameRenderer} from './renderer-policy.js?v=20261108-contact1';
 import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261107-perf14';
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
@@ -8,14 +10,14 @@ import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,
 import {DestructionSystem} from './destruction.js?v=20261107-perf14-fix2';
 import {createForgeMenu} from './menu.js?v=20261107-cities10';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
-import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261107-forge9';
+import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-storm1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
-import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261107-perf14';
+import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-storm1';
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-props1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261108-props1';
-import {GameAudio} from './audio.js?v=20261107-aim13';
+import {createWorld} from './world.js?v=20261108-storm2';
+import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade} from './occlusion.js?v=20261107-perf14';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261108-props1';
@@ -24,7 +26,7 @@ import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
 import {createThrowIndicator} from './throw-indicator.js?v=20261107-perf14-fix3';
 import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
-import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261107-combat7';
+import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261108-storm1';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
 import {beastObstacleContacts} from './beast-obstacles.js?v=20261108-colossus1';
@@ -85,7 +87,7 @@ let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,si
 let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0,landingPose=null;
-let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null,hydrantEffects=null;
+let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null,hydrantEffects=null,levelStorm=null,groundScars=null;
 let punch=null,punchSequence=0,throwLock=null,throwPreviewTargets=[],dashFollowup=0;
 const movingVehicles=new Set();
 const THROW_CHAIN_RADIUS=9,THROW_MAX_HITS=5,HAMMER_LIGHTNING_SECONDS=2.8;
@@ -422,6 +424,8 @@ function updateHammerAura(){
   hammerAura.bolts.geometry.attributes.position.needsUpdate=true;
 }
 function resetWorld(keepUpgrades=false,startLevel=1){
+  levelStorm?.reset();
+  groundScars?.reset();
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
   kick=null;kickCooldown=0;movingVehicles.clear();vehicleNavTimer=0;
   punch=null;punchSequence=0;throwLock=null;throwPreviewTargets=[];dashFollowup=0;spinCharge=null;aimPreviewTimer=0;meleeHint=null;meleeHintTargets=[];hero.userData.setUnarmedPose?.(null);
@@ -442,6 +446,7 @@ function resetWorld(keepUpgrades=false,startLevel=1){
   destruction?.dispose();
   world?.dispose();
   world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
+  groundScars?.bind(world);
   scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
   for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
   destruction=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
@@ -500,10 +505,31 @@ function gainXP(value){
   player.hp=Math.min(player.maxHp,player.hp+Math.max(0,player.maxHp-oldHp));
   for(let i=0;i<result.levelsGained;i++)spawnDrop(player.x+randomBetween(-1,1),player.z+randomBetween(-1,1),'relic');
   if(result.levelsGained){
-    const message='ΜΟΝΙΜΑ +'+(result.levelsGained*2)+' ΖΗΜΙΑ · +'+(result.levelsGained*8)+' ΜΕΓΙΣΤΗ ΖΩΗ';
+    levelStorm?.enqueue(result.fromLevel,result.level);
+    const message='ΟΛΕΣ ΟΙ ΕΝΕΡΓΕΙΕΣ ↑ · +'+(result.levelsGained*8)+' ΜΕΓΙΣΤΗ ΖΩΗ';
     upgradeFeedback='LV '+level+' · '+message;toast('ΕΠΙΠΕΔΟ '+level,message,'#9de3cb');persistCharacter();
   }
   renderCharacterProgress();
+}
+function levelUpStrike(strike){
+  audio.play('levelStorm',.8);
+  const {x,y,z,level:earnedLevel}=strike,spec=stormStats(earnedLevel,stats.power),radius=spec.radius;
+  groundScars.add(strike,radius);
+  const falloff=d=>1-.55*clamp(d/radius,0,1),launch=kickStats(earnedLevel,levels.kick);
+  for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+    if(e.dead)continue;const d=Math.hypot(e.x-x,e.z-z,(e.y||0)+Math.min(.8,(e.height||1)/2)-y)-(e.radius||0);
+    if(d>=radius)continue;const dir=normalize(e.x-x,e.z-z),damage=Math.round(spec.damage*falloff(d));
+    if(e===boss){hitBoss(damage,dir,.6,{weapon:'level-storm',interrupt:false,stagger:0});continue;}
+    const speed=kickVelocity(e,launch)*.8;e.vx=dir.x*speed;e.vz=dir.z*speed;e.kickFlight=makeKickFlight({level:earnedLevel,damage});
+    hitEnemy(e,damage,dir,8,0,null,{preserveVelocity:true,stagger:.4,weapon:'level-storm',combo:false,fear:false});
+  }
+  for(const o of nearbyObjects(x,z,radius+2)){
+    if(o.dead||o.exploding)continue;const point=nearestPoint(x,z,o),base=o.baseY||0;point.y=clamp(y,base,base+o.h);
+    const d=Math.hypot(point.x-x,point.z-z,point.y-y);if(d>=radius)continue;
+    hurtObject(o,Math.round(spec.damage*.8*falloff(d)),.25,point,'level-storm');
+    if(isVehicle(o)&&!o.dead){const dir=normalize(o.x-x,o.z-z),speed=kickVelocity(o,launch)*.35;o.vx=dir.x*speed;o.vz=dir.z*speed;o.kickFlight=makeKickFlight({level:earnedLevel,damage:spec.damage});o.kickFlight.life=5;movingVehicles.add(o);}
+  }
+  shake=Math.max(shake,.18);checkGoal();
 }
 function renderCharacterProgress(){
   const progress=level>=MAX_CHARACTER_LEVEL?1:xp/Math.max(1,xpTarget),status=getForgeStatus(character),busy=weaponBusy()||!!swing||!!spin;
@@ -512,7 +538,7 @@ function renderCharacterProgress(){
   for(const id of ['characterXpFill','forgeXpFill'])if($(id))$(id).style.width=Math.min(100,progress*100)+'%';
   if($('characterXpText'))$('characterXpText').textContent=level>=MAX_CHARACTER_LEVEL?'ΜΕΓΙΣΤΟ ΕΠΙΠΕΔΟ':xp+' / '+xpTarget+' XP';
   if($('equippedWeapon'))$('equippedWeapon').textContent=characterStats.weaponName;
-  if($('permanentStats'))$('permanentStats').textContent='Μόνιμα από LV: +'+characterStats.levelDamageBonus+' ζημιά · +'+characterStats.levelHealthBonus+' μέγιστη ζωή. Σύνολο: '+Math.round(stats.power)+' ζημιά / '+player.maxHp+' HP';
+  if($('permanentStats'))$('permanentStats').textContent='LV '+level+': +'+characterStats.levelDamageBonus+' ζημιά · +'+characterStats.levelHealthBonus+' HP · +'+Math.round((characterStats.forceScale-1)*100)+'% ώθηση · +'+Math.round((characterStats.mobilityScale-1)*100)+'% κίνηση/άλμα · '+Math.round((1-characterStats.cooldownScale)*100)+'% λιγότερη αναμονή';
   if($('weaponAbilities'))$('weaponAbilities').textContent=characterStats.canLightning?'Ψηλό άλμα · συντριβή · 5 στόχοι · επιστροφή · κεραυνοί':characterStats.canReturn?'Ψηλό άλμα · συντριβή · αυτόματη επιστροφή':characterStats.canAirSmash?'Δυνατό άλμα · εναέρια συντριβή · μάζεψε το όπλο μετά τη ρίψη':'Άλμα · μικρό smash · dash στον αέρα · μάζεψε το όπλο μετά τη ρίψη';
   for(const type of MATERIAL_TYPES)if($('material-'+type))$('material-'+type).textContent=String(character.materials[type]);
   if($('nextWeaponName'))$('nextWeaponName').textContent=status.next?status.next.name:'ΤΟ ΣΦΥΡΙ ΤΗΣ ΚΑΤΑΙΓΙΔΑΣ ΕΙΝΑΙ ΔΙΚΟ ΣΟΥ';
@@ -748,7 +774,8 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   if(!direction.x&&!direction.z)direction=normalize(e.x-player.x,e.z-player.z);
   if(!direction.x&&!direction.z)direction={x:0,z:1};
   const duration=.40+Math.min(force/18,1)*.08;
-  const impulse=Math.min(Math.min(force*1.05,6.4)/mass**.75,Number.isFinite(response.maxImpulse)?Math.max(0,response.maxImpulse):Infinity);
+  const growth=['explosion','body','masonry'].includes(response.weapon)?1:characterStats.forceScale;
+  const impulse=Math.min(Math.min(force*1.05,6.4)*growth/mass**.75,Number.isFinite(response.maxImpulse)?Math.max(0,response.maxImpulse):Infinity);
   e.facingYaw??=e.mesh.rotation.y;
   e.impact={time:0,duration,dirX:direction.x,dirZ:direction.z,mass,reaction:response.reaction||'blunt',
     amplitude:(.38+Math.min(force/18,1)*.13)/mass**.35,bounced:false,
@@ -770,7 +797,7 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   e.hurtTimer=2.4;
   if(response.interrupt!==false){const interrupted=interruptEnemyAttack(e,(response.stagger??duration)+.18);if(interrupted)removeEffect(interrupted);}
   applyEnemyFlash(e.materials,1);
-  impactClouds?.emit(hitPoint.x,hitPoint.y,hitPoint.z,direction,Math.min(1.5,e.radius*1.6),response.weapon!=='explosion');
+  impactClouds?.emit(hitPoint.x,hitPoint.y,hitPoint.z,direction,Math.min(1.5,e.radius*1.6),!['explosion','level-storm'].includes(response.weapon));
   if(response.fear!==false)frightenNearby(e.x,e.z,.55+characterStats.weaponTier*.2,3.6+characterStats.weaponTier*.35,e);
   showHitPoints(e,damage);
   audio.play('hit',Math.min(1,damage/100),{material:impactMaterial(e),weapon:response.weapon||(characterStats.weaponTier<2?'wood':'metal')});
@@ -833,7 +860,7 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
   const fracture=destruction?.hit(o,contact,player);
   vehicleEffects?.damage(o);
   if(!fracture)audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
-  impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7,weapon!=='explosion');
+  impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7,!['explosion','level-storm'].includes(weapon));
   if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
   o.dead=true;o.mesh.visible=false;world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
@@ -1062,7 +1089,7 @@ function releaseHammer(){
     }
   }
   hammerLightning=0;if(hammerAura)hammerAura.root.visible=false;
-  hero.userData.setWeaponVisible(false);throwWindup=null;throwCooldown=1.25;audio.play('swing',1,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});
+  hero.userData.setWeaponVisible(false);throwWindup=null;throwCooldown=1.25*characterStats.cooldownScale;audio.play('swing',1,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});
 }
 function chooseThrowLock(direction){
   const origin={x:player.x,y:player.y+1.2,z:player.z};
@@ -1332,7 +1359,7 @@ function updateEnemies(dt){
     // toward the far side of the building beneath it.
     const walls=nearbyObjects(e.x,e.z,e.radius+speed*dt+.1).filter(o=>o.h>oldY+SUPPORT_EPSILON);
     moveCircle(e,collisionMoved?0:e.vx*dt,collisionMoved?0:e.vz*dt,walls,e.radius);
-    const damp=Math.exp(-(e.kickFlight?3.4:8)*dt);e.vx*=damp;e.vz*=damp;
+    const damp=Math.exp(-(e.kickFlight?1.8:8)*dt);e.vx*=damp;e.vz*=damp;
     e.vy-=18*dt;e.y+=e.vy*dt;
     let floor=0;
     for(const o of nearbyObjects(e.x,e.z,e.radius))if(o.h<=oldY+SUPPORT_EPSILON&&circleOverlaps(e.x,e.z,e.radius,o))floor=Math.max(floor,o.h);
@@ -1548,6 +1575,7 @@ function defeatBoss(){
   releaseBeast();score+=Math.round(2500*comboMultiplier(combatCombo));const reward=scaleComboReward(60,comboMultiplier(combatCombo),comboXpCarry);comboXpCarry=reward.carry;gainXP(reward.amount);for(let n=0;n<4;n++)spawnDrop(x+(n-1.5)*.4,z,'crystal');shake=.7;audio.play('victory');endGame(true);
 }
 function endGame(won){
+  levelStorm?.reset();
   setPhase(won?'victory':'dead');if(!testRun){best=Math.max(best,score);save('ironfall.best',best);}persistCharacter();
   $('endTitle').textContent=won?'Ο ΚΟΛΟΣΣΟΣ ΕΠΕΣΕ.':'ΤΟ ΣΦΥΡΙ ΣΙΩΠΗΣΕ.';
   $('endText').textContent=won?'Η ορδή δεν τελειώνει. Συνέχισε στην ίδια πόλη με τον εξοπλισμό και την εξέλιξή σου.':'Η εξέλιξη και ο εξοπλισμός σου σε περιμένουν. Πάρε μια ανάσα και ξαναχτύπα.';
@@ -1561,7 +1589,7 @@ function dodge(){
   if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
   const mx=(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0)+touch.x;
   const mz=(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0)+touch.y;
-  resetAttackChain();punch=null;dashFollowup=1.1;kick=null;dashDirection=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};dashTime=leap?.18:.23;dashCooldown=1.5;
+  resetAttackChain();punch=null;dashFollowup=1.1;kick=null;dashDirection=Math.hypot(mx,mz)>.05?screenMovement(mx,mz):{...facing};dashTime=leap?.18:.23;dashCooldown=1.5*characterStats.cooldownScale;
   if(leap){leap.airDashed=true;leap.dir={...dashDirection};}player.invincible=Math.max(player.invincible,.3);
   audio.play('dash');pulse(player.x,player.z,1.5,0x86d3c2,.25).position.y=player.y+.08;return true;
 }
@@ -1578,7 +1606,7 @@ function startKick(){
   kickCooldown=spec.cooldown;audio.play('kick',.25,{exert:true});return true;
 }
 function makeKickFlight(source,hits=null){
-  return {life:1.4,level:source?.level??level,damage:source?.damage??kickStats(level,levels.kick).damage,
+  return {life:2.4,level:source?.level??level,damage:source?.damage??kickStats(level,levels.kick).damage,
     hits:hits||new Set(),wallHit:false};
 }
 function kickImpact(from,foot){
@@ -1617,7 +1645,7 @@ function applyBodyCollisionHit(target,damage,normal,sourceFlight,impact,sourceMa
   const response={preserveVelocity:true,stagger,interrupt:!heavy,fear:!heavy,weapon:'body',combo:false};
   if(target===boss)hitBoss(Math.max(1,Math.round(damage)),normal,0,response);
   else hitEnemy(target,Math.max(1,Math.round(damage)),normal,2,0,null,response);
-  if(heavy){target.slowTime=Math.max(target.slowTime||0,.50);target.slowFactor=.55;}
+  if(heavy){const speed=Math.hypot(target.vx||0,target.vz||0);if(speed>.9){target.vx*=.9/speed;target.vz*=.9/speed;}target.slowTime=Math.max(target.slowTime||0,.50);target.slowFactor=.55;}
   else if(!target.dead&&target!==boss){
     target.kickFlight=makeKickFlight(sourceFlight,new Set(sourceFlight.hits));
     target.stunTime=Math.max(target.stunTime||0,stagger);
@@ -1792,7 +1820,7 @@ function updatePlayer(dt){
     // Sweep the player's body against the surviving model faces: roof tiers,
     // signs and ledges can support the feet without making a giant solid box.
     const inAirDash=dashTime>0;
-    const leapSpeed=inAirDash?19:characterStats.canAirSmash?(l.diving?7.2:8.2):5.8;
+    const leapSpeed=(inAirDash?19:characterStats.canAirSmash?(l.diving?7.2:8.2):5.8)*characterStats.mobilityScale;
     const travel=inAirDash?dashDirection:l.dir;
     const motion=world.moveBody(player,travel.x*leapSpeed*dt,travel.z*leapSpeed*dt,{dy:l.vy*dt,grounded:false});
     if(motion.ceilingHit)l.vy=0;
@@ -1800,7 +1828,7 @@ function updatePlayer(dt){
     if(motion.landed&&l.vy<=0)landLeap();
   }else{
     let dx,dz;
-    if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*dt;dz=dashDirection.z*19*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
+    if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*characterStats.mobilityScale*dt;dz=dashDirection.z*19*characterStats.mobilityScale*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
     else{const speed=stats.speed*movementStrength()*(kick?.28:guarding?.55:spin?.84:swing?.92:Math.abs(stance-stanceTarget)>.005?.55:landingRecovery>0?.25:1);dx=move.x*speed*dt;dz=move.z*speed*dt;}
     dx+=player.vx*dt;dz+=player.vz*dt;player.vx*=Math.exp(-9*dt);player.vz*=Math.exp(-9*dt);
     player.vy=(player.vy||0)-20*dt;
@@ -1871,7 +1899,7 @@ function updatePlayer(dt){
     if(spin&&spin.momentum<=0)stopSpin(true);
   }else if(guarding){
     weaponTrail(headPrevious,headNow,.16,0x8ce4d8);
-    for(const e of [...enemies])if((guardHits.get(e)||0)<elapsed&&facingCoverage(facing,e,player,Math.PI*.42)&&firstHammerHit(headPrevious,headNow,[e],.45*stats.size)){guardHits.set(e,elapsed+.38);hitEnemy(e,Math.round(stats.power*.3),normalize(e.x-player.x,e.z-player.z),6,1.5);}
+    for(const e of [...enemies])if((guardHits.get(e)||0)<elapsed&&facingCoverage(facing,e,player,Math.PI*.42)&&firstHammerHit(headPrevious,headNow,[e],.45*stats.size)){guardHits.set(e,elapsed+.38*characterStats.cooldownScale);hitEnemy(e,Math.round(stats.power*.3),normalize(e.x-player.x,e.z-player.z),6,1.5);}
   }else if(touchThrowAim?.channeling&&touchThrowAim.channelTime>.10){
     const g=touchThrowAim;
     if(g.channelTime-g.trailTime>=1/45){weaponTrail(g.trailFrom||headPrevious,headNow,.13,0x8aeaff);g.trailTime=g.channelTime;g.trailFrom=headNow.clone();}
@@ -2644,7 +2672,7 @@ function frame(now){
   if(phase==='playing')updateObjects(simulated);
   world.update(environmentDt,visualTime,player,weather);
   destruction?.update(environmentDt,player,{active:phase==='playing'});
-  if(phase==='playing'){vehicleEffects?.update(environmentDt,player,camera);hydrantEffects?.update(environmentDt,player,camera);}
+  if(phase==='playing'){vehicleEffects?.update(environmentDt,player,camera);hydrantEffects?.update(environmentDt,player,camera);levelStorm?.update(environmentDt,player,camera);}
   updateEffects(phase==='paused'||phase==='settings'?0:realDt);
   const desired=phase==='menu'?new THREE.Vector3(-5,.6,3.5):new THREE.Vector3(player.x+facing.x*.8,.6+player.y,player.z+facing.z*.8);
   updateBattleCamera(realDt,desired);
@@ -2654,7 +2682,7 @@ function frame(now){
   sun.position.set(player.x-15,28,player.z+8);sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
   // Subtle moving storm illumination, kept bright enough for readable combat.
   const lightning=weather==='rain'&&Math.sin(visualTime*.47)> .998?Math.sin(visualTime*70)**8*.35:0;
-  sun.intensity=2.25+lightning;fillLight.intensity=1.45+(weather==='snow'?.2:0);
+  sun.intensity=2.25+lightning+(levelStorm?.flash||0);fillLight.intensity=1.45+(weather==='snow'?.2:0)+(levelStorm?.flash||0)*.45;
   audio.update(realDt,phase==='playing'?Math.min(1,enemies.length/40+(boss&&!boss.dead?.4:0)):0,weather);
   if(phase==='playing'){
     updateAim(false);aimPreviewTimer-=realDt;
@@ -2707,14 +2735,15 @@ async function init(){
   guardRing=new THREE.Mesh(new THREE.RingGeometry(1.68,1.72,64),new THREE.MeshBasicMaterial({color:0x9ee4db,side:THREE.DoubleSide,transparent:true,opacity:.15,depthWrite:false}));guardRing.visible=false;scene.add(guardRing);
   landingMarker=makeTelegraph(0,0,1,0xffc371);landingMarker.visible=false;
   groundShadow=new THREE.Mesh(new THREE.CircleGeometry(.65,24),new THREE.MeshBasicMaterial({color:0x081719,transparent:true,opacity:.32,depthWrite:false}));groundShadow.rotation.x=-Math.PI/2;scene.add(groundShadow);
+  groundScars=new GroundScars(scene);levelStorm=new LevelStorm(scene,{onStrike:levelUpStrike});
   fragments=new Fragments();impactClouds=new ImpactClouds();resetWorld();facing={x:.585491,z:.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);cameraTarget.set(-5,.6,3.5);
   resize();setPhase('menu');
   $('gameCanvas').setAttribute('tabindex','-1');
   // Shader compilation is local. Optional recorded audio preloads separately.
   if(renderer.compileAsync){
     const blast=vehicleEffects.explosion;blast.mesh.visible=true;blast.geometry.setDrawRange(0,6);
-    beastRig.visible=true;beastCombat.warm();hydrantEffects.warm();
-    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();hydrantEffects.hide();blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
+    beastRig.visible=true;beastCombat.warm();hydrantEffects.warm();levelStorm.warm();groundScars.warm();
+    try{await renderer.compileAsync(scene,camera);}finally{beastRig.visible=false;beastCombat.reset();hydrantEffects.hide();levelStorm.hide();groundScars.reset();blast.mesh.visible=false;blast.geometry.setDrawRange(0,0);}
   }
   gameReady=true;forgeMenu.setReady(true);updateSavedCharacter();$('loadingStatus').textContent='Η πόλη είναι έτοιμη. Το επόμενο χτύπημα είναι δικό σου.';
   if($('bestScore'))$('bestScore').textContent=best.toLocaleString('el-GR');

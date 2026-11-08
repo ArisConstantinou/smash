@@ -10,7 +10,7 @@ test('enemy levels are stable by wave and type, with a distinct readable HP tier
  for(const lv of [1,2,3])assert.equal(enemyHealthColor(lv),enemyHealthColor(1));
 });
 test('every kick moves cars and stronger upgrades increase vehicle impulse',()=>{
- const base=kickStats(1,0),mid=kickStats(15,1),up=kickStats(1,2);
+ const base=kickStats(1,0),mid=kickStats(1,1),up=kickStats(1,2);
  assert.ok(base.damage>0&&base.impulse>0);assert.equal(base.rank,1);
  for(const type of ['car','policecar','ambulance']){assert.ok(kickVelocity({type},base)>4);assert.ok(kickVelocity({type},mid)>kickVelocity({type},base));assert.ok(kickVelocity({type},up)>kickVelocity({type},mid));}
  assert.equal(up.rank,3);assert.equal(kickVelocity({isBuilding:true},up),0);
