@@ -1,5 +1,8 @@
 import {createLevelPicker} from './level-picker.js?v=20261107-cities10';
 
+// Date-based release identifier; increment the final component for each release.
+export const GAME_VERSION = '2026.11.08.1';
+
 // This controller owns only the title screen. Its preview has a small, isolated
 // renderer so it never moves the battle hero, changes a save, or renders while
 // the menu is hidden. The caller supplies the same model/progression functions
@@ -25,6 +28,8 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
   const $ = id => doc?.getElementById(id);
   const menu = $('menu');
   if (!menu) return {updateProgress(){},setReady(){},setVisible(){},update(){},closePanels(){return false;},dispose(){}};
+  const version = $('gameVersion');
+  if (version) version.textContent = `v${GAME_VERSION}`;
   const el = Object.fromEntries([
     'forgeLayout','menuProgress','menuLevelLabel','menuLevelValue','menuXpLabel','menuProgressPercent',
     'menuProgressTrack','menuProgressFill','menuProgressHero','menuHeroCanvas',

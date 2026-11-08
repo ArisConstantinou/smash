@@ -434,11 +434,11 @@ export function makeWarrior() {
   // weapons describe contact points but contain no visible hand geometry.
   const leftGrip = group(root, 'leftGrip');
   const rightGrip = group(root, 'rightGrip');
-  for (const grip of [leftGrip, rightGrip]) {
+  for (const [side, grip] of [[-1,leftGrip], [1,rightGrip]]) {
     box(grip, P.timberDark, 0, 0, 0, .25, .2, .26);
     box(grip, P.steel, 0, .01, -.035, .28, .15, .2);
     box(grip, P.gold, 0, -.079, 0, .27, .045, .28);
-    box(grip, P.pale, .12, 0, .075, .065, .14, .15);
+    box(grip, P.pale, side * .12, 0, .075, .065, .14, .15);
     compact(grip);
   }
   let stance = 0, weaponHeld = true, reachScale = 1, equipmentTier = 4;
@@ -487,22 +487,30 @@ export function makeWarrior() {
   const bendDirection = new THREE.Vector3();
   const upperArmLength = .44, forearmLength = .46;
   const handX = new THREE.Vector3(), handY = new THREE.Vector3(), handZ = new THREE.Vector3();
-  const elbowInHero = new THREE.Vector3(), handBasis = new THREE.Matrix4();
+  const elbowInHero = new THREE.Vector3(), forearmDirection = new THREE.Vector3(), handBasis = new THREE.Matrix4();
   function orientHand(arm, grip, anchor) {
-    // The mirrored thumb axes both point toward the weapon head; -Y is
-    // the wrist opening toward the elbow. Left/right palms must not share
-    // the same shaft rotation, otherwise one hand grips backwards.
-    // Copying the weapon quaternion made both wrists point down the shaft,
-    // independent of their forearms: palms/cuffs visibly faced backwards.
+    // -Y is the cuff toward the elbow. Let the handle sit obliquely in the
+    // palm when necessary: forcing the thumb exactly along the shaft can
+    // fold a wrist almost sideways during a long-weapon swing.
     elbowInHero.copy(elbow); arm.localToWorld(elbowInHero); root.worldToLocal(elbowInHero);
     handY.subVectors(grip.position, elbowInHero).normalize();
+    forearmDirection.copy(handY);
     if(anchor){
       anchor.getWorldQuaternion(grip.quaternion).premultiply(rootInverseQuaternion);
       handX.set(0,arm.userData.side,0).applyQuaternion(grip.quaternion).normalize();
       handY.addScaledVector(handX,-handY.dot(handX));
       if(handY.lengthSq()<1e-7)handY.set(arm.userData.side,0,0).addScaledVector(handX,-arm.userData.side*handX.x);
       if(handY.lengthSq()<1e-7)handY.set(0,0,1).addScaledVector(handX,-handX.z);
-      handY.normalize(); handZ.crossVectors(handX,handY).normalize();
+      handY.normalize();
+      const bend = Math.acos(Math.max(-1,Math.min(1,handY.dot(forearmDirection))));
+      const maxBend = Math.PI / 4;
+      if(bend>maxBend){
+        const sine = Math.sin(bend);
+        handY.multiplyScalar(Math.sin(maxBend)/sine)
+          .addScaledVector(forearmDirection,Math.sin(bend-maxBend)/sine).normalize();
+      }
+      handX.addScaledVector(handY,-handX.dot(handY)).normalize();
+      handZ.crossVectors(handX,handY).normalize();
     }else{
       handZ.set(0,0,1).applyQuaternion(body.quaternion);
       handX.crossVectors(handY,handZ).normalize(); handZ.crossVectors(handX,handY).normalize();

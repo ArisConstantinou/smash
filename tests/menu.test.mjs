@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import * as THREE from '../vendor/three.module.js';
 import {makeWarrior} from '../models.js';
 import {createCharacterProgression,xpForNextLevel,getCharacterStats,MAX_CHARACTER_LEVEL} from '../character-progression.js';
-import {menuProgressSnapshot,createForgeMenu} from '../menu.js';
+import {menuProgressSnapshot,createForgeMenu,GAME_VERSION} from '../menu.js';
 
 const progressOptions={xpForNextLevel,getCharacterStats,maxLevel:MAX_CHARACTER_LEVEL};
 
@@ -62,6 +62,7 @@ function fixture({gpu=true,reduced=false}={}){
 
 test('menu readiness preserves rich buttons and leaves Continue visible but disabled without a save',()=>{
   const f=fixture();
+  assert.equal(f.e('gameVersion').textContent,`v${GAME_VERSION}`);
   assert.equal(f.e('resumeCharacterButton').hidden,false);assert.equal(f.e('resumeCharacterButton').disabled,true);
   f.controller.setReady(true);assert.equal(f.e('startButton').disabled,false);assert.equal(f.e('resumeCharacterButton').disabled,true);
   const saved=createCharacterProgression(4);saved.xp=12;f.controller.updateProgress(saved);
