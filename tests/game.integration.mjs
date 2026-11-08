@@ -8,6 +8,10 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import * as THREE from '../vendor/three.module.js';
 import * as models from '../models.js';
+import * as beastObstacles from '../beast-obstacles.js';
+import * as beastMech from '../beast-mech.js';
+import * as beastCombat from '../beast-combat.js';
+import * as geometryCollision from '../geometry-collision.js';
 import * as world from '../world.js';
 import * as core from '../core.js';
 import * as combat from '../combat.js';
@@ -190,6 +194,10 @@ const imports = new Map([
   ['./weapon-pose.js', synthetic(weaponPoseModule, 'real-weapon-pose')],
   ['./vendor/three.module.js', synthetic({ ...THREE, WebGLRenderer: FakeRenderer }, 'three-test-surface')],
   ['./models.js', synthetic(models, 'real-models')],
+  ['./beast-obstacles.js', synthetic(beastObstacles, 'real-beast-obstacles')],
+  ['./beast-mech.js', synthetic(beastMech, 'real-beast-mech')],
+  ['./beast-combat.js', synthetic(beastCombat, 'real-beast-combat')],
+  ['./geometry-collision.js', synthetic(geometryCollision, 'real-beast-collision')],
   ['./world.js', synthetic(world, 'real-world')],
   ['./core.js', synthetic(core, 'real-core')],
   ['./combat.js', synthetic(combat, 'real-combat')],
@@ -242,7 +250,7 @@ export const __integration = {
   get hammerLightning(){return hammerLightning;}, get hammerAura(){return hammerAura;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   buildingHudAnchor, recordCombatContact, updateComboDisplay, updateBattleVisibility, startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
-  updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
+  moveBeast, beastBlast, beastBeamHit, get beastCombat(){return beastCombat;}, updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
   drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
@@ -2566,32 +2574,13 @@ test('60% destruction summons one boss and continuation retains upgrades and the
   assert.doesNotMatch(elements.get('waveStatus').textContent, /ΤΕΛΙΚΟΣ BOSS/);
 });
 
-test('boss fear and hit recoil stay bounded over many pose steps and its arm roll settles back to its anatomical rest', () => {
-  arena();
-  api.spawnBoss();
-  const boss = api.boss;
-  boss.x = 0; boss.z = 3; boss.y = 0; boss.state = 'recover'; boss.timer = 100;
-  api.startLeap(); api.player.y = 8; api.armAirSmash();
-  assert.equal(api.leap.strike, true);
-  api.hitBoss(1, {x: 1, z: 0}, 0);
-  assert.ok(boss.impact, 'The fixture must combine a real hammer recoil with the airborne threat');
-  const {leftArm, rightArm, head} = boss.mesh.userData;
-  assert.ok(leftArm && rightArm && head);
-  let peakFear = 0, peakArmRoll = 0, peakLookUp = 0;
-  for (let i = 0; i < 480; i++) {
-    api.updateBoss(1 / 120);
-    peakFear = Math.max(peakFear, boss.fear);
-    peakLookUp = Math.max(peakLookUp, -head.rotation.x);
-    peakArmRoll = Math.max(peakArmRoll, Math.abs(leftArm.rotation.z), Math.abs(rightArm.rotation.z));
-    assert.ok(Math.abs(leftArm.rotation.z) < .5 && Math.abs(rightArm.rotation.z) < .5,
-      `Protective arm roll must not accumulate across frames; left=${leftArm.rotation.z}, right=${rightArm.rotation.z}`);
-  }
-  assert.ok(peakFear > .05, 'The boss must actually display its weaker fear reaction');
-  assert.ok(peakLookUp > .2, 'The articulated boss head must track the elevated player');
-  assert.ok(peakArmRoll > .01, 'The arms must visibly react before settling');
-  assert.equal(boss.fearTime, 0); assert.equal(boss.fear, 0);
-  close(leftArm.rotation.z, leftArm.userData.restRoll||0, 1e-8); close(rightArm.rotation.z, rightArm.userData.restRoll||0, 1e-8);
-  assert.equal(boss.impact, null, 'The physical hit recoil must also complete');
+test('quadruped hit recoil settles without moving planted feet or accumulating chassis rotation',()=>{
+ arena();api.spawnBoss();const b=api.boss;b.state='recover';b.timer=100;b.y=0;b.mesh.position.y=b.mesh.userData.groundOffset;api.player.y=40;
+ api.hitBoss(1,{x:1,z:0},0);assert.ok(b.impact);
+ const {legs,head,body}=b.mesh.userData;assert.equal(legs.length,4);
+ let peak=0,look=0;
+ for(let i=0;i<480;i++){api.updateBoss(1/120);peak=Math.max(peak,Math.abs(body.rotation.x));look=Math.max(look,-head.rotation.x);assert.ok(Math.abs(body.rotation.x)<.04);}
+ assert.ok(peak>.01);assert.ok(look>.2);close(body.rotation.x,0);assert.equal(b.impact,null);
 });
 
 test('lethal damage opens defeat and a test retry resets combat while restoring the selected complete preset', () => {
@@ -3254,11 +3243,16 @@ test('enemies display their level at full health using the level tier colour',()
 });
 
 test('a light body collision slows the boss without cancelling its attack or launching it',()=>{
- arena(1,{test:false});api.spawnBoss();const b=api.boss;Object.assign(b,{x:.15,z:3.6,y:0,state:'windup',timer:2,hp:10000,maxHp:10000});b.mesh.position.set(b.x,0,b.z);
+ arena(1,{test:false});api.spawnBoss();const b=api.boss;
+ Object.assign(b,{x:0,z:0,y:0,state:'windup',timer:2,hp:10000,maxHp:10000});b.mesh.rotation.y=0;b.mesh.position.set(0,b.mesh.userData.groundOffset,0);b.mesh.userData.pose();
+ const foot=new THREE.Box3().setFromObject(b.mesh.userData.legs[0].foot),center=foot.getCenter(new THREE.Vector3());
+ b.x=.15-center.x;b.mesh.position.set(b.x,b.mesh.userData.groundOffset,0);
+ const sole=b.geometryHit({x:.15,y:.7,z:-50},{x:.15,y:.7,z:50},.4);assert.ok(sole);
+ b.z=2.2-sole.z;b.mesh.position.z=b.z;
  const e=resilientEnemy('zombie',.15,1.0);api.startKick();let hit=false;
  for(let t=0;t<.8;t+=1/240){api.updatePlayer(1/240);api.updateEnemies(1/240);if(b.hp<10000){hit=true;break;}}
- assert.ok(hit);assert.ok(b.slowTime>0);assert.equal(b.state,'windup');assert.ok(Math.hypot(b.vx,b.vz)<1);assert.equal(b.stagger,0);
- api.drawFX();assert.ok(elements.get('fxCanvas').context.textCalls.some(c=>c.text.startsWith('LV '+b.level+' · ΚΟΛΟΣΣΟΣ')));
+ assert.ok(hit,JSON.stringify({enemy:{x:e.x,y:e.y,z:e.z,vx:e.vx,vz:e.vz,flight:e.kickFlight},boss:{x:b.x,z:b.z},foot:{min:foot.min,max:foot.max},cast:b.geometryHit({x:.15,y:.7,z:1},{x:.15,y:.7,z:12},.4)}));assert.ok(b.slowTime>0);assert.equal(b.state,'windup');assert.ok(Math.hypot(b.vx,b.vz)<1);assert.equal(b.stagger,0);
+ api.updateHUD();assert.equal(elements.get('bossHud').hidden,false);assert.ok(elements.get('bossValue').textContent.startsWith(Math.ceil(b.hp)+' / '));
 });
 test('kick rank persists with the normal character checkpoint',()=>{
  arena(1,{test:false});api.levels.kick=3;api.persistCharacter();const saved=JSON.parse(storage.get('ironfall.character'));
@@ -3987,4 +3981,82 @@ test('leaving a flashing car blast avoids damage and another car gets its own wa
  api.hurtObject(other,1000);const fuse=api.vehicleEffects.sources.get(other).fuse;
  assert.ok(fuse>0&&fuse<=1.2,'Repeated damage cannot reset or skip the warning');
  api.vehicleEffects.update(1.21,api.player,api.camera);assert.equal(other.dead,true);
+});
+
+test('region progress counts a real enemy kill once and resets on a new run',()=>{
+ arena(1,{test:false});const enemy=stationaryEnemy('zombie',0,4);
+ api.hitEnemy(enemy,enemy.hp+1,{x:0,z:1},0,0);api.updateHUD();
+ assert.equal(elements.get('goalValue').textContent,'1%');
+ api.hitEnemy(enemy,100,{x:0,z:1},0,0);api.updateHUD();
+ assert.equal(elements.get('goalValue').textContent,'1%','A defeated body cannot award progress again');
+ arena(1,{test:false});api.updateHUD();assert.equal(elements.get('goalValue').textContent,'0%');
+});
+
+test('enemy kills and destroyed scenery jointly summon the final boss',()=>{
+ arena(1,{test:false});
+ for(let i=0;i<50;i++){const e=stationaryEnemy('zombie',0,5);api.hitEnemy(e,e.hp+1,{x:0,z:1},0,0);}
+ api.checkGoal();assert.equal(api.boss,null,'50 kills alone are below the combined goal');
+ for(const o of api.world.objects){if(!o.isBuilding)continue;api.hurtObject(o,o.hp+1);if(core.destructionPercent(api.world.objects)>=10)break;}
+ assert.ok(core.destructionPercent(api.world.objects)<core.GOAL,'Scenery alone remains below the old threshold');
+ api.checkGoal();assert.ok(api.boss,'The combined destruction and enemy contribution must unlock the boss');
+});
+
+test('long hammer guard preserves the complete shaft beside the player with reachable wrists',()=>{
+ for(const twoHanded of [false,true]){
+  arena(15,{test:true});api.levels.range=14;api.levels.size=12;api.applyStats();api.poseHero(0);
+  const fullReach=api.hero.userData.reachScale;
+  if((api.stance>.9)!==twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+  mouseGuard(true);playerSteps(.6);const u=api.hero.userData,g=api.guardDimensions();
+  close(u.reachScale,fullReach,1e-5);assert.equal(g.brace,true);
+  const head=api.hero.worldToLocal(worldPosition(u.hammerHead));
+  assert.ok(Math.abs(head.x)>u.getHeadHalfExtents().x+.7,'Head must sit outside the torso');
+  assert.ok(u.getHeadFloorY()>=.04);
+  for(const [arm,hand] of [[u.rightArm,u.rightGrip],...(twoHanded?[[u.leftArm,u.leftGrip]]:[])])assert.ok(worldPosition(arm).distanceTo(worldPosition(hand))<=.9+1e-6);
+  mouseGuard(false);
+ }
+});
+
+test('boss stops at a building, visibly damages it, and moves only after the obstructing pieces are gone',()=>{
+ arena();api.spawnBoss();const b=api.boss;Object.assign(b,{x:0,y:0,z:0,walk:0,state:'walk'});b.mesh.rotation.y=0;b.mesh.position.set(0,b.mesh.userData.groundOffset,0);b.mesh.userData.pose();
+ const foot=new THREE.Box3().setFromObject(b.mesh.userData.legs[0].foot,true),center=foot.getCenter(new THREE.Vector3());
+ const wall=placeObject('wall',center.x,foot.max.z+.6,{w:1,d:1,h:3,hp:500,maxHp:500});
+ const next={x:0,y:0,z:1,yaw:0,walk:0,moving:0,stomp:0};
+ assert.equal(beastObstacles.beastObstacleContacts(b.mesh,[wall]).length,0);
+ assert.equal(api.moveBeast(b,next,.2),false);close(b.z,0);assert.ok(wall.hp<500&&wall.hp>0);assert.equal(wall.mesh.visible,true);
+ assert.equal(api.moveBeast(b,next,.2),false);assert.equal(wall.dead,true);assert.equal(wall.mesh.visible,false);
+ assert.equal(api.moveBeast(b,next,.2),true);close(b.z,1);
+});
+
+test('boss blast is damaging to enemies and the player, but an elevated impact cannot hurt through empty vertical space',()=>{
+ arena(1,{test:false});api.player.invincible=0;const e=stationaryEnemy('zombie',1,0),hp=api.player.hp,enemyHP=e.hp;
+ api.beastBlast(new THREE.Vector3(0,20,0),4,30);assert.equal(api.player.hp,hp);assert.equal(e.dead,false);
+ api.beastBlast(new THREE.Vector3(0,.2,0),4,30);assert.ok(api.player.hp<hp);assert.ok(e.hp<enemyHP);
+});
+
+test('turning armour stops at an obstacle before the rotated foot can pass through it',()=>{
+ arena();api.spawnBoss();const b=api.boss;Object.assign(b,{x:0,y:0,z:0,walk:0,state:'walk'});b.mesh.position.set(0,b.mesh.userData.groundOffset,0);b.mesh.rotation.y=.35;b.mesh.userData.pose();
+ const edge=new THREE.Vector3(-Infinity,0,0),point=new THREE.Vector3();
+ b.mesh.userData.legs[0].foot.traverse(n=>{if(n.isMesh){const p=n.geometry.attributes.position;for(let i=0;i<p.count;i++){point.fromBufferAttribute(p,i).applyMatrix4(n.matrixWorld);if(point.x>edge.x)edge.copy(point);}}});
+ const wall=placeObject('wall',edge.x-.1,edge.z,{w:.6,d:1,h:Math.max(4,edge.y+1),hp:500,maxHp:500});
+ assert.ok(beastObstacles.beastObstacleContacts(b.mesh,[wall]).length);
+ b.mesh.rotation.y=0;b.mesh.updateMatrixWorld(true);assert.equal(beastObstacles.beastObstacleContacts(b.mesh,[wall]).length,0);
+ assert.equal(api.moveBeast(b,{x:0,y:0,z:0,yaw:.35,walk:0,moving:0,stomp:0},.2),false);close(b.mesh.rotation.y,0);assert.ok(wall.hp<500);
+});
+
+test('laser damages the player and enemies after a building obstruction is actually destroyed',()=>{
+ arena(1,{test:false});api.player.z=10;api.player.invincible=0;
+ const enemy=stationaryEnemy('zombie',0,9),hp=api.player.hp,enemyHP=enemy.hp;
+ const wall=placeObject('wall',0,5,{w:5,d:.2,h:20,hp:1000,maxHp:1000}),hits=new Set();
+ const from=new THREE.Vector3(0,10,0),to=new THREE.Vector3(0,1,10);
+ const clipped=api.beastBeamHit(from,to,.01,hits);
+ assert.ok(clipped.z<6);assert.ok(wall.hp<1000);assert.equal(api.player.hp,hp);assert.equal(enemy.hp,enemyHP);
+ api.hurtObject(wall,wall.hp+1,0,null,'explosion');
+ api.beastBeamHit(from,to,.01,hits);assert.ok(api.player.hp<hp);assert.ok(enemy.hp<enemyHP);
+ const remaining=api.player.hp;api.player.invincible=0;api.beastBeamHit(from,to,.01,hits);assert.equal(api.player.hp,remaining,'One sweep cannot repeatedly damage the same target each simulation step');
+});
+
+test('stomp leaves an airborne player safe and hits a grounded player in the same marked area',()=>{
+ arena(1,{test:false});api.player.y=2;api.player.invincible=0;const hp=api.player.hp;
+ api.beastBlast(new THREE.Vector3(0,.2,0),7.5,38,{groundOnly:true});assert.equal(api.player.hp,hp);
+ api.player.y=0;api.beastBlast(new THREE.Vector3(0,.2,0),7.5,38,{groundOnly:true});assert.ok(api.player.hp<hp);
 });

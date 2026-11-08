@@ -31,8 +31,8 @@ export class VehicleExplosionBatch{
    const col=frame%5,row=Math.floor(frame/5),inset=.5/1024;
    const u0=col/5+inset,u1=(col+1)/5-inset,v0=1-(row+1)/5+inset,v1=1-row/5-inset;
    for(let i=0;i<6;i++){
-    const [x,y]=corners[i],u=x>0?u1:u0,v=y>0?v1:v0;this.point.copy(s.burstOrigin);this.point.y+=1.5;
-    this.point.addScaledVector(this.right,x*3.8).addScaledVector(this.up,y*3.8);
+     const [x,y]=corners[i],u=x>0?u1:u0,v=y>0?v1:v0,scale=s.visualScale??1;this.point.copy(s.burstOrigin);this.point.y+=1.5*scale;
+     this.point.addScaledVector(this.right,x*3.8*scale).addScaledVector(this.up,y*3.8*scale);
     const vertex=count*6+i;positions.setXYZ(vertex,this.point.x,this.point.y,this.point.z);uv.setXY(vertex,u,v);
    }
    count++;

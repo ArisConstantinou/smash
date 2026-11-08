@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261106-audio2">
+  <link rel="stylesheet" href="./style.css?v=20261108-colossus1">
   <link rel="stylesheet" href="./controls.css?v=20261107-aim11">
   <link rel="stylesheet" href="./menu.css?v=20261107-forge9b">
   <link rel="stylesheet" href="./level-picker.css?v=20261107-cities10">
@@ -261,10 +261,11 @@
         <div class="health-track"><div id="healthFill" style="width:100%"></div><div class="health-ticks"></div></div>
       </section>
 
-      <section class="goal-panel" aria-label="Στόχος καταστροφής">
-        <div class="goal-heading"><span>ΚΑΤΑΣΤΡΟΦΗ ΠΕΡΙΟΧΗΣ</span><div><strong id="goalValue">0%</strong><span class="goal-target"> / 60%</span></div></div>
+      <section class="goal-panel" aria-label="Πρόοδος περιοχής από καταστροφή και εξουδετερώσεις">
+        <div class="goal-heading"><span>ΠΡΟΟΔΟΣ</span><div><strong id="goalValue">0%</strong><span class="goal-target"> / 60%</span></div></div>
         <div class="goal-track"><div id="goalFill" style="width:0%"></div><span class="goal-notch"></span></div>
-        <p id="objectiveText">Φτάσε στο 60% για να καλέσεις τον Κολοσσό.</p>
+        <div class="goal-breakdown"><span>ΚΤΙΡΙΑ <b id="goalDestruction">0%</b></span><span>ΕΧΘΡΟΙ <b id="goalEnemies">0%</b></span></div>
+        <p id="objectiveText">Κτίρια και εχθροί μαζί στο 60% · κάθε εξουδετέρωση +1%.</p>
       </section>
 
       <section class="run-status" aria-label="Κύμα εχθρών και στατιστικά">
@@ -475,6 +476,6 @@
   <script type="importmap">
     {"imports":{"./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3"}}
   </script>
-  <script type="module" src="./game.js?v=20261108-contact1"></script>
+  <script type="module" src="./game.js?v=20261108-colossus1"></script>
 </body>
 </html>
