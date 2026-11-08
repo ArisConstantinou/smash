@@ -13,7 +13,7 @@ export function beastBehind(b,player){
 }
 export function chooseBeastAttack(b,player){
  const rear=beastBehind(b,player),close=Math.hypot(player.x-b.x,player.z-b.z)<b.d*.5+6;
- if(rear&&close&&(b.rearCooldown||0)<=0){b.rearCooldown=8;return 'rearStomp';}
+ if(rear&&close&&(player.y||0)<1.1&&(b.rearCooldown||0)<=0){b.rearCooldown=8;return 'rearStomp';}
  const kinds=['missiles','rockets','laser','stomp'],kind=kinds[b.attack++%kinds.length];
  // The upward-launching missiles can reach behind; a chest laser cannot
  // legitimately pass through the boss's own body to hit a rear target.
@@ -23,7 +23,7 @@ export function beastPortalLocation(player,depth,bounds=117){
  let best=null,score=Infinity;
  for(let x=-88;x<=88;x+=22)for(let z=-88;z<=88;z+=22){
   const dx=player.x-x,dz=player.z-z,distance=Math.hypot(dx,dz);if(distance<32||distance>64)continue;
-  const yaw=Math.abs(dx)>Math.abs(dz)?(dx>0?Math.PI/2:-Math.PI/2):(dz>0?0:Math.PI);
+  const yaw=Math.atan2(dx,dz);
   const nx=Math.sin(yaw),nz=Math.cos(yaw),end={x:x+nx*(depth*.5+1.5),z:z+nz*(depth*.5+1.5)};
   if(Math.max(Math.abs(end.x),Math.abs(end.z))>bounds-depth*.65||Math.hypot(end.x-player.x,end.z-player.z)<16)continue;
   const rank=Math.abs(distance-43)+Math.abs(dx*nx+dz*nz-distance)*.2;

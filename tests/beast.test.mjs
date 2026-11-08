@@ -105,7 +105,7 @@ test('portal locations use road intersections and leave a bounded grounded exit 
 });
 test('portal has bounded reusable geometry, resets after reuse and disposes its scene ownership',()=>{
  const scene=new THREE.Scene(),portal=new BeastPortal(scene),positions=portal.arcs.geometry.attributes.position.array;
- for(let j=0;j<5;j++){portal.open({x:0,z:22,yaw:0},23,22);for(let i=0;i<100;i++){const amount=(i+1)/100;portal.update(.05,amount);assert.ok(Math.abs(portal.root.position.y-11*amount-.06)<1e-8,'The opening stays anchored to the road');}assert.strictEqual(portal.arcs.geometry.attributes.position.array,positions);portal.reset();assert.equal(portal.root.visible,false);assert.equal(portal.ground.visible,false);}
+ for(let j=0;j<5;j++){portal.open({x:0,z:22,yaw:0},23,22);for(let i=0;i<100;i++){const amount=(i+1)/100;portal.update(.05,amount);assert.ok(Math.abs(portal.root.position.y-22*.33*amount-.06)<1e-8,'The arch stays anchored across the road');}assert.strictEqual(portal.arcs.geometry.attributes.position.array,positions);portal.reset();assert.equal(portal.root.visible,false);assert.equal(portal.ground.visible,false);}
  portal.dispose();assert.equal(scene.children.length,0);
 });
 
@@ -115,4 +115,18 @@ test('missile volley covers the locked player position instead of leaving an acc
  for(let i=0;i<500;i++)combat.update(.01,{mesh},player);
  assert.equal(blasts.length,6);assert.ok(blasts.some(b=>Math.hypot(b.p.x-player.x,b.p.z-player.z)<b.r));
  combat.dispose();mesh.userData.dispose();
+});
+
+test('the full boss envelope fits the visible road arch and the portal continuously faces the player',()=>{
+ const scene=new THREE.Scene(),mesh=makeBeastMech(),size=new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3()),portal=new BeastPortal(scene);
+ portal.open({x:0,z:22,yaw:0},size.x*1.5,size.y*1.5);portal.update(1,1);
+ for(const x of [-size.x/2,size.x/2])for(const y of [0,size.y])assert.ok((x/(portal.width*.5))**2+((y-portal.root.position.y)/(portal.height*.5))**2<1,'Both feet and both upper corners fit inside the actual oval');
+ for(const a of [0,.4,1.7,3,-2]){const p={x:Math.sin(a)*40,z:22+Math.cos(a)*40};portal.facePlayer(p);assert.ok(Math.abs(Math.sin(portal.root.rotation.y-a))<1e-8);}
+ portal.dispose();mesh.userData.dispose();
+});
+
+test('hovering behind the mech selects airburst missiles locked to the actual airborne height',()=>{
+ const mesh=makeBeastMech(),b={mesh,x:0,z:0,d:25,attack:0,rearCooldown:0},p={x:0,y:12,z:-15};assert.equal(chooseBeastAttack(b,p),'missiles');
+ const scene=new THREE.Scene(),combat=new BeastCombat(scene);combat.start('missiles',b,p);combat.update(1.3,b,p);assert.equal(combat.projectiles.length,6);assert.ok(combat.projectiles.every(p=>Math.abs(p.to.y-12.9)<1e-8));
+ p.y=25;combat.update(.1,b,p);assert.ok(combat.projectiles.every(p=>Math.abs(p.to.y-12.9)<1e-8),'A late altitude dodge must remain valid');combat.dispose();mesh.userData.dispose();
 });

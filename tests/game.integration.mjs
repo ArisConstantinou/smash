@@ -4340,3 +4340,22 @@ test('boss survives a former full-health burst and exposes a meaningful recovery
  const armored=b.hp;b.state='recover';api.hitBoss(100,{x:0,z:1},5);assert.equal(armored-b.hp,125);
  arena(20);api.spawnBoss();assert.ok(api.boss.maxHp>maximum);
 });
+
+
+test('road portal and emerging boss track player position, and the mech keeps watching through every attack',()=>{
+ arena(5);api.player.x=0;api.player.z=33;api.spawnBoss();const b=api.boss,loc=b.entry.location;
+ for(const a of [.2,1.3,-1,2.5]){api.player.x=loc.x+Math.sin(a)*40;api.player.z=loc.z+Math.cos(a)*40;for(let i=0;i<60;i++)api.updateBoss(1/60);close(Math.sin(api.beastPortal.root.rotation.y-a),0);close(Math.sin(b.mesh.rotation.y-a),0);close(b.entryPlane.normal.x,Math.sin(a));}
+ b.entryPlane.constant=1e6;Object.assign(b,{x:0,z:0,y:0});b.mesh.position.set(0,b.mesh.userData.groundOffset,0);api.player.x=-8;api.player.z=-14;
+ for(const kind of ['walk','recover',...beastCombat.BEAST_ATTACKS]){
+  api.beastCombat.reset();b.state=kind;b.timer=100;b.mesh.rotation.y=0;if(beastCombat.BEAST_ATTACKS.includes(kind))api.beastCombat.start(kind,b,api.player);
+  api.updateBoss(.05);const u=b.mesh.userData,head=u.head.getWorldPosition(new THREE.Vector3()),forward=u.head.getWorldDirection(new THREE.Vector3()),target=core.normalize(api.player.x-head.x,api.player.z-head.z),look=core.normalize(forward.x,forward.z);
+  assert.ok(look.x*target.x+look.z*target.z>.999,kind+' head must keep facing the actual player');
+ }
+});
+
+
+test('airborne rear camping receives an actual airburst instead of harmless ground explosions',()=>{
+ arena(25,{test:false});api.spawnBoss();const b=api.boss;Object.assign(b,{x:0,z:0,y:0,state:'walk',timer:0});b.mesh.rotation.y=0;b.mesh.position.set(0,b.mesh.userData.groundOffset,0);b.mesh.userData.pose();
+ api.player.x=0;api.player.z=-25;api.player.y=12;api.player.invincible=0;const hp=api.player.hp;
+ api.updateBoss(.01);assert.equal(api.beastCombat.attack.kind,'missiles');for(let i=0;i<240;i++)api.updateBoss(1/60);assert.ok(api.player.hp<hp,'A stationary airborne player must receive the marked airburst');
+});

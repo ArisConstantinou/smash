@@ -103,6 +103,7 @@ export function makeBeastMech(){
  for(let i=0;i<3;i++)head.plate(P.edge,[0,.72-i*.16,.05+i*.85],[1.45-i*.16,.32,1.0],[.20,0,0]);
  head.plate(P.armor,[0,-.14,2.95],[1.25,.48,.85],[.15,0,0]);
  const headRoot=at(body,head.finish(),0,6.1,3.3);
+ headRoot.rotation.order='YXZ'; // Yaw remains correct while the head pitches up/down.
  const jaw=new Section('hinged-jaw');jaw.plate(P.dark,[0,-.85,1.35],[1.65,.38,2.6],[.05,0,0]);
  for(const side of [-1,1]){jaw.plate(P.edge,[side*.7,-.72,1.45],[.24,.4,2.6]);for(let j=0;j<3;j++)jaw.raw(CONE,P.steel,[side*.66,-.45,.9+j*.7],[.16,.42,.18]);}
  const jawRoot=jaw.finish();headRoot.add(jawRoot);

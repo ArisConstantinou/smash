@@ -56,7 +56,7 @@ export class BeastCombat{
    for(let i=0;i<count&&this.projectiles.length<16;i++){
     const mount=(missile?u.missileMounts:u.rocketMounts)[(i*(missile?4:3))%(missile?u.missileMounts.length:u.rocketMounts.length)];
     const from=u.worldPoint(mount),to=a.target.clone();
-    if(missile){const offset=missileOffset(i);to.x+=offset.x;to.z+=offset.z;to.y=.25;}
+    if(missile){const offset=missileOffset(i);to.x+=offset.x;to.z+=offset.z;to.y=a.target.y>3?a.target.y:.25;}
     else {const offset=(i-1)*2.6;to.x+=Math.cos(a.angle)*offset;to.z-=Math.sin(a.angle)*offset;}
     this.projectiles.push({kind:a.kind,from,to,previous:from.clone(),position:from.clone(),time:0,duration:missile?1.65+i*.13:Math.max(.9,from.distanceTo(to)/23),radius:missile?3.1:2.5,damage:(missile?32:38)*a.damageScale});
    }
@@ -93,12 +93,12 @@ export class BeastCombat{
   const marker=(point,radius)=>{if(n>=24)return;
    const key=point.x.toFixed(2)+':'+point.z.toFixed(2);let floor=this.surfaceCache.get(key);
    if(!floor||this.clock-floor.at>.2){if(this.surfaceCache.size>64)this.surfaceCache.clear();floor={y:this.surface(point.x,point.z),at:this.clock};this.surfaceCache.set(key,floor);}
-   d.position.set(point.x,floor.y+.12,point.z);d.rotation.set(-Math.PI/2,0,0);d.scale.set(radius,radius,1);d.updateMatrix();this.markerPool.set(n++,d.matrix);};
+   d.position.set(point.x,point.y>3?point.y:floor.y+.12,point.z);d.rotation.set(-Math.PI/2,0,0);d.scale.set(radius,radius,1);d.updateMatrix();this.markerPool.set(n++,d.matrix);};
   const a=this.attack;
   if(a&&!a.launched){
    if(a.kind==='stomp'||a.kind==='rearStomp')for(const p of a.feet)marker(p,a.radius);
-   else if(a.kind==='missiles')for(let i=0;i<6;i++){const offset=missileOffset(i);marker({x:a.target.x+offset.x,z:a.target.z+offset.z},3.1);}
-   else if(a.kind==='rockets')for(let i=-1;i<=1;i++)marker({x:a.target.x+Math.cos(a.angle)*i*2.6,z:a.target.z-Math.sin(a.angle)*i*2.6},2.5);
+   else if(a.kind==='missiles')for(let i=0;i<6;i++){const offset=missileOffset(i);marker({x:a.target.x+offset.x,y:a.target.y,z:a.target.z+offset.z},3.1);}
+   else if(a.kind==='rockets')for(let i=-1;i<=1;i++)marker({x:a.target.x+Math.cos(a.angle)*i*2.6,y:a.target.y,z:a.target.z-Math.sin(a.angle)*i*2.6},2.5);
   }
   this.projectiles.forEach((p,i)=>{
    marker(p.to,p.radius);d.position.copy(p.position);const dir=new THREE.Vector3().subVectors(p.position,p.previous);if(dir.lengthSq()<1e-8)dir.subVectors(p.to,p.from);d.quaternion.setFromUnitVectors(up,dir.normalize());d.scale.set(1,1,1);d.updateMatrix();this.shellPool.set(i,d.matrix);

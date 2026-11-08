@@ -41,6 +41,8 @@ window.__beastQA={get ready(){return gameReady},
   updateBoss(.01);updateBattleCamera(1,new THREE.Vector3(player.x,.6,player.z));camera.lookAt(cameraTarget);camera.updateMatrixWorld(true);return this.sample();
  },
  dodgeRear(){beastCombat.reset();boss.state='walk';boss.timer=0;boss.rearCooldown=0;player.invincible=0;updateBoss(.01);player.x=60;player.z=60;return this.step(1.6);},
+ air(){this.rear();beastCombat.reset();boss.state='walk';boss.timer=0;boss.rearCooldown=0;boss.attack=0;player.x=0;player.z=-25;player.y=12;player.invincible=0;updateBoss(.01);return this.layout();},
+ markerHeight(){const p=beastCombat.markerPool.geometry.attributes.position;let min=Infinity,max=-Infinity;for(let i=0;i<beastCombat.markerPool.geometry.drawRange.count;i++){min=Math.min(min,p.getY(i));max=Math.max(max,p.getY(i));}return {min,max};},
  layout(){resize();updateBattleCamera(1,new THREE.Vector3(player.x,.6,player.z));camera.lookAt(cameraTarget);camera.updateMatrixWorld(true);return this.sample();},
  async compare(){
   const {makeCityBuilding}=await import('./city-models.js');const reference=makeCityBuilding('office',1);scene.add(reference);reference.position.set(23,0,0);
@@ -81,9 +83,13 @@ try{
   const dodged=await page.evaluate(()=>__beastQA.dodgeRear());delete dodged.png;assert.equal(dodged.text.player.hp,rear[2].text.player.hp);rear.push(dodged);
   if(phone){for(const [name,viewport]of [['portrait',{width:430,height:932}],['landscape',{width:932,height:430}]]){await page.setViewportSize(viewport);await page.evaluate(()=>__beastQA.rear());await page.evaluate(()=>__beastQA.layout());await page.screenshot({path:resolve(out,tag+'-'+name+'-hud.png')});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.ok(await page.evaluate(()=>parseFloat(getComputedStyle(document.querySelector('.boss-heading strong')).fontSize)>=12));}}
  }
- if(label==='after'){const roar=await page.evaluate(()=>__beastQA.roarFrame());assert.equal(roar.text.boss.entrance,'roar');await writeFile(resolve(out,tag+'-roar.png'),Buffer.from(roar.png.split(',')[1],'base64'));}
+ let air;
+ if(label==='after'){
+  air=await page.evaluate(()=>__beastQA.air());delete air.png;assert.equal(air.text.boss.warning.kind,'missiles');const warning=await page.evaluate(()=>__beastQA.step(.65));await writeFile(resolve(out,tag+'-air-warning.png'),Buffer.from(warning.png.split(',')[1],'base64'));const height=await page.evaluate(()=>__beastQA.markerHeight());assert.ok(height.min>12&&height.max<14);const impact=await page.evaluate(()=>__beastQA.step(3.1));delete impact.png;assert.ok(impact.text.player.hp<air.text.player.hp);air={height,hpBefore:air.text.player.hp,hpAfter:impact.text.player.hp};
+  const roar=await page.evaluate(()=>__beastQA.roarFrame());assert.equal(roar.text.boss.entrance,'roar');await writeFile(resolve(out,tag+'-roar.png'),Buffer.from(roar.png.split(',')[1],'base64'));
+ }
  const comparison=await page.evaluate(()=>__beastQA.compare());await writeFile(resolve(out,tag+'-comparison.png'),Buffer.from(comparison.png.split(',')[1],'base64'));delete comparison.png;
- await writeFile(resolve(out,tag+'-results.json'),JSON.stringify({label,phone,cpuRate:phone?4:1,samples,performance,comparison,rear,errors},null,2));
+ await writeFile(resolve(out,tag+'-results.json'),JSON.stringify({label,phone,cpuRate:phone?4:1,samples,performance,comparison,rear,air,errors},null,2));
  assert.deepEqual(errors,[]);assert.equal(samples[0].backend,'WebGPU');
  console.log(JSON.stringify({label,samples:samples.map(s=>({name:s.name,boss:s.boss,reference:s.reference,peak:s.peak})),performance,errors}));
 }finally{await context?.close();await managed.cleanup();await new Promise(r=>setTimeout(r,1000));}

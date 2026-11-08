@@ -1719,31 +1719,36 @@ function beastBeamHit(from,to,dt,hits){
 const BEAST_CUES={missiles:['ΠΥΡΑΥΛΟΙ ΑΠΟ ΨΗΛΑ','Βγες από τους κόκκινους κύκλους!'],rockets:['ΟΜΟΒΡΟΝΤΙΑ ΡΟΥΚΕΤΩΝ','Κινήσου πλάγια — ο στόχος έχει κλειδώσει.'],laser:['ΦΟΡΤΙΣΗ LASER','Απόφυγε τη γραμμή και τη σάρωση.'],stomp:['ΣΥΝΘΛΙΨΗ','Μακριά από τα πόδια — ή πήδα!'],rearStomp:['ΠΙΣΩ ΣΥΝΘΛΙΨΗ','Τα πίσω πόδια σηκώνονται — βγες από τους κύκλους ή πήδα!']};
 function spawnBoss(){
   bossSpawned=true;
-  const mesh=beastRig,u=mesh.userData;mesh.rotation.set(0,0,0);mesh.position.set(0,u.groundOffset,0);u.pose();
-  const size=new THREE.Box3().setFromObject(mesh,true).getSize(new THREE.Vector3());
-  const location=beastPortalLocation(player,size.z,BOUNDS),half=size.z*.5+.8;
+  const mesh=beastRig,u=mesh.userData;mesh.rotation.set(0,0,0);u.head.rotation.y=0;mesh.position.set(0,u.groundOffset,0);u.pose();
+  const box=new THREE.Box3().setFromObject(mesh,true),size=box.getSize(new THREE.Vector3());
+  const location=beastPortalLocation(player,size.z,BOUNDS),half=box.max.z+.8;
   const pos={x:location.x-location.nx*half,z:location.z-location.nz*half};
   const hp=beastHealth(level,sector,round),plane=u.reveal.plane;
   plane.normal.set(location.nx,0,location.nz);plane.constant=-location.nx*location.x-location.nz*location.z;
   u.reveal.sync();
   boss={mesh,beast:true,type:'boss',level:enemyLevel('boss',round),slowTime:0,slowFactor:1,x:pos.x,z:pos.z,y:0,vx:0,vz:0,radius:Math.max(size.x,size.z)*.5,w:size.x,d:size.z,h:size.y,height:size.y,hp,maxHp:hp,damageScale:1+Math.min(2,(level-1)*.025),materials:u.materials,flash:0,stagger:0,state:'enter',timer:0,attack:0,telegraph:null,enraged:false,dead:false,walk:0,crushTimer:0,rearCooldown:0,entryPlane:plane,
-    entry:{location,stage:'opening',time:0,distance:0,length:size.z+2}};initEnemyReaction(boss,spawnCounter+100);
+    entry:{location,leading:half,stage:'opening',time:0,distance:0,length:size.z+1.6}};initEnemyReaction(boss,spawnCounter+100);
   mesh.position.set(pos.x,u.groundOffset,pos.z);mesh.rotation.y=location.yaw;mesh.visible=true;u.pose();
   boss.geometryHit=(start,end,radius)=>{const hit=beastCollision.geometryHit(boss,start,end,radius);return hit&&(boss.state!=='enter'||plane.distanceToPoint(hit)>=0)?hit:null;};
-  beastPortal.open(location,size.x*1.12,size.y*1.14);
+  // Oversized oval continues below the street surface. Its visible arch is
+  // wide at road level, so the feet and both upper corners fit the aperture.
+  beastPortal.open(location,size.x*1.5,size.y*1.5);
   $('bossHud').hidden=false;
   announce('ΡΗΓΜΑ ΣΤΟΝ ΔΡΟΜΟ','Ο Κολοσσός πλησιάζει. Κράτα απόσταση από την πύλη!',3);audio.play('boss');
   player.hp=Math.min(player.maxHp,player.hp+30);toast('ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ · ΣΤΟΧΟΣ 60%','+30 ζωή · Ο boss σημειώνεται κόκκινος στον χάρτη.');
 }
 function updateBeastEntry(b,dt){
   const e=b.entry,u=b.mesh.userData;
+  beastPortal.facePlayer(player,dt);const yaw=beastPortal.root.rotation.y;Object.assign(e.location,{yaw,nx:Math.sin(yaw),nz:Math.cos(yaw)});
+  if(e.stage!=='roar'){b.entryPlane.normal.set(e.location.nx,0,e.location.nz);b.entryPlane.constant=-e.location.nx*e.location.x-e.location.nz*e.location.z;u.reveal.sync();}
   if(e.stage==='opening'){
+    b.x=e.location.x-e.location.nx*e.leading;b.z=e.location.z-e.location.nz*e.leading;b.mesh.position.set(b.x,u.groundOffset,b.z);b.mesh.rotation.y=yaw;u.pose();
     e.time+=dt;beastPortal.update(dt,Math.min(1,e.time/BEAST_ENTRY.opening));
     if(e.time>=BEAST_ENTRY.opening){e.stage='walking';e.time=0;}return;
   }
   if(e.stage==='walking'){
     beastPortal.update(dt,1);const step=Math.min(e.length-e.distance,e.length/BEAST_ENTRY.walking*dt);
-    const next={x:b.x+e.location.nx*step,z:b.z+e.location.nz*step,y:0,yaw:e.location.yaw,walk:b.walk+dt,moving:1,stomp:0};
+    const remaining=e.leading-e.distance-step,next={x:e.location.x-e.location.nx*remaining,z:e.location.z-e.location.nz*remaining,y:0,yaw,walk:b.walk+dt,moving:1,stomp:0};
     if(moveBeast(b,next,dt))e.distance+=step;
     if(e.distance>=e.length-1e-6){e.stage='roar';e.time=0;b.entryPlane.constant=1e6;u.reveal.sync();audio.play('boss');shake=Math.max(shake,.35);for(const foot of u.feet())pulse(foot.x,foot.z,5.8,0x93dfff,.65);}
     return;
@@ -1760,6 +1765,7 @@ function moveBeast(b,next,dt){
   b.mesh.position.set(next.x,next.y+u.groundOffset,next.z);b.mesh.rotation.y=next.yaw;
   u.pose({time:next.walk,moving:next.moving,stomp:next.stomp,rearStomp:next.rearStomp||0,roar:next.roar||0});
   const headPoint=u.head.getWorldPosition(tempV);
+  u.head.rotation.y=Math.atan2(player.x-headPoint.x,player.z-headPoint.z)-next.yaw;
   u.head.rotation.x=clamp(Math.atan2(headPoint.y-player.y-1,Math.max(5,Math.hypot(headPoint.x-player.x,headPoint.z-player.z)))-(next.roar||0)*.45,-.55,.38);
   u.body.rotation.x=b.impact?Math.sin(Math.PI*Math.min(1,b.impact.time/b.impact.duration))*.025:0;
   const contacts=beastObstacleContacts(b.mesh,nearbyObjects(next.x,next.z,Math.hypot(b.w,b.d)*.5+2),{plane:b.state==='enter'?b.entryPlane:null});
@@ -1782,11 +1788,15 @@ function updateBoss(dt){
   if(b.impact){b.impact.time+=dt;if(b.impact.time>=b.impact.duration)b.impact=null;}
   if(!b.enraged&&b.hp<b.maxHp*.45){b.enraged=true;announce('ΥΠΕΡΦΟΡΤΩΣΗ','Οι προειδοποιήσεις παραμένουν — οι ανάσες του μικραίνουν.',3);}
   const next={x:b.x,y:b.y,z:b.z,yaw:b.mesh.rotation.y,walk:b.walk,moving:0,stomp:0};
+  // Keep watching the player even during committed attacks. Feet and the
+  // chest stay planted for a locked stomp/laser; their world warnings cannot
+  // rotate after the player has already committed to a dodge.
+  const targetYaw=Math.atan2(player.x-b.x,player.z-b.z),turn=Math.atan2(Math.sin(targetYaw-next.yaw),Math.cos(targetYaw-next.yaw));
+  if(!['laser','stomp','rearStomp'].includes(b.state))next.yaw+=clamp(turn,-dt*1.7,dt*1.7);
   if(b.state==='walk'){
     const dir=normalize(player.x-b.x,player.z-b.z),dist=Math.hypot(player.x-b.x,player.z-b.z),speed=(b.enraged?2.7:2)*(b.slowTime>0?b.slowFactor:1);
-    const yaw=Math.atan2(dir.x,dir.z),difference=Math.atan2(Math.sin(yaw-b.mesh.rotation.y),Math.cos(yaw-b.mesh.rotation.y));next.yaw+=clamp(difference,-dt*.75,dt*.75);
     if(dist>b.radius*.8+3){next.moving=1;next.x=clamp(b.x+dir.x*speed*dt,-BOUNDS+b.radius,BOUNDS-b.radius);next.z=clamp(b.z+dir.z*speed*dt,-BOUNDS+b.radius,BOUNDS-b.radius);next.walk+=dt;}
-    if(b.timer<=0){const kind=chooseBeastAttack(b,player);beastCombat.start(kind,b,player);b.state=kind;b.timer=10;}
+    if(b.timer<=0){const kind=chooseBeastAttack(b,player);beastCombat.start(kind,b,player);b.state=kind;b.timer=10;next.x=b.x;next.z=b.z;next.yaw=b.mesh.rotation.y;next.moving=0;next.walk=b.walk;}
   }else if(b.state==='recover'){
     if(b.timer<=0){b.state='walk';b.timer=b.enraged?.8:1.6;}
   }else if(!beastCombat.attack){b.state='recover';b.timer=b.enraged?1.4:2.3;}
