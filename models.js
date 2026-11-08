@@ -1557,6 +1557,33 @@ function barrel(variant) {
   return g;
 }
 
+function hydrant() {
+  const g=new THREE.Group(),red=0xb74837,dark=0x34494c,steel=0x9aab9e;
+  cylinder(g,dark,0,.065,0,.29,.31,.13,10);
+  cylinder(g,red,0,.46,0,.18,.21,.73,10);
+  for(const y of [.17,.77])cylinder(g,dark,0,y,0,.235,.235,.075,10);
+  for(const side of [-1,1]){
+    cylinder(g,red,side*.235,.6,0,.13,.14,.24,10,0,0,Math.PI/2);
+    cylinder(g,steel,side*.35,.6,0,.14,.14,.04,10,0,0,Math.PI/2);
+    cylinder(g,dark,side*.374,.6,0,.105,.105,.018,10,0,0,Math.PI/2);
+  }
+  cylinder(g,steel,0,.835,0,.22,.22,.07,10);
+  cylinder(g,dark,0,.876,0,.175,.175,.018,10);
+  for(let i=0;i<6;i++){const a=i*Math.PI/3;cylinder(g,steel,Math.cos(a)*.255,.145,Math.sin(a)*.255,.031,.031,.045,6);}
+  for(let i=0;i<8;i++){const a=i*Math.PI/4;box(g,red,Math.sin(a)*.185,.43,Math.cos(a)*.185,.025,.39,.035,0,a);}
+  for(const side of [-1,1])for(let i=0;i<5;i++){const a=i/4;box(g,dark,side*(.27+.1*a),.51-.18*a,Math.sin(a*Math.PI)*.035,.025,.05,.025,0,0,side*.35);}
+  compact(g);
+  const caps=[];
+  const top=group(g,'hydrant-top-cap',0,.89,0);
+  cylinder(top,red,0,.07,0,.12,.215,.14,10);cylinder(top,red,0,.155,0,.075,.12,.04,10);cylinder(top,steel,0,.2,0,.055,.055,.06,6);compact(top);caps.push(top);
+  for(const side of [-1,1]){
+    const cap=group(g,'hydrant-side-cap',side*.4,.6,0);
+    cylinder(cap,red,0,0,0,.14,.14,.07,10,0,0,Math.PI/2);cylinder(cap,steel,side*.055,0,0,.04,.04,.05,6,0,0,Math.PI/2);compact(cap);caps.push(cap);
+  }
+  g.scale.set(.68,.9,.9);
+  g.userData={width:.65,depth:.56,height:1.01,color:red,fragments:[red,dark,steel],caps};return g;
+}
+
 function tree(variant) {
   const g = new THREE.Group();
   const bark = 0x635b44, bright = variant % 2 ? 0x6c8067 : 0x5b806c, dark = 0x345e55, foliage = 0x427466;
@@ -1616,6 +1643,7 @@ export function makeProp(type, variant = 0) {
     case 'car': g = car(n); break;
     case 'wall': g = wall(n); break;
     case 'barrel': g = barrel(n); break;
+    case 'hydrant': g = hydrant(); break;
     case 'tree': g = tree(n); break;
     case 'lamp': g = lamp(); break;
     case 'bench': g = bench(); break;

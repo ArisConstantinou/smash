@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import { makeProp } from './models.js?v=20261107-forge9';
+import { makeProp } from './models.js?v=20261108-props1';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
@@ -127,7 +127,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
     const rx=range(.45,1.25),rz=range(.2,.6);patch(x,z,rx,rz,puddleMat,.06,8,.25);patch(x-.08,z-.05,rx*.63,rz*.11,puddleGlint,.064,5,.1);
   }
 
-  const stats={townhouse:[480,4],apartment:[680,5],shop:[520,4],office:[760,5],townhall:[1100,7],police:[900,6],hospital:[1000,6],skyscraper:[1400,9],construction:[700,5],warehouse:[620,5],car:[260,2],policecar:[300,2],ambulance:[320,2],wall:[160,1],crate:[44,1],barrel:[60,1],tree:[90,1],lamp:[70,1],bench:[65,1]};
+  const stats={townhouse:[480,4],apartment:[680,5],shop:[520,4],office:[760,5],townhall:[1100,7],police:[900,6],hospital:[1000,6],skyscraper:[1400,9],construction:[700,5],warehouse:[620,5],car:[260,2],policecar:[300,2],ambulance:[320,2],wall:[160,1],crate:[44,1],barrel:[60,1],hydrant:[100,1],tree:[90,1],lamp:[70,1],bench:[65,1]};
   const fallbackDimensions={car:[1.8,3.6,1.45],wall:[3.4,.6,1.3],crate:[1,1,1],barrel:[.85,.85,1.1],tree:[.68,.68,4.45],lamp:[.45,.45,3.8],bench:[1.8,.7,1]};
   const spatial=new Map(),spatialCell=22;
   const bucketKey=(x,z)=>`${x},${z}`;
@@ -221,6 +221,13 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   for(const [i,[x,z]]of [[-2.7,-6],[2.7,6],[-6,2.7],[6,-2.7],[-2.7,9],[2.7,-9],[-9,-2.7],[9,2.7]].entries()){
     if(canPlace(x,z,1.05,1.05,.2))addProp(i%2?'barrel':'crate',x,z,i);
   }
+  // Curb corners, outside crosswalks and walking corridors. Side outlets run
+  // along the frontage instead of pointing through the adjacent building.
+  for(const [i,p]of layout.plots.entries())if(i%3===0){
+    const x=p.x+5.8,z=p.z+7.25;
+    if(canPlace(x,z,1,.65,.22))addProp('hydrant',x,z,p.variant);
+  }
+  if(canPlace(-5.7,-8.1,1,.65,.22))addProp('hydrant',-5.7,-8.1);
   for(const rx of layout.roads)for(const rz of layout.roads){
     if(Math.abs(rx)>88||Math.abs(rz)>88||(Math.abs(rx)+Math.abs(rz)<20)||((rx+rz)/22)%2)continue;
     const x=rx+2.65,z=rz+5.2;
@@ -466,6 +473,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   // and every animated crane joint live; geometry/instance-buffer animation
   // (flags, rain, grass, flames) does not depend on local matrix recomposition.
   const movingTransforms=new Set(objects.map(o=>o.mesh));
+  for(const o of objects)for(const cap of o.mesh.userData.caps||[])movingTransforms.add(cap);
   for(const o of cranes){const c=o.mesh.userData.crane;movingTransforms.add(c.pivot);movingTransforms.add(c.hook);movingTransforms.add(c.wire);}
   group.traverse(node=>{if(!movingTransforms.has(node)){node.updateMatrix();node.matrixAutoUpdate=false;}});
   updateVisibility({x:0,z:0});
