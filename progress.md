@@ -18,6 +18,8 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 
 - Run42511915237 passed actual buffer rotation and Player capture, then stalled at static Mount full-page capture. New test-only helper requires natural readiness, brings the page forward and presents identical frames only during CDP screenshots, restoring on-demand afterward. Original natural input/yaw/render/bounds/pixels assertions stay; production unchanged. Local software test passes. User “push” continues to authorize merge/publication after final CI.
 
+- Run42512505791 passed all screenshots/layouts, then found the remaining immediate option-image readiness race. The same4x1280px requirement is now awaited with15s bound. Local software pass. Expanded remote workshop>3min + smoke~7min requires a15min browser-job timeout; no suites/assertions removed. Main/public promotion remains authorized by “push”.
+
 ## Verified visual workshop checkpoint — 2026-11-08
 - User requests pictorial C/I controls at bottom left, proper attachment cards and illustrated controls matching the supplied approved workshop/armored-rider reference, explicit Save, fixed outer height and grounded solo player. Construction is authorized; no extra download, paid service, agent or second build.
 - Branch `feature/visual-workshop`, reused managed worktree `C:/Users/arz0r/.codex/worktrees/startup-aim/Smash`. Candidate v2026.11.08.4. Canonical source remains E:/Smash, generated evidence in E:/CodexGenerated/smash/staging; preview /candidate/ on port8000 only. StorageGuard remains user-disabled for Smash; wrappers retain containment and bounded outputs.
