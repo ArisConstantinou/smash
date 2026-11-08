@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="./menu.css?v=20261108-mount1">
   <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
-  <link rel="stylesheet" href="./mount-workshop.css?v=20261108-mount1">
+  <link rel="stylesheet" href="./mount-workshop.css?v=20261108-workshop1">
 </head>
 <body>
   <img id="throwArrowImage" src="./assets/ui/throw-arrow.svg?v=aim13" width="256" height="512" alt="" aria-hidden="true" hidden>
@@ -208,7 +208,7 @@
           <button id="resumeCharacterButton" class="forge-action forge-action-resume" type="button" disabled><i class="forge-rivet forge-rivet-a" aria-hidden="true"></i><i class="forge-rivet forge-rivet-b" aria-hidden="true"></i><span class="forge-action-symbol"><svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg></span><span class="forge-action-copy"><b>ΣΥΝΕΧΕΙΑ</b><small id="menuResumeDetail">ΧΩΡΙΣ ΑΠΟΘΗΚΕΥΣΗ</small></span><span class="forge-action-arrow" aria-hidden="true">→</span></button>
         </div>
         <div class="forge-secondary-actions">
-          <button id="menuMountWorkshopButton" class="forge-secondary" type="button" aria-haspopup="dialog" aria-controls="mountWorkshop"><svg aria-hidden="true"><use href="#i-settings"/></svg><span>ΠΡΟΣΑΡΜΟΓΗ</span><small>ΠΑΙΚΤΗΣ · ΟΧΗΜΑ</small></button>
+          <button id="menuMountWorkshopButton" class="forge-secondary" type="button" aria-haspopup="dialog" aria-controls="mountWorkshop"><img src="./assets/workshop/workshop.svg" alt="" draggable="false"><span>ΠΡΟΣΑΡΜΟΓΗ</span><small>ΠΑΙΚΤΗΣ · ΟΧΗΜΑ</small></button>
           <button id="chooseRoundButton" class="forge-secondary forge-round-button" type="button" aria-haspopup="dialog" aria-controls="roundPicker" aria-expanded="false"><svg aria-hidden="true"><use href="#i-skull"/></svg><span>ΕΠΙΛΟΓΗ LEVEL</span><small>15 ΠΟΛΕΙΣ</small><svg class="forge-secondary-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
           <button id="menuSettingsButton" class="forge-secondary forge-settings-button" type="button"><svg aria-hidden="true"><use href="#i-settings"/></svg><span>ΡΥΘΜΙΣΕΙΣ</span><small>ΗΧΟΣ · ΧΕΙΡΙΣΜΟΣ</small><svg class="forge-secondary-arrow" aria-hidden="true"><use href="#i-arrow"/></svg></button>
         </div>
@@ -479,7 +479,7 @@
   </section>
   <section id="mountWorkshop" class="mount-workshop" role="dialog" aria-modal="true" aria-labelledby="workshopTitle" hidden>
     <div class="workshop-shell">
-      <header class="workshop-heading"><div><small>IRONFALL · ΛΕΙΤΟΥΡΓΙΚΟΣ ΕΞΟΠΛΙΣΜΟΣ</small><h2 id="workshopTitle">ΕΡΓΑΣΤΗΡΙΟ</h2></div><button id="workshopClose" type="button" aria-label="Κλείσιμο εργαστηρίου">ΚΛΕΙΣΙΜΟ ×</button></header>
+      <header class="workshop-heading"><div><small>IRONFALL · ΟΠΛΙΣΜΟΣ &amp; ΜΗΧΑΝΕΣ</small><h2 id="workshopTitle">ΕΡΓΑΣΤΗΡΙΟ</h2></div><div class="workshop-save"><span id="workshopSaveState" role="status"></span><button id="workshopSave" type="button"><span>SAVE · ΑΠΟΘΗΚΕΥΣΗ</span></button></div><button id="workshopClose" type="button" aria-label="Κλείσιμο εργαστηρίου · I / Escape"><span>ΚΛΕΙΣΙΜΟ · I</span></button></header>
       <nav id="workshopTabs" class="workshop-tabs" aria-label="Προεπισκόπηση"></nav>
       <p id="workshopMode" class="workshop-mode"></p>
       <div class="workshop-content">
@@ -490,20 +490,20 @@
           <nav id="workshopFamilies" class="workshop-families" aria-label="Σασί"></nav>
           <button id="workshopAuto" type="button">ΑΥΤΟΜΑΤΟ ΣΑΣΙ ΑΝΑ LEVEL · 1 / 11 / 21</button>
         </section>
-        <section class="workshop-details"><h3 id="workshopPartName"></h3><div id="workshopOptions" class="workshop-options"></div><p id="workshopDescription"></p><div id="workshopStats" class="workshop-stats"></div><p id="workshopCost" class="workshop-cost"></p><div class="workshop-purchase"><button id="workshopEquip" type="button">ΕΞΟΠΛΙΣΜΟΣ</button><button id="workshopUpgrade" type="button">ΑΝΑΒΑΘΜΙΣΗ</button></div><button id="workshopUse" type="button">ΧΡΗΣΗ ΟΧΗΜΑΤΟΣ</button><button id="workshopRepair" type="button">ΕΠΙΣΚΕΥΗ ΜΕ ΜΕΤΑΛΛΟ</button></section>
+        <section class="workshop-details"><h3 id="workshopPartName"></h3><div id="workshopOptions" class="workshop-options"></div><p id="workshopDescription"></p><div id="workshopStats" class="workshop-stats"></div><p id="workshopCost" class="workshop-cost"></p><div class="workshop-purchase"><button id="workshopEquip" type="button"><span>ΕΞΟΠΛΙΣΜΟΣ</span></button><button id="workshopUpgrade" type="button"><span id="workshopUpgradeLabel">ΑΝΑΒΑΘΜΙΣΗ</span></button></div><button id="workshopUse" type="button"><span id="workshopUseLabel">ΧΡΗΣΗ ΟΧΗΜΑΤΟΣ</span></button><button id="workshopRepair" type="button"><span id="workshopRepairLabel">ΕΠΙΣΚΕΥΗ ΜΕ ΜΕΤΑΛΛΟ</span></button></section>
       </div>
       <footer class="workshop-footer"><p id="workshopFeedback" role="status" aria-live="polite"></p><div id="workshopTestControls"><label for="workshopTestLevel">ΔΟΚΙΜΗ ΗΡΩΑ</label><select id="workshopTestLevel" aria-label="Επίπεδο ήρωα για δοκιμή"></select><button id="workshopTestStart" type="button">ΠΑΙΞΕ ΔΟΚΙΜΗ</button></div></footer>
     </div>
   </section>
   <section id="mountControls" aria-label="Όχημα" hidden>
-    <button id="mountToggle" type="button">ΕΠΙΒΙΒΑΣΗ · C</button>
-    <button id="mountWorkshopButton" type="button">ΕΡΓΑΣΤΗΡΙΟ</button>
+    <button id="mountToggle" type="button" aria-label="Επιβίβαση / αποβίβαση · C"><span class="mount-hud-art" aria-hidden="true"><img id="mountHudImage" data-kind="bicycle" src="./assets/workshop/chassis-bicycle.png" alt="" draggable="false"></span><kbd>C</kbd><span id="mountToggleLabel">ΑΝΕΒΑ</span></button>
+    <button id="mountWorkshopButton" type="button" aria-label="Εργαστήριο · I"><img src="./assets/workshop/workshop.svg" alt="" draggable="false"><kbd>I</kbd><span>WORKSHOP</span></button>
     <small id="mountReadout"></small>
     <div id="mountFlight" hidden><button id="mountUp" type="button">↑ ΠΤΗΣΗ · SPACE</button><button id="mountDown" type="button">↓ ΚΑΘΟΔΟΣ · X</button><button id="mountBoost" type="button">BOOST · SHIFT</button></div>
   </section>
   <script type="importmap">
     {"imports":{"./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3"}}
   </script>
-  <script type="module" src="./game.js?v=20261108-startup1"></script>
+  <script type="module" src="./game.js?v=20261108-workshop1"></script>
 </body>
 </html>

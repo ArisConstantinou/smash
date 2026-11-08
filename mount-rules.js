@@ -52,6 +52,7 @@ export const PLAYER_PARTS=Object.freeze(['head','chest','arms','legs','boots','s
  option('standard','ΒΑΣΙΚΟ','Αναβάθμιση του υπάρχοντος εξοπλισμού.',{hp:2,power:.006}),
  option('reinforced','ΕΝΙΣΧΥΜΕΝΟ','Περισσότερη ζωή και άμυνα.',{hp:i===1?10:5,defence:.008},{wood:4,scrap:5,crystal:0}),
  option('powered','ΕΝΔΥΝΑΜΩΜΕΝΟ','Ισχύς, κίνηση και ενεργός εξοπλισμός.',{power:.018,speed:.012},{wood:3,scrap:6,crystal:2}),
+ option('assault','ΕΦΟΔΟΥ','Βαριά λειτουργική πανοπλία με πρόσθετη ισχύ και προστασία.',{hp:i===1?12:6,power:.012,defence:.006,speed:-.004},{wood:5,scrap:9,crystal:2}),
 ]})));
 const ids=MOUNT_FAMILIES.map(f=>f.id);
 export const familyForLevel=level=>level>=21?'scifi':level>=11?'motorcycle':'bicycle';

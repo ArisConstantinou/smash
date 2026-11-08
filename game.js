@@ -1,8 +1,8 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261108-startup1';
-import {applyPlayerCustomization} from './player-customization.js?v=20261108-mount1';
-import {MountWeapons} from './mount-weapons.js?v=20261108-mount1';
-import {MountRide} from './mount-ride.js?v=20261108-startup1';
-import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261108-mount1';
+import {createMountWorkshop} from './mount-workshop.js?v=20261108-workshop1';
+import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
+import {MountWeapons} from './mount-weapons.js?v=20261108-workshop1';
+import {MountRide} from './mount-ride.js?v=20261108-workshop1';
+import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261108-workshop1';
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
 import {LevelStorm,stormStats} from './level-storm.js?v=20261108-mount1';
@@ -13,15 +13,15 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261108-startup1';
-import {createForgeMenu} from './menu.js?v=20261108-startup1';
+import {createForgeMenu} from './menu.js?v=20261108-workshop1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-mount1';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-mount1';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-workshop1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
-import {createWorld} from './world.js?v=20261108-startup1';
+import {createWorld} from './world.js?v=20261108-workshop1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -40,7 +40,7 @@ import {BeastCombat,BEAST_ATTACKS,distanceToBeam} from './beast-combat.js?v=2026
 import {createGeometryCollision} from './geometry-collision.js?v=20261108-startup1';
 
 const $ = id => document.getElementById(id);
-const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));} catch {}};
+const save = (key,value) => {try {localStorage.setItem(key,JSON.stringify(value));return true;} catch {return false;}};
 const read = (key,fallback) => {try {return JSON.parse(localStorage.getItem(key)) ?? fallback;} catch {return fallback;}};
 const settings = Object.assign({quality:'high',shake:true,volume:0.75,muted:false,throwAutoLock:false,throwMode:'confirm'},read('ironfall.settings',{}));
 settings.volume=Number.isFinite(Number(settings.volume))?clamp(Number(settings.volume),0,1):.75;
@@ -505,7 +505,7 @@ function startGame(startLevel=1,options={}){
 }
 function persistCharacter(){
   if(!gameReady||testRun||phase==='menu'||phase==='settings'&&previousPhase==='menu')return;
-  save('ironfall.character',{character,levels,garage});updateSavedCharacter();
+  const saved=save('ironfall.character',{character,levels,garage});updateSavedCharacter();return saved;
 }
 function updateSavedCharacter(){
   const stored=restoreCharacterProgression(read('ironfall.character',null)?.character),button=$('resumeCharacterButton');
@@ -982,6 +982,7 @@ function mountProjectileBlast(point,damage,radius,direct){
   }
 }
 function initMountWorkshop(){
+  const commitWorkshop=context=>{garage=context.garage;let saved=false;if(context.menu){const stored=read('ironfall.character',null);saved=save('ironfall.character',{character:context.character,levels:stored?.levels||{},garage});updateSavedCharacter();}else{applyStats();saved=persistCharacter();}return !!saved&&!context.test&&JSON.stringify(read('ironfall.character',null)?.garage)===JSON.stringify(garage);};
   mountWorkshop=createMountWorkshop({document,
     getContext(){
       const menu=phase==='menu';if(!menu)return {menu:false,garage,character,materials:character.materials,level,test:testRun,weaponTier:characterStats.weaponTier,actualMountKind:mountRide?.kind,actualMount:mountRide?.snapshot()};
@@ -990,7 +991,7 @@ function initMountWorkshop(){
     },
     onOpen(){workshopPhase=phase;if(phase==='playing')setPhase('paused');else forgeMenu?.setVisible(false);},
     onClose(){if(workshopPhase==='playing'&&phase==='paused')setPhase('playing');else if(phase==='menu')forgeMenu?.setVisible(true);},
-    onChange(context){garage=context.garage;if(context.menu){const stored=read('ironfall.character',null);save('ironfall.character',{character:context.character,levels:stored?.levels||{},garage});updateSavedCharacter();}else{applyStats();persistCharacter();}},
+    onChange:commitWorkshop,onSave:commitWorkshop,
     canModify({kind,slot}){if(mountRide?.active&&(slot==='chassis'||slot==='mobility'))return 'Αποβιβάσου πριν αλλάξεις σασί ή σύστημα πτήσης.';return '';},
     onRepair(context){if(context.repairKind!==mountRide.kind)return {ok:false,reason:'Επίλεξε το ενεργό όχημα.'};const result=mountRide.repair(context.materials,{test:context.test});if(result.ok)persistCharacter();return result;},
     onTestStart:n=>startGame(n,{test:true,city:getLevelCity(Math.min(n,15))}),
@@ -1020,7 +1021,7 @@ function syncMountHud(){
   const panel=$('mountControls');if(!panel)return;panel.hidden=phase!=='playing';
   const v=mountRide?.snapshot();if(!v)return;
   panel.classList.toggle('hover-flight',v.active&&v.hover);
-  $('mountToggle').textContent=(v.active?'ΑΠΟΒΙΒΑΣΗ':'ΕΠΙΒΙΒΑΣΗ')+' · C';
+  $('mountToggleLabel').textContent=v.active?'ΚΑΤΕΒΑ':'ΑΝΕΒΑ';$('mountToggle').setAttribute('aria-pressed',String(v.active));const mountImage=$('mountHudImage');if(mountImage.dataset.kind!==v.kind){mountImage.src='./assets/workshop/chassis-'+v.kind+'.png';mountImage.dataset.kind=v.kind;}
   $('mountReadout').textContent=(v.kind==='bicycle'?'ΠΟΔΗΛΑΤΟ':v.kind==='motorcycle'?'ΜΟΤΟΣΙΚΛΕΤΑ':'SCI-FI')+' · '+v.hp+'/'+v.maxHp+' HP · '+v.energy+'/'+v.maxEnergy+' ⚡'+(v.hover?' · '+v.altitude+' m':'');
   $('mountFlight').hidden=!v.active||!v.hover;
   $('dashName').textContent=v.active?'BOOST':'ΑΠΟΦΥΓΗ';
@@ -2663,11 +2664,12 @@ function initInput(){
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
   updateSoundButtons();
   window.addEventListener('keydown',e=>{
-    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyQ','KeyU','KeyE','KeyC','KeyX','ControlLeft'];
+    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyQ','KeyU','KeyE','KeyC','KeyI','KeyX','ControlLeft'];
     const focused=document.activeElement,editable=['INPUT','SELECT','TEXTAREA'].includes(focused?.tagName)||focused?.isContentEditable;
     const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
     if(phase==='playing'&&handled.includes(e.code)&&!editable&&!nativeActivation)e.preventDefault();
     if(e.code==='Escape'&&!e.repeat){if(phase==='menu'&&forgeMenu?.closePanels())return;if(phase==='playing'&&(touchThrowAim||touchThrowQueued)){cancelTouchThrow();audio.play('targetCancel');updateHUD();}else if(phase==='playing'&&upgradePanelOpen)toggleUpgradePanel(false);else if(phase==='settings'){setPhase(previousPhase);}else pauseGame();return;}
+    if(e.code==='KeyI'&&!e.repeat&&!editable&&gameReady&&['menu','playing','paused'].includes(phase)){e.preventDefault();mountWorkshop.open();return;}
     if(phase==='menu'&&e.code==='Enter'&&!e.repeat&&!$('startButton').disabled&&!forgeMenu?.panelOpen&&!editable&&!nativeActivation){startGame();return;}
     if(phase==='playing'&&upgradePanelOpen&&upgradeTab==='powers'&&['Digit1','Digit2','Digit3'].includes(e.code)){if(!e.repeat)$('upgradeChoices').children[Number(e.code.slice(-1))-1]?.click();return;}
     if(phase!=='playing'||editable||nativeActivation)return;

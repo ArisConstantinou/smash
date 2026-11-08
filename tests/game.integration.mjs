@@ -86,6 +86,8 @@ class Element {
     this.events = new Map(); this.width = 140; this.height = 140; this.capturedPointers = new Set();
   }
   appendChild(child) { child.parentNode = this; this.children.push(child); return child; }
+  append(...children) { children.forEach(child=>this.appendChild(child)); }
+  prepend(...children) { children.forEach(child=>{child.parentNode=this;});this.children.unshift(...children); }
   replaceChildren(...children) { this.children.forEach(c => { c.parentNode = null; }); this.children = []; children.forEach(c => this.appendChild(c)); }
   get firstChild() { return this.children[0] || null; }
   remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(c => c !== this); this.parentNode = null; }

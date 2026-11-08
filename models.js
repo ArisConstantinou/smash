@@ -1159,6 +1159,7 @@ export function makeWarrior() {
     getSpinRadius, getHeadContactRadius, getHeadForwardExtent, getShaftContactRadius, getHeadHalfExtents, getHeadFloorY,
     getBarbedContactSegment, getBarbedContactRadius,
     weaponRest, weaponRestPosition, setEquipment, getEquipmentMaterials, getWeaponMaterials,
+    invalidateEquipmentBounds(){contactCache.tier=-1;localBoundsCache.key='';localMatrices.clear();},
     stance: 0, shieldStored: false, weaponHeld: true, reachScale: 1,
     hammerRest: { x: 0, y: 0, z: 0 },
     width: 1.1, depth: .7, height: 1.99, color: P.blue,
