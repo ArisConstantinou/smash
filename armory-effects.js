@@ -8,7 +8,7 @@ export class ArmoryEffects{
   const origin={x:point?.x??target.x,y:point?.y??(target.y||0)+.8,z:point?.z??target.z};
   if(profile.core==='fire'&&!target.dead&&!target.exploding){
    if(!this.burning.has(target)&&this.burning.size>=64)this.burning.delete(this.burning.keys().next().value);
-   const previous=this.burning.get(target);this.burning.set(target,{ticks:6,clock:.4,damage:Math.max(previous?.damage||0,Math.max(1,amount*(.025+rank*.008)*efficiency))});
+   const previous=this.burning.get(target);this.burning.set(target,{ticks:6,clock:previous?.clock??.4,damage:Math.max(previous?.damage||0,Math.max(1,amount*(.025+rank*.008)*efficiency))});
   }else if(profile.core==='frost'&&!target.dead){
    const previous=target.slowTime>0?(target.slowFactor||1):1;target.slowTime=Math.max(target.slowTime||0,1.1+rank*.3);target.slowFactor=Math.min(previous,Math.max(.35,.76-rank*.06));
   }else if(profile.core==='impact'&&!target.dead){target.stagger=Math.max(target.stagger||0,.15+rank*.055);}

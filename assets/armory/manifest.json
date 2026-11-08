@@ -6,7 +6,7 @@
   "rank": 1,
   "shapeCell": 63,
   "inputs": {
-    "armory-models.js": "7d3f3a0eb40a3b69082e38ce7ef9868e243dacb2a98f85a7034b1907b6452bf5",
+    "armory-models.js": "2e08d4cc2317f03e60f28086b868e813c5c450b2ff5009fb1ef2796c52b4fddd",
     "armory-geometry.js": "b3541b313906f67d1f87cd23331e9aedd37b8446ab58b8acb81940b661d89f5f",
     "armory-materials.js": "1f3e5d2089de4961bc3fa8fb4345885606f82316f168bddedaef6aac91888a1c",
     "armory-rules.js": "e8a3ad040db489c55a43b74a261c7352d986d42d3261ab5fa7e41b11d01477d4",
@@ -30,7 +30,7 @@
     "s14.png": "e4019c27ec9c6786e647a791fbf2728bfb78e89b434a530e83c4a0631c5b8a93",
     "s15.png": "f58c7dea1c3dda45bc453d8ab7491063817d9b7533b8ab3f2ef6a624a9aa8b4c",
     "s16.png": "4a88dcc227bb90661fc4efd7514ac787eae6a710ef219e592afa855f32cdef42",
-    "s17.png": "a6971fec07eb9ef43e49ecb9e67c4a43e08556a4d996f325073fe66daff7717f",
+    "s17.png": "02b2b7f16bcf2f91b2843b9ac2f60aba91ad6f767958a29647b1e34af5d15d19",
     "s18.png": "3ddbb3bb83fdd52b71a866ff0e324d74da590ba67606c9612e4e762eaccc8af3"
   }
 }

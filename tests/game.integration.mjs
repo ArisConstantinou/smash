@@ -1,3 +1,4 @@
+import {execFileSync} from 'node:child_process';
 // Run with: node --experimental-vm-modules --test tests/game.integration.mjs
 // This exercises the real game module, geometry, models, terrain, combat and UI
 // handlers. Only browser surfaces and WebGL drawing are replaced; it does not
@@ -250,7 +251,7 @@ const imports = new Map([
   ['./weapon-rest.js', synthetic(weaponRest, 'real-weapon-rest')],
   ['./audio.js', synthetic({ GameAudio: StubAudio }, 'audio-test-surface')],
 ]);
-const original = await readFile(new URL('../game.js', import.meta.url), 'utf8');
+const original = process.env.SMASH_TEST_GAME_REF?execFileSync('git',['show',process.env.SMASH_TEST_GAME_REF+':game.js'],{cwd:new URL('../',import.meta.url),encoding:'utf8'}):await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
   armoryImpact, catalogHeadHits, actualEquipmentRay, shieldSurface, get armoryEffects(){return armoryEffects;}, get armoryWeaponStats(){return armoryWeaponStats;}, get armoryShieldStats(){return armoryShieldStats;}, get mountRide(){return mountRide;},get garage(){return garage;},get mountWeapons(){return mountWeapons;},toggleMount,
@@ -4301,4 +4302,10 @@ test('tower shield has a real clear viewport; equipped shield blocks produce cou
 test('weapon core adapter burns real enemy HP, chains real HP through LOS and clears on round reset',()=>{
  arena(30);const a=stationaryEnemy('robot',0,2),b=stationaryEnemy('robot',1,2);for(const e of [a,b])e.hp=e.maxHp=1000;
  api.armoryEffects.hit(a,{core:'fire',coreRank:2},100,{x:0,y:1,z:2});for(let i=0;i<6;i++)api.armoryEffects.update(.4);assert.ok(a.hp<1000);assert.equal(api.armoryEffects.burning.size,0);const hp=b.hp;api.armoryEffects.hit(a,{core:'arc',coreRank:1},100,{x:0,y:1,z:2});assert.ok(b.hp<hp);api.armoryEffects.hit(a,{core:'fire',coreRank:2},100);api.resetWorld();assert.equal(api.armoryEffects.burning.size,0);
+});
+
+
+test('native ARC shield damages its lone attacker and IMPACT shield pushes without an extra counter part',()=>{
+ for(const core of ['arc','impact']){arena(30);api.garage.armory.shield='s16';const p=api.garage.armory.items.s16.parts;p.core.selected=core;p.core.owned[core]=1;api.applyStats();api.poseHero(1);const e=stationaryEnemy('robot',0,2);e.hp=e.maxHp=1000;api.player.invincible=0;api.hurtPlayer(100,0,-1,true,{attacker:e,shieldHit:true,from:{x:0,y:1,z:2}});assert.ok(e.hp<1000,'A lone attacker receives real '+core+' shield response');if(core==='impact')assert.ok(e.vz>0&&e.stagger>0,'Impact has actual outward velocity');}
+ api.garage.armory.shield='auto';api.applyStats();
 });

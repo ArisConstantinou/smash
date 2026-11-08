@@ -1501,7 +1501,14 @@ function shieldSurface(from,to){
 function shieldRespond(attacker,amount,point){
  if(!attacker||attacker.dead)return;const dir=normalize(attacker.x-player.x,attacker.z-player.z);
  if(armoryShieldStats.counter>0){const damage=Math.max(1,amount*armoryShieldStats.counter);if(attacker===boss)hitBoss(damage,dir,1,{weapon:'shield',combo:false});else hitEnemy(attacker,damage,dir,1,0,point,{weapon:'shield',combo:false});}
- armoryEffects.hit(attacker,armoryShieldStats,amount,point);
+ const core=armoryShieldStats.core,rank=armoryShieldStats.coreRank||1;
+ if(core==='arc'||core==='impact'){
+  const damage=Math.max(1,amount*(core==='arc'?.12+rank*.03:.08*rank)*(armoryShieldStats.corePower||1)),force=core==='impact'?2+rank:0;
+  const response={weapon:'shield-core',combo:false,grounded:true,preserveVelocity:core!=='impact',interrupt:core==='impact',stagger:core==='impact'?.15+rank*.055:0};
+  if(attacker===boss)hitBoss(damage,dir,force,response);else hitEnemy(attacker,damage,dir,force,0,point,response);
+  if(core==='arc'){const model=hero.userData.armoryShieldModel,origin=model.localToWorld(new THREE.Vector3(0,.025,.30));armoryEffects.visual('arc',origin,{x:attacker.x,y:(attacker.y||0)+.8,z:attacker.z});}
+ }
+ armoryEffects.hit(attacker,armoryShieldStats,amount,{x:attacker.x,y:(attacker.y||0)+.8,z:attacker.z});
 }
 function hurtPlayer(damage,dx=0,dz=0,blockable=true,contact={}){
   if(phase!=='playing'||player.invincible>0||dashTime>0||(player.y>1.6&&blockable&&!mountRide?.active))return;
