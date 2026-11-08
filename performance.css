@@ -1,5 +1,5 @@
-/* Reserve a thin top strip instead of covering health/actions on phones. */
-.performance-hud{position:fixed;z-index:9;top:max(4px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));padding:4px 8px;border:1px solid #638f83;border-radius:4px;background:#10252bed;color:#b8e8c4;font:600 12px/1.25 monospace;font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap}
-.performance-hud[data-slow="true"]{color:#ffc27d;border-color:#cf905b}
-body[data-state="playing"] .hud-top{top:max(34px,calc(env(safe-area-inset-top) + 30px))}
-@media(max-width:540px){.performance-hud{padding:3px 6px}}
+/* The real frame counter belongs to the map, without a separate top strip. */
+.minimap-status{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}
+.minimap-status .map-heading{flex:1;margin:0;gap:4px}
+.performance-hud{position:static;padding:0;border:0;background:none;color:#b8e8c4;font:600 12px/1.25 monospace;font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap}
+.performance-hud[data-slow="true"]{color:#ffc27d}

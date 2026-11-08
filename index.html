@@ -7,14 +7,13 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261108-colossus1">
+  <link rel="stylesheet" href="./style.css?v=20261108-hud1">
   <link rel="stylesheet" href="./controls.css?v=20261107-aim11">
   <link rel="stylesheet" href="./menu.css?v=20261107-forge9b">
   <link rel="stylesheet" href="./level-picker.css?v=20261107-cities10">
-  <link rel="stylesheet" href="./performance.css?v=20261107-perf14-fix2">
+  <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
 </head>
 <body>
-  <div id="performanceHud" class="performance-hud" aria-label="Μετρητής απόδοσης" hidden>— FPS · WebGPU</div>
   <img id="throwArrowImage" src="./assets/ui/throw-arrow.svg?v=aim13" width="256" height="512" alt="" aria-hidden="true" hidden>
   <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <defs>
@@ -261,23 +260,24 @@
         <div class="health-track"><div id="healthFill" style="width:100%"></div><div class="health-ticks"></div></div>
       </section>
 
-      <section class="goal-panel" aria-label="Πρόοδος περιοχής από καταστροφή και εξουδετερώσεις">
-        <div class="goal-heading"><span>ΠΡΟΟΔΟΣ</span><div><strong id="goalValue">0%</strong><span class="goal-target"> / 60%</span></div></div>
+      <section class="goal-panel" aria-label="Συνολική καταστροφή από κτίρια και εξουδετερώσεις εχθρών">
+        <div class="goal-heading"><span>ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ</span><div><strong id="goalValue">0%</strong><span class="goal-target"> / 60%</span></div></div>
         <div class="goal-track"><div id="goalFill" style="width:0%"></div><span class="goal-notch"></span></div>
         <div class="goal-breakdown"><span>ΚΤΙΡΙΑ <b id="goalDestruction">0%</b></span><span>ΕΧΘΡΟΙ <b id="goalEnemies">0%</b></span></div>
         <p id="objectiveText">Κτίρια και εχθροί μαζί στο 60% · κάθε εξουδετέρωση +1%.</p>
       </section>
 
-      <section class="run-status" aria-label="Κύμα εχθρών και στατιστικά">
+      <section class="run-status" aria-label="Κύμα και εναπομείναντες εχθροί">
         <div class="run-status-top"><span>ΚΥΜΑ <b id="roundValue">01</b></span><time id="timeValue">00:00</time></div>
         <div class="wave-progress"><span id="waveStatus">ΑΠΟΜΕΝΟΥΝ</span><strong id="waveEnemiesValue">10</strong><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-skull"/></svg></div>
         <div class="run-counters"><div><svg><use href="#i-skull"/></svg><strong id="killsValue">0</strong><small>ΝΙΚΗΜΕΝΟΙ</small></div><div><svg><use href="#i-gem"/></svg><strong id="relicValue">0</strong><small>ΕΥΡΗΜΑΤΑ</small></div></div>
-        <div class="hud-buttons">
-          <button id="soundButton" class="icon-button" type="button" aria-pressed="false" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Ήχος"><svg viewBox="0 0 48 48" aria-hidden="true"><use id="soundIcon" href="#a-sound-on"/></svg></button>
-          <button id="settingsButton" class="icon-button" type="button" aria-label="Ρυθμίσεις" title="Ρυθμίσεις"><svg><use href="#i-settings"/></svg></button>
-          <button id="pauseButton" class="icon-button" type="button" aria-label="Παύση παιχνιδιού" title="Παύση · Esc" data-desktop-label="Παύση παιχνιδιού" data-touch-label="Παύση παιχνιδιού"><svg><use href="#i-pause"/></svg></button>
-        </div>
+
       </section>
+      <div class="hud-buttons">
+        <button id="soundButton" class="icon-button" type="button" aria-pressed="false" aria-label="Ήχος ενεργός — πάτησε για σίγαση" title="Ήχος"><svg viewBox="0 0 48 48" aria-hidden="true"><use id="soundIcon" href="#a-sound-on"/></svg></button>
+        <button id="settingsButton" class="icon-button" type="button" aria-label="Ρυθμίσεις" title="Ρυθμίσεις"><svg><use href="#i-settings"/></svg></button>
+        <button id="pauseButton" class="icon-button" type="button" aria-label="Παύση παιχνιδιού" title="Παύση · Esc" data-desktop-label="Παύση παιχνιδιού" data-touch-label="Παύση παιχνιδιού"><svg><use href="#i-pause"/></svg></button>
+      </div>
     </header>
 
     <section class="upgrade-dock" aria-label="Αναβαθμίσεις πολεμιστή">
@@ -336,7 +336,10 @@
     </div>
 
     <aside class="minimap-panel" aria-label="Χάρτης περιοχής">
-      <div class="map-heading"><span>ΤΟΜΕΑΣ <b id="sectorValue">01</b></span><span class="north-mark">N ↑</span></div>
+      <div class="minimap-status">
+        <div id="performanceHud" class="performance-hud" aria-label="Καρέ ανά δευτερόλεπτο" hidden>— FPS</div>
+        <div class="map-heading"><span>ΤΟΜΕΑΣ <b id="sectorValue">01</b></span><span class="north-mark">N ↑</span></div>
+      </div>
       <canvas id="minimap" width="140" height="140" aria-label="Χάρτης με τον παίκτη και τους εχθρούς"></canvas>
       <div class="map-legend"><span><i class="player-dot"></i> ΕΣΥ</span><span><i class="enemy-dot"></i> ΟΡΔΗ</span></div>
     </aside>
@@ -476,6 +479,6 @@
   <script type="importmap">
     {"imports":{"./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3"}}
   </script>
-  <script type="module" src="./game.js?v=20261108-colossus1"></script>
+  <script type="module" src="./game.js?v=20261108-hud1"></script>
 </body>
 </html>

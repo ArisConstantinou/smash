@@ -56,8 +56,8 @@ try{
    });
    await page.evaluate(()=>{const d=__perf14.renderer.backend.device;window.__gpuErrors=[];d.addEventListener('uncapturederror',e=>window.__gpuErrors.push(e.error.message));});
    await page.locator('#startButton').click();
-   await page.waitForFunction(()=>document.querySelector('#performanceHud').textContent.includes('FPS · WebGPU · WASM'),null,{timeout:30000});
-   const box=await page.locator('#performanceHud').boundingBox();assert.ok(box.x>size.width*.4&&box.y<35&&box.x+box.width<=size.width);
+   await page.waitForFunction(()=>(/^\d+ FPS$/.test(document.querySelector('#performanceHud').textContent)&&document.querySelector('#performanceHud').dataset.backend==='WebGPU'&&document.querySelector('#performanceHud').dataset.wasm==='true'),null,{timeout:30000});
+   const box=await page.locator('#performanceHud').boundingBox(),mapBox=await page.locator('.minimap-panel').boundingBox();assert.ok(box.x>=mapBox.x&&box.y>=mapBox.y&&box.x+box.width<=mapBox.x+mapBox.width&&box.y+box.height<=mapBox.y+mapBox.height);
    assert.ok(await page.locator('#performanceHud').evaluate(e=>parseFloat(getComputedStyle(e).fontSize)>=12),'FPS labels must remain readable on phones');
    await assertRendering(page);await page.screenshot({path:resolve(out,size.name+'-fps.png')});
    const measured=[];
