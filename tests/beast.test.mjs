@@ -5,11 +5,13 @@ import {makeBeastMech} from '../beast-mech.js';
 import {BeastCombat,BEAST_ATTACKS,distanceToBeam} from '../beast-combat.js';
 import {createGeometryCollision} from '../geometry-collision.js';
 import {beastObstacleContacts} from '../beast-obstacles.js';
+import {BEAST_HEIGHT,beastHealth,beastDamageScale,beastBehind,chooseBeastAttack,beastPortalLocation} from '../beast-rules.js';
+import {BeastPortal} from '../beast-portal.js';
 
-test('approved quadruped has skyscraper scale, four rigid articulated legs and separate weapon mounts',()=>{
+test('resized quadruped has the approved 19m scale, four rigid articulated legs and separate weapon mounts',()=>{
  const mesh=makeBeastMech(),u=mesh.userData;
  const height=new THREE.Box3().setFromObject(mesh,true).getSize(new THREE.Vector3()).y;
- assert.ok(Math.abs(height-32.13)<1e-5);assert.equal(u.legs.length,4);
+ assert.ok(Math.abs(height-BEAST_HEIGHT)<1e-5);assert.equal(u.legs.length,4);
  for(const l of u.legs)assert.ok(Math.abs(new THREE.Box3().setFromObject(l.foot,true).min.y)<1e-6);
  assert.equal(u.missileMounts.length,24);assert.equal(u.rocketMounts.length,12);
  let draws=0,triangles=0;mesh.traverse(n=>{if(n.isMesh){draws++;triangles+=n.geometry.attributes.position.count/3;}});
@@ -22,6 +24,7 @@ test('approved quadruped has skyscraper scale, four rigid articulated legs and s
    assert.ok(l.target.y>=l.rest.y);
   }
  }
+ u.pose({roar:1});assert.ok(u.jaw.rotation.x>0,'Forward jaw opens downwards');assert.ok(u.head.rotation.x<0,'The muzzle rises during the roar');
  u.dispose();
 });
 
@@ -76,4 +79,40 @@ test('removed fracture pieces and genuine gaps cease blocking the mech immediate
  assert.equal(beastObstacleContacts(mech,[building]).length,0,'A replacement render index removes the old obstruction');
  mech.position.x=5;assert.equal(beastObstacleContacts(mech,[building]).length,1,'The surviving solid still blocks');
  source.dispose();geometry.dispose();mech.geometry.dispose();material.dispose();
+});
+
+
+test('rear pressure selects a warned hind-leg attack, with cooldown and no chest shot through its own body',()=>{
+ const mesh=makeBeastMech(),b={mesh,x:0,z:0,d:25,attack:0,rearCooldown:0},p={x:0,z:-12};
+ assert.ok(beastBehind(b,p));assert.equal(chooseBeastAttack(b,p),'rearStomp');assert.ok(b.rearCooldown>0);
+ for(let i=0;i<8;i++)assert.equal(chooseBeastAttack(b,p),'missiles');
+ const scene=new THREE.Scene(),blasts=[],combat=new BeastCombat(scene,{blast:(point,r)=>blasts.push({point:point.clone(),r})});
+ const a=combat.start('rearStomp',b,{...p,y:0});assert.equal(a.feet.length,2);assert.ok(a.feet.every(f=>f.z<0));
+ combat.update(1,b,p);assert.equal(blasts.length,0);assert.equal(combat.markerCount,2);
+ combat.update(.36,b,p);assert.equal(blasts.length,2);assert.ok(blasts.every(f=>f.point.z<0));
+ combat.dispose();mesh.userData.dispose();
+});
+test('boss durability follows fixed level and sector, with honest entry protection and recovery openings',()=>{
+ assert.ok(beastHealth(5)>9000);assert.ok(beastHealth(30)>beastHealth(5)*2);
+ assert.ok(beastHealth(5,2)>beastHealth(5,1));assert.ok(Number.isFinite(beastHealth(NaN,Infinity,NaN)));
+ assert.equal(beastDamageScale('enter'),0);assert.ok(beastDamageScale('laser')<1);assert.ok(beastDamageScale('recover')>1);
+});
+test('portal locations use road intersections and leave a bounded grounded exit away from the player',()=>{
+ for(const p of [{x:0,z:33},{x:115,z:115},{x:-115,z:0},{x:0,z:-115}]){
+  const v=beastPortalLocation(p,25);assert.ok(Math.abs(v.x/22-Math.round(v.x/22))<1e-8);assert.ok(Math.abs(v.z/22-Math.round(v.z/22))<1e-8);
+  assert.ok(Math.hypot(v.end.x-p.x,v.end.z-p.z)>=16);assert.ok(Math.max(Math.abs(v.end.x),Math.abs(v.end.z))<101);
+ }
+});
+test('portal has bounded reusable geometry, resets after reuse and disposes its scene ownership',()=>{
+ const scene=new THREE.Scene(),portal=new BeastPortal(scene),positions=portal.arcs.geometry.attributes.position.array;
+ for(let j=0;j<5;j++){portal.open({x:0,z:22,yaw:0},23,22);for(let i=0;i<100;i++){const amount=(i+1)/100;portal.update(.05,amount);assert.ok(Math.abs(portal.root.position.y-11*amount-.06)<1e-8,'The opening stays anchored to the road');}assert.strictEqual(portal.arcs.geometry.attributes.position.array,positions);portal.reset();assert.equal(portal.root.visible,false);assert.equal(portal.ground.visible,false);}
+ portal.dispose();assert.equal(scene.children.length,0);
+});
+
+test('missile volley covers the locked player position instead of leaving an accidental safe centre',()=>{
+ const scene=new THREE.Scene(),mesh=makeBeastMech(),blasts=[],player={x:0,y:0,z:-14};
+ const combat=new BeastCombat(scene,{blast:(p,r)=>blasts.push({p:p.clone(),r})});combat.start('missiles',{mesh},player);
+ for(let i=0;i<500;i++)combat.update(.01,{mesh},player);
+ assert.equal(blasts.length,6);assert.ok(blasts.some(b=>Math.hypot(b.p.x-player.x,b.p.z-player.z)<b.r));
+ combat.dispose();mesh.userData.dispose();
 });

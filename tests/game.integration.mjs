@@ -12,6 +12,9 @@ import * as models from '../models.js';
 import * as beastObstacles from '../beast-obstacles.js';
 import * as beastMech from '../beast-mech.js';
 import * as beastCombat from '../beast-combat.js';
+import * as beastRules from '../beast-rules.js';
+import * as beastPortalModule from '../beast-portal.js';
+import * as beastReveal from '../beast-reveal.js';
 import * as geometryCollision from '../geometry-collision.js';
 import * as world from '../world.js';
 import * as core from '../core.js';
@@ -228,6 +231,9 @@ const imports = new Map([
   ['./beast-obstacles.js', synthetic(beastObstacles, 'real-beast-obstacles')],
   ['./beast-mech.js', synthetic(beastMech, 'real-beast-mech')],
   ['./beast-combat.js', synthetic(beastCombat, 'real-beast-combat')],
+  ['./beast-rules.js', synthetic(beastRules, 'real-beast-rules')],
+  ['./beast-portal.js', synthetic(beastPortalModule, 'real-beast-portal')],
+  ['./beast-reveal.js', synthetic(beastReveal, 'real-beast-reveal')],
   ['./geometry-collision.js', synthetic(geometryCollision, 'real-beast-collision')],
   ['./world.js', synthetic(world, 'real-world')],
   ['./core.js', synthetic(core, 'real-core')],
@@ -282,7 +288,7 @@ export const __integration = {
   get hammerLightning(){return hammerLightning;}, get hammerAura(){return hammerAura;},
   get hpEchoes(){return hpEchoes;}, get numbers(){return numbers;},
   buildingHudAnchor, recordCombatContact, updateComboDisplay, updateBattleVisibility, startGame, resetWorld, frame, pauseGame, setPhase, updatePlayer, updateEnemies,
-  moveBeast, beastBlast, beastBeamHit, get beastCombat(){return beastCombat;}, updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
+  moveBeast, beastBlast, beastBeamHit, get beastCollision(){return beastCollision;}, get beastPortal(){return beastPortal;}, get beastCombat(){return beastCombat;}, updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
   drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
@@ -2627,7 +2633,7 @@ test('60% destruction summons one boss and continuation retains upgrades and the
   const boss = api.boss;
   api.checkGoal(); assert.equal(api.boss, boss);
   boss.state = 'walk'; boss.y = 0; boss.hp = 1;
-  api.hitBoss(1, { x: 0, z: 1 }, 5);
+  api.hitBoss(2, { x: 0, z: 1 }, 5); // Lethal fixture hit includes the new walk armour.
   assert.equal(boss.dead, true); assert.equal(api.phase, 'victory');
   assert.equal(elements.get('continueButton').hidden, false);
   const score = api.score, district = api.world, sector = api.sector;
@@ -4308,4 +4314,29 @@ test('weapon core adapter burns real enemy HP, chains real HP through LOS and cl
 test('native ARC shield damages its lone attacker and IMPACT shield pushes without an extra counter part',()=>{
  for(const core of ['arc','impact']){arena(30);api.garage.armory.shield='s16';const p=api.garage.armory.items.s16.parts;p.core.selected=core;p.core.owned[core]=1;api.applyStats();api.poseHero(1);const e=stationaryEnemy('robot',0,2);e.hp=e.maxHp=1000;api.player.invincible=0;api.hurtPlayer(100,0,-1,true,{attacker:e,shieldHit:true,from:{x:0,y:1,z:2}});assert.ok(e.hp<1000,'A lone attacker receives real '+core+' shield response');if(core==='impact')assert.ok(e.vz>0&&e.stagger>0,'Impact has actual outward velocity');}
  api.garage.armory.shield='auto';api.applyStats();
+});
+
+
+test('boss portal replaces sky drop, stays on road level, protects entry and completes with its feet grounded',()=>{
+ arena(5);api.player.x=0;api.player.z=33;api.spawnBoss();const b=api.boss,initial={x:b.x,z:b.z};
+ assert.equal(b.y,0,'Boss must emerge on the road, never fall from the sky');assert.ok(api.beastPortal.root.visible);
+ const hiddenFoot=b.mesh.userData.feet()[0];assert.equal(api.beastCollision.clearBody(hiddenFoot.x,hiddenFoot.z,0,.44,1.88),true,'Hidden material behind the portal must not become an invisible wall');
+ const hp=b.hp;api.hitBoss(100000,{x:0,z:1},5);assert.equal(b.hp,hp,'Cannot skip the arrival with free damage');
+ for(let i=0;i<480;i++){api.updateBoss(1/60);assert.equal(b.y,0);}
+ assert.notEqual(b.state,'enter');assert.ok(Math.hypot(b.x-initial.x,b.z-initial.z)>b.d*.8);assert.equal(api.beastPortal.root.visible,false);
+ const feet=b.mesh.userData.feet();assert.ok(feet.every(p=>p.y<2));assert.equal(b.entryPlane.constant,1e6);
+});
+test('standing behind the boss triggers a visible warning then actual rear damage, while leaving it remains a dodge',()=>{
+ arena(5,{test:false});api.spawnBoss();const b=api.boss;Object.assign(b,{x:0,z:0,y:0,state:'walk',timer:0});if(b.entryPlane)b.entryPlane.constant=1e6;b.mesh.position.set(0,b.mesh.userData.groundOffset,0);b.mesh.rotation.y=0;b.mesh.userData.pose();
+ const foot=b.mesh.userData.feet()[2];api.player.x=foot.x;api.player.z=foot.z-1;api.player.invincible=0;
+ const hp=api.player.hp;api.updateBoss(.01);assert.equal(api.beastCombat.attack.kind,'rearStomp');assert.equal(api.player.hp,hp);assert.equal(api.beastCombat.markerCount,2);
+ for(let i=0;i<90;i++)api.updateBoss(1/60);assert.ok(api.player.hp<hp,'Rear camper receives real damage');
+ api.beastCombat.reset();b.state='walk';b.timer=0;b.rearCooldown=0;api.player.invincible=0;api.updateBoss(.01);assert.equal(api.beastCombat.attack.kind,'rearStomp');
+ const after=api.player.hp;api.player.x=60;api.player.z=60;for(let i=0;i<90;i++)api.updateBoss(1/60);assert.equal(api.player.hp,after,'Leaving the marked rear area must still work');
+});
+test('boss survives a former full-health burst and exposes a meaningful recovery damage window',()=>{
+ arena(5);api.spawnBoss();const b=api.boss;b.state='walk';const maximum=b.hp;
+ api.hitBoss(3000,{x:0,z:1},5);assert.equal(b.dead,false);assert.equal(maximum-b.hp,2400);
+ const armored=b.hp;b.state='recover';api.hitBoss(100,{x:0,z:1},5);assert.equal(armored-b.hp,125);
+ arena(20);api.spawnBoss();assert.ok(api.boss.maxHp>maximum);
 });

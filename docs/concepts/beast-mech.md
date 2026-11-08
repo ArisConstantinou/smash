@@ -1,5 +1,10 @@
 # Approved quadruped Colossus
 
+2026-11-09 revision: the user approved resizing the existing rig to **19m**,
+roughly 12% above the 16.9m reference office, and entry through a standing space
+rift anchored to the road. The 32.13m dimensions below document the original
+approved version. Current behaviour and verification: [road-rift encounter](../beast-portal-verification.md).
+
 User-approved concept: [beast-mech-concept.png](beast-mech-concept.png).
 Approval: call_fe01828a7fcb4990b4726ae88016798f, 2026-11-08.
 
