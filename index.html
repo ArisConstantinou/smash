@@ -7,7 +7,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261109-beast1">
+  <link rel="stylesheet" href="./style.css?v=20261109-gauntlet1">
   <link rel="stylesheet" href="./controls.css?v=20261107-aim11">
   <link rel="stylesheet" href="./menu.css?v=20261108-mount1">
   <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
@@ -262,10 +262,10 @@
       </section>
 
       <section class="goal-panel" aria-label="Συνολική καταστροφή από κτίρια και εξουδετερώσεις εχθρών">
-        <div class="goal-heading"><span>ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ</span><div><strong id="goalValue">0%</strong><span class="goal-target"> / 60%</span></div></div>
+        <div class="goal-heading"><span>ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ</span><div><strong id="goalValue">0%</strong><span class="goal-target" id="goalTarget"> / 45%</span></div></div>
         <div class="goal-track"><div id="goalFill" style="width:0%"></div><span class="goal-notch"></span></div>
         <div class="goal-breakdown"><span>ΚΤΙΡΙΑ <b id="goalDestruction">0%</b></span><span>ΕΧΘΡΟΙ <b id="goalEnemies">0%</b></span></div>
-        <p id="objectiveText">Κτίρια και εχθροί μαζί στο 60% · κάθε εξουδετέρωση +1%.</p>
+        <p id="objectiveText">45% · ΠΟΛΙΟΡΚΗΤΗΣ</p>
       </section>
 
       <section class="run-status" aria-label="Κύμα και εναπομείναντες εχθροί">
@@ -333,16 +333,16 @@
     <div id="bossHud" class="boss-panel" hidden>
       <div class="boss-heading"><svg><use href="#i-skull"/></svg><span id="bossStatus">ΚΟΛΟΣΣΟΣ · ΘΩΡΑΚΙΣΗ</span><strong id="bossValue">100%</strong></div>
       <div class="boss-track"><div id="bossFill" style="width:100%"></div></div>
-      <span class="boss-subtitle">Ο ΦΥΛΑΚΑΣ ΤΟΥ ΧΥΤΗΡΙΟΥ</span>
+      <span class="boss-subtitle" id="bossSubtitle">Ο ΦΥΛΑΚΑΣ ΤΟΥ ΧΥΤΗΡΙΟΥ</span>
     </div>
 
     <aside class="minimap-panel" aria-label="Χάρτης περιοχής">
       <div class="minimap-status">
         <div id="performanceHud" class="performance-hud" aria-label="Καρέ ανά δευτερόλεπτο" hidden>— FPS</div>
-        <div class="map-heading"><span>ΤΟΜΕΑΣ <b id="sectorValue">01</b></span><span class="north-mark">N ↑</span></div>
+        <div class="map-heading"><span>ΤΟΜΕΑΣ <b id="sectorValue">01</b></span></div>
       </div>
       <canvas id="minimap" width="140" height="140" aria-label="Χάρτης με τον παίκτη και τους εχθρούς"></canvas>
-      <div class="map-legend"><span><i class="player-dot"></i> ΕΣΥ</span><span><i class="enemy-dot"></i> ΟΡΔΗ</span></div>
+      <div class="map-legend"><span><i class="player-dot"></i> Εσύ</span><span><i class="enemy-dot"></i> Εχθρός</span><span><i class="miniboss-dot"></i> Mini</span><span><i class="boss-dot"></i> Boss</span></div>
     </aside>
 
     <div id="throwAimStatus" class="throw-aim-status" role="status" aria-live="polite" hidden></div>
@@ -504,6 +504,6 @@
   <script type="importmap">
     {"imports":{"./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3"}}
   </script>
-  <script type="module" src="./game.js?v=20261109-beast1"></script>
+  <script type="module" src="./game.js?v=20261109-gauntlet1"></script>
 </body>
 </html>

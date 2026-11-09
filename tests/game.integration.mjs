@@ -291,6 +291,7 @@ export const __integration = {
   moveBeast, beastBlast, beastBeamHit, get beastCollision(){return beastCollision;}, get beastPortal(){return beastPortal;}, get beastCombat(){return beastCombat;}, updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
+  updateEncounter,killEnemy,get encounter(){return encounter;},get bossGate(){return bossGate;},
   drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
   gainXP, forgeWeapon, renderCharacterProgress, persistCharacter, startLeap, armAirSmash, guardDimensions, guardContact,
   setFacing(x,z){facing=normalize(x,z);pointer.active=false;},
@@ -2612,22 +2613,38 @@ test('zombies telegraph then leap, while a hammer hit interrupts their windup', 
   assert.ok(interrupted.stagger > 0);
 });
 
-test('60% destruction summons one boss and continuation retains upgrades and the same damaged district', () => {
+function clearEncounter(){
+  const encounter=api.encounter;
+  assert.ok(encounter);
+  assert.equal(api.enemies.includes(encounter.leader),false,'Entering leaders do not participate in combat');
+  assert.equal(api.beastPortal.root.visible,true);
+  api.updateEncounter(.4);assert.equal(encounter.entry.stage,'opening');assert.equal(encounter.leader.mesh.visible,false);
+  api.updateEncounter(1.4);assert.equal(encounter.entry.stage,'walking');assert.equal(encounter.leader.mesh.visible,true);
+  assert.equal(encounter.escorts.size,0);assert.notEqual(encounter.entry.reveal.plane.constant,1e6);
+  api.updateEncounter(3);assert.equal(encounter.entry,null);
+  assert.equal(api.beastPortal.root.visible,false);assert.ok(api.enemies.includes(encounter.leader));
+  const before=api.drops.length;api.killEnemy(encounter.leader);
+  assert.ok(api.drops.length>=before+7,'Leader drops a cache in addition to standard XP');
+  for(let i=0;i<30&&api.encounter;i++){
+    api.updateEncounter(6);
+    for(const e of [...encounter.escorts])api.killEnemy(e);
+    api.checkGoal();assert.equal(api.boss,null,'Pending escorts and the break prevent a skipped stage');
+  }
+  assert.equal(encounter.sent,encounter.gate.escort.length);
+  assert.equal(api.encounter,null);
+  api.updateEncounter(3.1);
+}
+
+test('max progress cannot skip either encounter; victory and continuation retain the damaged district', () => {
   reset();
   api.levels.power = 2; api.applyStats();
-  const total = api.world.objects.reduce((sum, o) => sum + o.weight, 0);
-  let destroyed = 0;
-  for (const o of api.world.objects) {
-    if ((destroyed + o.weight) / total * 100 >= core.GOAL) break;
-    api.hurtObject(o, 99999, 1); destroyed += o.weight;
-  }
-  assert.ok(core.destructionPercent(api.world.objects) < core.GOAL);
-  api.checkGoal(); assert.equal(api.boss, null);
-  for (const o of api.world.objects) {
-    if (o.dead) continue;
-    api.hurtObject(o, 99999, 1);
-    if (core.destructionPercent(api.world.objects) >= core.GOAL) break;
-  }
+  for(const o of api.world.objects){o.dead=true;o.hp=0;}
+  api.world.rebuildSpatialIndex();
+  api.checkGoal();
+  assert.equal(api.encounter.leader.type,'siegeTransformer');assert.equal(api.boss,null);
+  clearEncounter();api.checkGoal();
+  assert.equal(api.encounter.leader.type,'hollowMarshal');assert.equal(api.boss,null);
+  clearEncounter();
   api.checkGoal();
   assert.ok(api.boss); assert.equal(elements.get('bossHud').hidden, false);
   const boss = api.boss;
@@ -4126,13 +4143,35 @@ test('a first hydrant impact opens three real outlets; repeated hits cannot dupl
  arena();assert.equal(effects.disposed,true);assert.equal(effects.sources.size,0);assert.equal(effects.water.parent,null);assert.equal(effects.spray.parent,null);
 });
 
-test('enemy kills and destroyed scenery jointly summon the final boss',()=>{
+test('enemy kills and destroyed scenery jointly open the first encounter without a final-boss shortcut',()=>{
  arena(1,{test:false});
- for(let i=0;i<50;i++){const e=stationaryEnemy('zombie',0,5);api.hitEnemy(e,e.hp+1,{x:0,z:1},0,0);}
- api.checkGoal();assert.equal(api.boss,null,'50 kills alone are below the combined goal');
- for(const o of api.world.objects){if(!o.isBuilding)continue;api.hurtObject(o,o.hp+1);if(core.destructionPercent(api.world.objects)>=10)break;}
- assert.ok(core.destructionPercent(api.world.objects)<core.GOAL,'Scenery alone remains below the old threshold');
- api.checkGoal();assert.ok(api.boss,'The combined destruction and enemy contribution must unlock the boss');
+ for(let i=0;i<40;i++){const e=stationaryEnemy('zombie',0,5);api.killEnemy(e);}
+ api.checkGoal();assert.equal(api.encounter,null,'40 kills alone are below the first milestone');
+ for(const o of api.world.objects){if(!o.isBuilding)continue;o.dead=true;if(core.destructionPercent(api.world.objects)>=5)break;}
+ api.checkGoal();assert.equal(api.encounter.leader.type,'siegeTransformer');
+ assert.equal(api.boss,null);
+});
+
+test('transformer folds its existing treads, fires at a locked target, and unfolds when approached',()=>{
+ arena(1);
+ const e=api.spawnEnemy('siegeTransformer',{x:0,z:0},{encounterLeader:true});
+ Object.assign(api.player,{x:0,y:0,z:17,invincible:0});
+ const tread=e.mesh.getObjectByName('driveTrack0'),walkPose=tread.position.clone();
+ for(let i=0;i<62;i++)api.updateEnemies(1/60);
+ assert.equal(e.fold,1);assert.ok(tread.position.distanceTo(walkPose)>1);
+ assert.ok(e.height<e.baseHeight);
+ const armorHP=e.hp;e.facingYaw=0;
+ api.hitEnemy(e,100,{x:0,z:-1},0,0);assert.equal(armorHP-e.hp,52);
+ const backHP=e.hp;api.hitEnemy(e,100,{x:0,z:1},0,0);assert.equal(backHP-e.hp,100);
+ e.timer=0;api.updateEnemies(1/60);
+ assert.equal(e.state,'windup');assert.equal(e.attackPoint.z,17);
+ const hp=api.player.hp;api.player.x=8;
+ for(let i=0;i<150;i++)api.updateEnemies(1/60);
+ assert.equal(api.player.hp,hp,'Moving out of the locked danger circle avoids damage');
+ assert.equal(e.shell,null);
+ Object.assign(api.player,{x:e.x,z:e.z+5});e.timer=10;
+ for(let i=0;i<62;i++)api.updateEnemies(1/60);
+ assert.equal(e.fold,0);assert.equal(e.height,e.baseHeight);
 });
 
 test('long hammer guard preserves the complete shaft beside the player with reachable wrists',()=>{

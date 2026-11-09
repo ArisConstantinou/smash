@@ -199,12 +199,12 @@ test('charging meaningfully improves damage, reach, knockback and recovery commi
   }
 });
 
-test('weighted destruction triggers the boss exactly when the target is crossed', () => {
-  const objects = [{ weight: 40, dead: true }, { weight: 15, dead: true }, { weight: 5, dead: false }, { weight: 40, dead: false }];
-  close(destructionPercent(objects), 55);
+test('weighted destruction supplies the progress for the final milestone', () => {
+  const objects = [{ weight: 40, dead: true }, { weight: 45, dead: true }, { weight: 5, dead: false }, { weight: 10, dead: false }];
+  close(destructionPercent(objects), 85);
   assert.ok(destructionPercent(objects) < GOAL);
   objects[2].dead = true;
-  close(destructionPercent(objects), 60);
+  close(destructionPercent(objects), 90);
   assert.ok(destructionPercent(objects) >= GOAL);
   objects[3].dead = true;
   close(destructionPercent(objects), 100);

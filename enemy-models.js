@@ -271,7 +271,125 @@ function siegeMech(){
   root.userData={color:armor,fragments:[armor,edge,warning,P.dark],palette:'metal',miniBoss:true,heightTarget:4.7};return root;
 }
 
-const makers={crawler,mutant,mech,titan,siegeMech};
+// The same four drive units support the walker and meet in pairs in tank form.
+// All geometry below is shared by both poses; only the joints move.
+function siegeTransformer(){
+  const root=new THREE.Group();root.name='Siege Transformer';
+  const hull=node(root,'body',0,3.25,0),amber=0xbd8039,steel=0x859495,rubber=0x263438;
+  new Part('armoredHull').box(P.dark,0,.46,0,2.95,1.04,3.9)
+    .box(steel,0,.97,0,2.87,.38,3.68).box(amber,0,.72,1.84,2.75,.64,.58,-.31)
+    .box(steel,0,.28,1.93,2.6,.38,.36,.29).box(P.dark,0,.66,2.15,1.16,.28,.10)
+    .box(P.hot,-.27,.66,2.22,.31,.14,.05,0,0,0,.8)
+    .box(P.hot,.27,.66,2.22,.31,.14,.05,0,0,0,.8).finish(hull);
+  const turret=node(hull,'turret',0,1.13,-.14);
+  const turretPlate=new Part('turretArmor').cyl(P.dark,0,.07,0,1.16,.35,8)
+    .box(steel,0,.61,-.1,2.49,.85,2.26).box(P.dark,0,1.06,-.13,1.94,.22,1.87)
+    .box(amber,-1.23,.57,-.09,.22,.63,1.88,0,0,-.17)
+    .box(amber,1.23,.57,-.09,.22,.63,1.88,0,0,.17);
+  for(const side of [-1,1])for(let i=0;i<3;i++)turretPlate.box(P.pale,side*1.36,.56,-.58+i*.26,.028,.35,.10,.33);
+  for(let i=0;i<4;i++)turretPlate.box(P.dark,-.55+i*.34,.65,-1.255,.20,.25,.045);
+  turretPlate.finish(turret);
+  const gun=new Part('siegeCannon').box(P.dark,.32,.64,.84,1.02,.60,.89)
+    .cyl(steel,.32,.66,1.89,.255,2.12,8,Math.PI/2)
+    .cyl(P.dark,.32,.66,1.1,.31,.85,8,Math.PI/2)
+    .box(amber,.32,.66,2.95,.66,.59,.50)
+    .box(P.dark,.32,.66,3.21,.38,.34,.026).finish(turret);
+  node(gun,'muzzle',.32,.66,3.27);
+  for(let i=0;i<4;i++){
+    const upper=new Part('walkerLink'+i).cyl(P.dark,0,0,0,.32,.68,10,0,0,Math.PI/2)
+      .box(P.dark,0,-.5,0,.48,1,.49).box(steel,0,-.49,.19,.49,.69,.25)
+      .box(amber,0,-.22,.27,.37,.25,.11).finish(root);
+    const lower=new Part('walkerPiston'+i).cyl(steel,0,0,0,.29,.62,10,0,0,Math.PI/2)
+      .box(P.dark,0,-.52,0,.37,1.05,.36).cyl(P.pale,0,-.46,.22,.077,.74,6)
+      .box(steel,0,-.64,-.11,.40,.56,.23).finish(root);
+    const tread=new Part('driveTrack'+i).box(rubber,0,0,0,.82,.63,1.23)
+      .cyl(rubber,0,0,-.62,.32,.82,12,0,0,Math.PI/2)
+      .cyl(rubber,0,0,.62,.32,.82,12,0,0,Math.PI/2)
+      .box(steel,0,.23,0,.83,.18,1.29);
+    for(const side of [-1,1])for(const z of [-.58,-.19,.19,.58]){
+      tread.cyl(P.dark,side*.423,0,z,.231,.063,10,0,0,Math.PI/2);
+      tread.cyl(steel,side*.463,0,z,.123,.046,8,0,0,Math.PI/2);
+    }
+    for(let j=0;j<8;j++)for(const side of [-1,1])tread.box(0x495459,0,side*.327,(j-3.5)*.20,.85,.068,.081);
+    tread.box(amber,(i<2?-1:1)*.43,.19,.10,.065,.17,.62).finish(root);
+    upper.position.set((i<2?-1:1)*1.35,3.45,i%2?1.26:-1.26);
+    lower.position.set((i<2?-1:1)*2.5,2.25,i%2?1.95:-1.95);
+    root.getObjectByName('driveTrack'+i).position.set((i<2?-1:1)*3.2,.42,i%2?2.38:-2.38);
+  }
+  root.userData={color:amber,fragments:[amber,steel,P.dark],palette:'metal',miniBoss:true,heightTarget:6.8};return root;
+}
+
+// Articulated exoskeleton over an exposed jaw, torn coat and command coils.
+function hollowMarshal(){
+  const root=new THREE.Group();root.name='Hollow Marshal';
+  const steel=0x758388,old=0x57413a,skin=0x91a17a,ink=0x302b39,violet=0xbb77f8;
+  const body=new Part('body');
+  body.ico(ink,0,2.22,-.08,.92,1.01,.51,.13).ico(0x43474c,0,2.64,-.09,.91,.77,.58)
+    .box(steel,0,2.48,.48,.19,1.13,.18,-.12)
+    .box(P.dark,0,1.68,.03,1.42,.44,.90).box(old,0,1.80,.46,1.51,.18,.14);
+  for(const s of [-1,1]){
+    for(let i=0;i<4;i++)body.segment(i===0?P.pale:steel,[s*.09,2.87-i*.23,.56],[s*(.72-i*.05),2.94-i*.21,.37],.103,.65,5);
+    body.ico(ink,s*.62,1.34,-.23,.32,.88,.44,.23);
+    body.box(old,s*.31,1.28,.48,.35,.65,.14,0,0,s*.13);
+  }
+  body.finish(root);
+  const command=new Part('commandBackpack').box(P.dark,0,2.60,-.66,1.57,1.05,.53);
+  for(const x of [-.64,-.22,.22,.64]){
+    const y=3.14+(.64-Math.abs(x))*.38;
+    command.cyl(steel,x,y,-.80,.17,.84,7,-.20)
+      .cyl(violet,x,y+.23,-.85,.126,.24,7,-.20,0,0,1,.8)
+      .segment(steel,[x,y+.42,-.85],[x*.88,y+.62,-.57],.055,.8,6);
+  }
+  command.finish(root.getObjectByName('body'));
+  const skull=new Part('head').ico(skin,0,.21,.01,.39,.48,.36,.17)
+    .box(old,0,-.04,.23,.44,.24,.29).box(P.dark,0,.025,.379,.39,.12,.045)
+    .box(steel,0,-.15,.27,.40,.14,.23,.15).box(steel,-.32,.08,.17,.12,.39,.26);
+  for(const x of [-.13,0,.13])skull.box(P.bone,x,-.03,.403,.047,.083,.035);
+  eyes(skull,0,.24,.335,.14,.108,violet);skull.finish(root.getObjectByName('body'),0,3.06,.29);
+  for(const side of [-1,1]){
+    const leg=new Part(side<0?'leftLeg':'rightLeg').box(P.dark,0,-.36,0,.48,.84,.49)
+      .ico(steel,0,-.68,.19,.31,.34,.30).box(ink,0,-1.08,0,.34,.71,.34)
+      .segment(steel,[side*.21,-.74,.02],[side*.19,-1.28,.04],.083,.71)
+      .box(P.dark,0,-1.39,.11,.54,.29,.75).box(steel,0,-1.41,.41,.49,.22,.19);
+    restLimb(leg.finish(root,side*.39,1.535,0),side,.04);
+    const arm=new Part(side<0?'leftArm':'rightArm').ico(side<0?steel:ink,side*.08,0,.02,.51,.36,.53,.2)
+      .box(side<0?0xbd8039:old,side*.18,.03,.35,.56,.32,.18,0,0,side*.18)
+      .segment(P.dark,[0,-.10,0],[side*.10,-.62,.05],.21,.82)
+      .ico(side<0?steel:skin,side*.11,-.78,.13,.26,.39,.23)
+      .box(side<0?steel:skin,side*.12,-1.09,.16,.32,.29,.30);
+    if(side<0){
+      arm.cyl(P.dark,-.12,-1.08,.51,.11,.85,7,Math.PI/2);
+      for(const z of [.76,.91,1.06])arm.cyl(violet,-.12,-1.08,z,.145,.067,7,Math.PI/2,0,0,1,.85);
+      arm.cyl(steel,-.12,-1.08,1.17,.14,.16,7,Math.PI/2);
+    }else for(const x of [-.01,.12,.23])claw(arm,x,-1.18,.22,.48,side);
+    restLimb(arm.finish(root,side*.94,2.77,0),side,.14);
+  }
+  root.userData={color:ink,fragments:[ink,steel,skin,violet],palette:'organic',miniBoss:true,heightTarget:5.75};return root;
+}
+function marshalThrall(){
+  const root=new THREE.Group();root.name='Hollow Marshal — cyborg infantry';
+  const steel=0x718387,coat=0x49444d,skin=0x819477,signal=0xb674ef;
+  const body=new Part('body').ico(coat,0,1.06,-.02,.34,.39,.25)
+    .box(P.dark,0,.85,.02,.57,.18,.42).box(steel,-.11,1.08,.21,.22,.39,.08,0,0,.22)
+    .box(P.dark,0,1.2,-.28,.38,.52,.22).cyl(steel,.13,1.38,-.37,.095,.43,6,-.2)
+    .cyl(signal,.13,1.46,-.40,.07,.16,6,-.2,0,0,1,.82).finish(root);
+  const head=new Part('head').ico(skin,0,.16,.03,.205,.24,.18,.21)
+    .box(steel,-.13,.12,.13,.11,.19,.15).box(P.dark,0,.025,.164,.25,.075,.04);
+  eyes(head,0,.16,.187,.067,.058,signal);head.finish(body,0,1.47,.08);
+  for(const s of [-1,1]){
+    const leg=new Part(s<0?'leftLeg':'rightLeg').box(coat,0,-.15,0,.24,.37,.27)
+      .box(steel,0,-.47,.07,.23,.28,.22).box(P.dark,0,-.60,.09,.25,.16,.38);
+    restLimb(leg.finish(root,s*.17,.70,0),s,.06);
+    const arm=new Part(s<0?'leftArm':'rightArm').ico(s<0?steel:coat,s*.03,0,0,.23,.18,.23)
+      .segment(s<0?P.dark:skin,[0,-.05,0],[s*.04,-.51,.14],.108,.89)
+      .box(s<0?steel:skin,s*.05,-.50,.15,.19,.18,.19);
+    if(s<0)arm.segment(P.dark,[-.06,-.51,.11],[-.06,-.55,.53],.06,1)
+      .box(steel,-.06,-.56,.55,.11,.19,.33,0,0,.17);
+    restLimb(arm.finish(root,s*.36,1.25,0),s,.14);
+  }
+  root.userData={color:coat,fragments:[steel,coat,skin],palette:'organic',heightTarget:1.97};return root;
+}
+const makers={crawler,mutant,mech,titan,siegeMech,siegeTransformer,hollowMarshal,marshalThrall};
 
 // The original low-draw-count meshes bake the face into the torso. Separate
 // whole connected primitives once at construction time, keeping every triangle
@@ -285,6 +403,9 @@ const HEADS={
   mech:{pivot:[0,2.02,.02],eye:2.24,test:(x,y,z)=>y>2.05&&z>-.36},
   titan:{pivot:[0,3.18,.37],eye:3.59,test:(x,y,z)=>y>3.16&&z>.08},
   siegeMech:{pivot:[0,2.66,.87],eye:2.91,test:(x,y,z)=>y>2.69&&z>.78&&Math.abs(x)<.66},
+  siegeTransformer:{eye:5,test:()=>false},
+  hollowMarshal:{eye:3.3,test:()=>false},
+  marshalThrall:{eye:1.63,test:()=>false},
   boss:{pivot:[0,4.35,.05],eye:4.92,test:(x,y,z)=>y>4.34&&z>-.45&&Math.abs(x)<.8},
 };
 
@@ -330,6 +451,7 @@ function partitionHeadGeometry(source,test){
 /** Call before prepareMaterials. bind=false is reserved for cached prototypes. */
 export function installEnemyHead(root,type='zombie',bind=true){
   const body=root.userData.body||root.getObjectByName('body'),profile=HEADS[type]||HEADS.zombie;
+  if(type==='siegeTransformer')return null; // A turret is not a humanoid head.
   let head=root.getObjectByName('head');
   if(!body)return null;
   if(!head){
@@ -388,6 +510,26 @@ export function makeCityEnemy(type='mutant'){
       u.rightArm.rotation.x=active?-.12:.08+Math.sin(enemy.walk)*.12;
       u.body.position.y=Math.abs(Math.sin(enemy.walk))*.025;
     };
+  }else if(resolved==='siegeTransformer'){
+    const links=Array.from({length:4},(_,i)=>['walkerLink','walkerPiston','driveTrack'].map(name=>root.getObjectByName(name+i)));
+    const hip=new THREE.Vector3(),knee=new THREE.Vector3(),foot=new THREE.Vector3(),delta=new THREE.Vector3(),down=new THREE.Vector3(0,-1,0);
+    const link=(n,a,b)=>{n.position.copy(a);delta.subVectors(b,a);n.scale.y=delta.length();n.quaternion.setFromUnitVectors(down,delta.normalize());};
+    u.animate=e=>{
+      const f=THREE.MathUtils.smoothstep(e.fold||0,0,1),mix=THREE.MathUtils.lerp;
+      u.body.position.y=mix(3.25,1.0,f);u.body.rotation.set(0,0,0);
+      for(const [i,[upper,lower,track]] of links.entries()){
+        const s=i<2?-1:1,j=i%2?1:-1,step=e.walk+(i===0||i===3?0:Math.PI);
+        const walking=e.state==='walk'&&!e.dead&&(e.gait||0)>.01,cycle=walking?Math.sin(step):0,lift=walking?Math.max(0,Math.cos(step))*.38:0;
+        const angle=mix(j*1.04+cycle*.12,0,f);
+        hip.set(s*1.35,u.body.position.y+.20,j*1.26);
+        knee.set(s*mix(2.48,1.73,f),mix(2.1+lift*.45,.79,f),j*mix(1.96,.86,f)+cycle*.20*(1-f));
+        foot.set(s*mix(3.05,1.73,f),mix(.90+lift,.365,f),j*mix(2.35,.92,f)+cycle*.44*(1-f));
+        link(upper,hip,knee);link(lower,knee,foot);
+        track.position.copy(foot);track.rotation.x=angle;
+      }
+      const gun=root.getObjectByName('siegeCannon');gun.position.z=-(e.cannonRecoil||0)*.28;
+    };
+    u.animate({fold:0,walk:0});
   }else if(resolved==='siegeMech'){
     const guns=[root.getObjectByName('leftSiegeGun'),root.getObjectByName('rightSiegeGun')];u.guns=guns;
     u.muzzles=[u.muzzle,root.getObjectByName('muzzleRight')];

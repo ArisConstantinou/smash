@@ -41,6 +41,9 @@ const TYPES={
   mech:{name:'MECH',hp:360,damage:11,speed:1.4,radius:.82,height:2.95,windup:1.25,attackRecovery:3.9,boltSpeed:9,attackKind:'ranged',burst:3,xp:4,palette:'metal'},
   titan:{name:'ΤΙΤΑΝΑΣ · MINI BOSS',hp:600,damage:20,speed:1.22,radius:1.3,height:4.35,windup:1.5,attackRecovery:3.6,attackRadius:4.2,attackKind:'slam',miniBoss:true,xp:10,palette:'organic'},
   siegeMech:{name:'ΠΟΛΙΟΡΚΗΤΗΣ · MINI BOSS',hp:720,damage:15,speed:1.2,radius:1.3,height:4.7,windup:1.5,attackRecovery:4.1,boltSpeed:9.2,attackKind:'ranged',burst:3,miniBoss:true,xp:12,palette:'metal'},
+  siegeTransformer:{name:'ΠΟΛΙΟΡΚΗΤΗΣ',hp:1350,damage:32,speed:1.65,radius:2.35,height:6.8,windup:1.1,attackRecovery:2.5,attackRadius:5.5,attackKind:'slam',miniBoss:true,xp:26,palette:'metal'},
+  hollowMarshal:{name:'ΝΕΚΡΟΣΤΡΑΤΗΓΟΣ',hp:1920,damage:38,speed:1.95,radius:1.45,height:5.75,windup:1.05,attackRecovery:2.42,attackRadius:5.8,attackKind:'slam',miniBoss:true,xp:38,palette:'organic'},
+  marshalThrall:{name:'ΝΕΚΡΟΣΤΡΑΤΙΩΤΗΣ',hp:165,damage:8,speed:2.15,radius:.49,height:1.97,windup:.76,attackRecovery:2.4,lungeSpeed:8.9,attackKind:'lunge',xp:2,palette:'organic'},
 };
 
 export const WAVE_ENEMY_TYPES=Object.keys(TYPES);
