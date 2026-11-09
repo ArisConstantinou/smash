@@ -516,7 +516,7 @@ export function makeCityEnemy(type='mutant'){
     const link=(n,a,b)=>{n.position.copy(a);delta.subVectors(b,a);n.scale.y=delta.length();n.quaternion.setFromUnitVectors(down,delta.normalize());};
     u.animate=e=>{
       const f=THREE.MathUtils.smoothstep(e.fold||0,0,1),mix=THREE.MathUtils.lerp;
-      u.body.position.y=mix(3.25,1.0,f);u.body.rotation.set(0,0,0);
+      u.body.position.y=mix(3.25,1.0,f);u.body.rotation.set(-.07*(e.cannonRecoil||0)**2,0,0);
       for(const [i,[upper,lower,track]] of links.entries()){
         const s=i<2?-1:1,j=i%2?1:-1,step=e.walk+(i===0||i===3?0:Math.PI);
         const walking=e.state==='walk'&&!e.dead&&(e.gait||0)>.01,cycle=walking?Math.sin(step):0,lift=walking?Math.max(0,Math.cos(step))*.38:0;
@@ -527,7 +527,7 @@ export function makeCityEnemy(type='mutant'){
         link(upper,hip,knee);link(lower,knee,foot);
         track.position.copy(foot);track.rotation.x=angle;
       }
-      const gun=root.getObjectByName('siegeCannon');gun.position.z=-(e.cannonRecoil||0)*.28;
+      const gun=root.getObjectByName('siegeCannon');gun.position.z=-(e.cannonRecoil||0)*.46;
     };
     u.animate({fold:0,walk:0});
   }else if(resolved==='siegeMech'){
@@ -540,4 +540,65 @@ export function makeCityEnemy(type='mutant'){
     };
   }
   return root;
+}
+
+export function makeSiegeRecoveryTank(){
+  const root=makeCityEnemy('siegeTransformer'),hull=root.userData.body;
+  root.name='Recoverable Siege Tank';
+  root.getObjectByName('turret').visible=false;
+  const turret=node(hull,'recovery turret');
+  const muzzles=[],pods=[],tracks=[];
+  const armor=new Part('reinforced glacis')
+    .box(0x334850,0,.94,.41,3.74,.52,3.12,-.10)
+    .box(0xc89147,0,1.22,.48,1.22,.16,2.10,-.10)
+    .box(0x14262e,0,.69,2.32,1.20,.74,.26)
+    .box(0x627e81,0,1.08,2.36,1.16,.09,.30)
+    .box(0x425658,0,.30,2.36,1.16,.10,.31);
+  for(const side of [-1,1]){
+    armor.box(0x405660,side*1.54,.61,-.14,.56,.61,3.69,0,0,side*.10);
+    armor.box(0xbb8240,side*1.16,.73,1.82,1.17,.86,.84,-.12);
+    for(const lateral of [.89,1.46]){
+      const x=lateral*side;
+      const barrel=new Part('recovery cannon')
+        .cyl(0x25343c,0,0,.30,.245,.68,8,Math.PI/2)
+        .cyl(0x809697,0,0,.92,.175,1.27,8,Math.PI/2)
+        .cyl(0x31444a,0,0,1.51,.224,.33,8,Math.PI/2)
+        .cyl(0x111c23,0,0,1.69,.143,.035,8,Math.PI/2).finish(turret,x,.73,2.05);
+      muzzles.push(node(barrel,'shell muzzle',0,0,1.74));
+    }
+    const pod=new Part('six-cell missile pod')
+      .box(0x354b51,0,0,0,1.16,.77,1.32)
+      .box(0xb88742,0,0,.60,1.20,.81,.19)
+      .box(0x1d3138,0,0,.716,1.02,.65,.07);
+    for(const row of [-.15,.15])for(const col of [-.32,0,.32]){
+      pod.cyl(0x111d23,col,row,.77,.13,.10,8,Math.PI/2);
+      pod.cyl(0x899c9a,col,row,.818,.075,.10,6,Math.PI/2,.2);
+    }
+    const launcher=pod.finish(turret,side*1.28,1.64,-.70);launcher.rotation.x=-.17;
+    pods.push(node(launcher,'missile muzzle',0,0,.88));
+  }
+  armor.finish(turret);
+  const power=new Part('powered sonic resonator');
+  for(const y of [.48,.68,.88])power.box(0x8fe9db,0,y,2.47,.92,.071,.055,0,0,0,.72);
+  const live=power.finish(turret),sonic=node(turret,'sonic emitter',0,.68,2.52);
+  const wreck=new Part('scorched plates and open socket')
+    .box(0x222b2b,0,.68,2.485,.94,.49,.03)
+    .box(0x4b605d,0,.65,2.515,.32,.24,.09)
+    .box(0xcc813c,0,.65,2.57,.12,.12,.035,0,0,0,.38)
+    .box(0x181d20,-.69,1.22,1.29,.81,.08,.84,0,.36)
+    .box(0x292b29,-.41,1.314,.31,.78,.024,.55,-.09,-.39)
+    .box(0x242626,.49,1.331,.28,.46,.026,.71,-.09,.23)
+    .box(0x171e21,-1.54,.97,-.56,.67,.031,1.05,0,0,-.10)
+    .box(0x65564a,.95,1.07,.45,.52,.18,.73,.15,0,.46).finish(turret);
+  for(let i=0;i<4;i++)tracks.push(root.getObjectByName('driveTrack'+i));
+  root.userData.recovery={turret,muzzles,pods,sonic,live,wreck,tracks};
+  return root;
+}
+
+export function makeSiegeEngineChip(){
+  const board=new Part('engine chip').box(0x203b3e,0,0,0,.56,.12,.40)
+    .box(0x547c78,0,.067,0,.28,.10,.24).box(0xa3f3d5,0,.124,0,.16,.02,.12,0,0,0,.8);
+  for(const side of [-1,1])for(const x of [-.20,-.10,0,.10,.20])
+    board.box(0xc99450,x,.027,side*.205,.045,.034,.10);
+  return board.finish();
 }

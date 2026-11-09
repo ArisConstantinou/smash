@@ -32,8 +32,8 @@ export function distanceToBeam(point,a,b){
  return Math.hypot(point.x-a.x-dx*t,point.y-a.y-dy*t,point.z-a.z-dz*t);
 }
 export class BeastCombat{
- constructor(scene,{blast=()=>{},beamHit=()=>{},cast=()=>null,surface=()=>0,cue=()=>{}}={}){
-  this.scene=scene;this.blast=blast;this.beamHit=beamHit;this.cast=cast;this.surface=surface;this.surfaceCache=new Map();this.clock=0;this.cue=cue;this.projectiles=[];this.bursts=[];this.attack=null;
+ constructor(scene,{blast=()=>{},impact=null,launchFx=()=>{},beamHit=()=>{},cast=()=>null,surface=()=>0,cue=()=>{}}={}){
+  this.scene=scene;this.blast=blast;this.impact=impact;this.launchFx=launchFx;this.beamHit=beamHit;this.cast=cast;this.surface=surface;this.surfaceCache=new Map();this.clock=0;this.cue=cue;this.projectiles=[];this.bursts=[];this.attack=null;
   this.shellPool=new DynamicPool(new THREE.CylinderGeometry(.18,.36,1.7,8),new THREE.MeshLambertMaterial({color:0xb6c4bd,emissive:0xa6370f,emissiveIntensity:.65}),16,'colossus-flying-ordnance');this.shells=this.shellPool.mesh;
   this.markerPool=new DynamicPool(new THREE.RingGeometry(.88,1,48),new THREE.MeshBasicMaterial({color:0xff6538,transparent:true,opacity:.65,side:THREE.DoubleSide,depthWrite:false,fog:false}),24,'colossus-danger-zones');this.markers=this.markerPool.mesh;this.markerCount=0;
   this.beam=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,12),new THREE.MeshBasicMaterial({color:0xff5625,transparent:true,opacity:.85,depthWrite:false}));this.beam.visible=false;this.beam.frustumCulled=false;
@@ -62,6 +62,7 @@ export class BeastCombat{
     if(missile){const offset=missileOffset(i);to.x+=offset.x;to.z+=offset.z;to.y=a.target.y>3?a.target.y:.25;}
     else {const offset=(i-1)*2.6;to.x+=Math.cos(a.angle)*offset;to.z-=Math.sin(a.angle)*offset;}
     this.projectiles.push({kind:a.kind,from,to,previous:from.clone(),position:from.clone(),time:0,duration:missile?1.65+i*.13:Math.max(.9,from.distanceTo(to)/23),radius:missile?3.1:2.5,damage:(missile?32:38)*a.damageScale});
+    this.launchFx(from,new THREE.Vector3().subVectors(to,from).add(new THREE.Vector3(0,missile?16:0,0)),i===0);
    }
   }else if(a.center||a.feet.length){
    for(const point of a.center?[a.center]:a.feet){
@@ -93,7 +94,12 @@ export class BeastCombat{
    const p=this.projectiles[i];p.previous.copy(p.position);p.time+=dt;const t=Math.min(1,p.time/p.duration);
    p.position.lerpVectors(p.from,p.to,t);if(p.kind==='missiles')p.position.y+=Math.sin(Math.PI*t)*11;
    const contact=this.cast(p.previous,p.position,.26);
-   if(t===1||contact){const point=contact?new THREE.Vector3(contact.x,contact.y,contact.z):p.to;this.blast(point,p.radius,p.damage,{});this.bursts.push({s:{destroyed:true,deadTime:0,burstOrigin:point.clone()}});this.projectiles.splice(i,1);}
+   if(t===1||contact){
+    const point=contact?new THREE.Vector3(contact.x,contact.y,contact.z):p.to;
+    if(this.impact)this.impact(point,p.damage,p.radius,contact?.target,new THREE.Vector3().subVectors(p.position,p.previous));
+    else this.blast(point,p.radius,p.damage,{});
+    this.bursts.push({s:{destroyed:true,deadTime:0,burstOrigin:point.clone(),visualScale:p.radius*.31}});this.projectiles.splice(i,1);
+   }
   }
   for(const burst of this.bursts)burst.s.deadTime+=dt;this.bursts=this.bursts.filter(v=>v.s.deadTime<1.25).slice(-16);
   this.draw(camera);

@@ -53,6 +53,7 @@ import * as armoryRulesModule from '../armory-rules.js';
 import * as mountWorkshopModule from '../mount-workshop.js';
 import * as playerCustomizationModule from '../player-customization.js';
 import * as mountWeaponsModule from '../mount-weapons.js';
+import * as siegeTankModule from '../siege-tank.js';
 import * as performanceModule from '../performance-hud.js';
 import * as weaponPoseModule from '../weapon-pose.js';
 import * as screamModule from '../scream.js';
@@ -223,6 +224,7 @@ const imports = new Map([
   ['./mount-workshop.js', synthetic(mountWorkshopModule, 'real-mount-workshop')],
   ['./player-customization.js', synthetic(playerCustomizationModule, 'real-player-customization')],
   ['./mount-weapons.js', synthetic(mountWeaponsModule, 'real-mount-weapons')],
+  ['./siege-tank.js', synthetic(siegeTankModule, 'real-siege-tank')],
   ['./mount-ride.js', synthetic(mountRideModule, 'real-mount-ride')],
   ['./mount-rules.js', synthetic(mountRulesModule, 'real-mount-rules')],
   ['./vehicle-effects.js', synthetic({...vehicleEffectsModule,preloadVehicleExplosion:async()=>{}}, 'real-vehicle-effects')],
@@ -269,6 +271,7 @@ const imports = new Map([
 const original = process.env.SMASH_TEST_GAME_REF?execFileSync('git',['show',process.env.SMASH_TEST_GAME_REF+':game.js'],{cwd:new URL('../',import.meta.url),encoding:'utf8'}):await readFile(new URL('../game.js', import.meta.url), 'utf8');
 const testingExports = `
 export const __integration = {
+  get siegeTank(){return siegeTank;}, updateGame,
   armoryImpact, catalogHeadHits, actualEquipmentRay, shieldSurface, get armoryEffects(){return armoryEffects;}, get armoryWeaponStats(){return armoryWeaponStats;}, get armoryShieldStats(){return armoryShieldStats;}, get mountRide(){return mountRide;},get garage(){return garage;},get mountWeapons(){return mountWeapons;},toggleMount,
   get throwIndicator(){return throwIndicator;},get swingSequences(){return swingSequences;},resetAttackChain,updateThrowIndicator,drawAim,throwGuidanceDirection,
   get aimDiagnostics(){return aimDiagnostics;},get meleeHint(){return meleeHint;},get meleeHintTargets(){return meleeHintTargets;},get spinCharge(){return spinCharge;},get arcs(){return arcs;},updateAimPreview,manualAttackDirection,spinImpact,
@@ -4629,4 +4632,94 @@ test('an upgraded scream pushes enemies and vehicles, fractures scenery and resp
   key('KeyZ', false); api.clearInput();
   assert.equal(api.scream, null);
   assert.equal(api.screamCooldown, 30);
+});
+
+test('recovered siege tank saves its charge, earns pilot XP and ejects before detonation',()=>{
+  const saveKey='ironfall.character',previous=storage.get(saveKey);
+  try{
+    reset(1,{test:false,civilians:false});
+    const recovery=()=>api.siegeTank.updateRecovery(1/60,{world:api.world,player:api.player,camera:api.camera});
+    let tank=api.siegeTank;
+    assert.equal(tank.state,'broken');
+    assert.equal(tank.dropChip(api.world,{x:0,z:0}),true);
+    assert.equal(tank.dropChip(api.world,{x:0,z:0}),false);
+    Object.assign(api.player,{x:tank.chip.position.x,z:tank.chip.position.z,y:0});
+    recovery();assert.equal(tank.hasChip,true);
+    Object.assign(api.player,{x:tank.body.x,z:tank.body.z+4.6,y:0});
+    key('KeyC',true);key('KeyC',false);
+    assert.equal(tank.state,'charging');assert.equal(tank.timer,5);
+    for(let i=0;i<120;i++)recovery();
+    api.persistCharacter();api.startGame(1,{resume:true,camps:false,civilians:false});
+    tank=api.siegeTank;
+    assert.equal(tank.state,'charging');close(tank.timer,3);
+    for(let i=0;i<179;i++)recovery();
+    assert.equal(tank.state,'charging');
+    recovery();assert.equal(tank.state,'ready');
+    Object.assign(api.player,{x:tank.body.x,z:tank.body.z+4.6,y:0});
+    key('KeyC',true);key('KeyC',false);assert.equal(tank.active,true);assert.equal(api.hero.visible,false);
+    close(tank.boot,1.4);
+    const parked={...tank.body};
+    key('KeyZ',true);key('KeyZ',false);key('KeyW',true);playerSteps(.4);key('KeyW',false);
+    assert.equal(tank.sonicCooldown,0);assert.deepEqual(tank.body,parked);
+    for(let i=0;i<83;i++)recovery();
+    assert.ok(tank.boot>0);recovery();assert.equal(tank.boot,0);
+
+    api.world.objects.forEach((o,i)=>{o.x=500+i*10;o.z=500;});api.world.rebuildSpatialIndex();
+    const enemy=stationaryEnemy('zombie',tank.body.x,tank.body.z+10);
+    const xpBefore=api.level+api.xp;
+    key('KeyZ',true);key('KeyZ',false);
+    assert.equal(enemy.dead,true);assert.ok(api.level+api.xp>xpBefore);
+
+    key('KeyE',true);key('KeyE',false);playerSteps(1);
+    key('Space',true);key('Space',false);playerSteps(.25);
+    assert.ok(tank.body.y>1);
+    api.player.invincible=0;
+    const pilotHP=api.player.hp;
+    api.hurtPlayer(1500);
+    assert.equal(tank.state,'fuse');assert.equal(tank.active,false);assert.equal(api.hero.visible,true);
+    Object.assign(api.player,{x:tank.body.x,z:tank.body.z+13,y:0});
+    for(let i=0;i<599;i++)recovery();
+    close(tank.body.y,0,.02);assert.equal(tank.state,'fuse');
+    recovery();assert.equal(tank.state,'destroyed');assert.equal(api.player.hp,pilotHP);
+    assert.equal(api.mountWeapons.bursts.length,1);
+    api.startGame(1,{resume:true,camps:false,civilians:false});
+    assert.equal(api.siegeTank.state,'destroyed');assert.equal(api.siegeTank.model,null);
+  }finally{
+    if(previous===undefined)storage.delete(saveKey);
+    else storage.set(saveKey,previous);
+  }
+});
+
+test('siege tracks build speed, brake before reverse, and pivot without driving sideways',()=>{
+  arena(5);
+  const tank=api.siegeTank,player=api.player,world=api.world;
+  Object.assign(tank.body,{x:0,y:0,z:0});tank.active=true;tank.boot=0;tank.yaw=0;
+  const step=(seconds,x,z,boost=false)=>{
+    for(let i=0;i<Math.round(seconds*120);i++)tank.drive(1/120,world,player,{x,z},Math.hypot(x,z),boost,{x:0,z:1});
+  };
+  step(.5,0,1);assert.ok(tank.speed>1&&tank.speed<2);
+  step(2.2,0,1);close(tank.speed,8.5);
+  step(.4,0,-1);assert.ok(tank.speed>5,'reversal initially brakes instead of instantly backing up');
+  step(3,0,-1);close(tank.speed,-4.5);
+  step(1.2,0,0);close(tank.speed,0);
+  const pivot={...tank.body};step(.55,1,0);
+  assert.ok(tank.yaw>.38&&tank.yaw<.8);assert.ok(Math.hypot(tank.body.x-pivot.x,tank.body.z-pivot.z)<.12);
+  close(tank.turretYaw,0);
+  Object.assign(tank.body,{x:0,z:0});tank.yaw=tank.yawRate=tank.speed=0;
+  step(2.8,0,1,true);close(tank.speed,12.6);
+});
+
+test('missile impact has radial falloff, direct-hit damage and shielding by destructible geometry',()=>{
+  for(const owner of ['siege','mount-missile','colossus']){
+    arena(5);
+    Object.assign(api.player,{x:-12,z:0});
+    const wall=placeObject('wall',0,2,{w:2.4,d:.35,h:3,hp:1000,maxHp:1000});
+    const make=(x,z)=>{const e=stationaryEnemy('zombie',x,z);e.hp=e.maxHp=1000;return e;};
+    const near=make(2,0),far=make(4,0),covered=make(0,3),direct=make(-4,0);
+    api.mountWeapons.detonate(new THREE.Vector3(0,1,0),60,5,direct,owner);
+    assert.ok(near.hp<far.hp&&far.hp<1000,owner+' falloff');
+    assert.ok(direct.hp<near.hp,owner+' direct hit');
+    assert.equal(covered.hp,1000,owner+' hard cover');
+    assert.ok(wall.hp<1000,owner+' environment damage');
+  }
 });

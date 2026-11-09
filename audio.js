@@ -545,6 +545,36 @@ export class GameAudio {
         this._glass(p*.55,.10);
         break;
       }
+      case 'tankIgnition':
+        this._noise(p*.16,.72,520,'bandpass',.04,210,.055);
+        this._tone('sawtooth',56,84,p*.11,.69,.04,.035);
+        for(const [at,weight] of [[.24,.74],[.55,.94],[.87,1]]){
+          this._tone('triangle',103,42,p*.26*weight,.26,at,.009);
+          this._noise(p*.22*weight,.19,415,'lowpass',at,100,.007);
+        }
+        this._sample('metal',p*.16,.81,.24);
+        this._tone('sawtooth',52,69,p*.14,.48,.87,.044);
+        this._tone('triangle',78,58,p*.21,.53,.87,.022);
+        break;
+      case 'tankReady':
+        this._tone('triangle',60,49,p*.13,.32,0,.02);
+        break;
+      case 'tankCannon':
+        this._noise(p*.57,.15,2850,'lowpass',0,360,.002);
+        this._tone('sine',107,36,p*.62,.34,0,.004);
+        this._noise(p*.24,.65,750,'lowpass',.036,160,.025);
+        this._noise(p*.10,.36,1400,'bandpass',.115,620,.012);
+        break;
+      case 'missileLaunch':
+        this._noise(p*.34,.26,1640,'bandpass',0,880,.009);
+        this._tone('triangle',215,75,p*.20,.29,0,.013);
+        break;
+      case 'ordnanceImpact':
+        this._noise(p*.47,.17,2650,'lowpass',0,520,.003);
+        this._tone('sine',132,44,p*.42,.38,0,.008);
+        this._noise(p*.17,.53,1130,'lowpass',.044,175,.02);
+        this._sample('masonry',p*.34,.86,.025);
+        break;
       case 'carTear':
       case 'carWreck': {
         const wreck=name==='carWreck',v=p;
@@ -742,7 +772,25 @@ export class GameAudio {
     this._ambient = { wind: layer('lowpass', 230, .008, 1), rain: layer('highpass', 1800, .004, .77), nodes };
   }
 
-  update(dt, danger = 0, weather = 'rain') {
+  _updateTankEngine(t, load) {
+    let engine = this._ambient.engine;
+    if (load !== null && !engine) {
+      const source = this.ctx.createOscillator(), filter = this.ctx.createBiquadFilter(), volume = this.ctx.createGain();
+      source.type = 'sawtooth'; source.frequency.value = 54;
+      filter.type = 'lowpass'; filter.frequency.value = 165; filter.Q.value = .45;
+      volume.gain.value = 0;
+      source.connect(filter); filter.connect(volume); volume.connect(this.master); source.start();
+      this._ambient.nodes.push(source, filter, volume);
+      engine = this._ambient.engine = { source, filter, volume };
+    }
+    if (!engine) return;
+    const power = clamp(load ?? 0);
+    engine.source.frequency.setTargetAtTime(54 + power * 36, t, .16);
+    engine.filter.frequency.setTargetAtTime(165 + power * 145, t, .16);
+    engine.volume.gain.setTargetAtTime(load === null ? 0 : .023 + power * .028, t, .09);
+  }
+
+  update(dt, danger = 0, weather = 'rain', tankLoad = null) {
     if (!this.ready || !this._ambient || this._paused || this._disposed || this._hidden || this.muted || this.volume <= 0 || this.ctx?.state !== 'running') return;
     this._time += clamp(dt, 0, .1);
     if (this._time - this._mixTime < .12) return;
@@ -752,6 +800,7 @@ export class GameAudio {
     this._ambient.wind.volume.gain.setTargetAtTime(this._menuActive ? .004 : .006 + (Math.sin(this._time * .37) + 1) * .003 + d * .003, t, .3);
     this._ambient.wind.filter.frequency.setTargetAtTime(this._menuActive ? 150 : 190 + Math.sin(this._time * .2) * 60 + d * 70, t, .3);
     this._ambient.rain.volume.gain.setTargetAtTime(this._menuActive ? .0003 : weather === 'rain' ? .006 : weather === 'snow' ? .001 : .002, t, .4);
+    this._updateTankEngine(t, tankLoad);
   }
 
   _stopTransientSources() {
@@ -766,7 +815,7 @@ export class GameAudio {
   _dropGraph() {
     this._stopTransientSources();
     if (this._ambient) {
-      for (const layer of [this._ambient.wind, this._ambient.rain]) { try { layer.source.stop(); } catch (_) {} }
+      for (const layer of [this._ambient.wind, this._ambient.rain, this._ambient.engine]) { try { layer?.source.stop(); } catch (_) {} }
       for (const node of this._ambient.nodes) { try { node.disconnect(); } catch (_) {} }
     }
     if (this.ctx) this.ctx.onstatechange = null;
