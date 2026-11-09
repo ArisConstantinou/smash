@@ -26,6 +26,7 @@ const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const CUBE = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
 const FRACTION = [0, 0, .10, .27, .46, .66, 1];
 const v3 = new THREE.Vector3(), normal = new THREE.Vector3();
+const rubbleRay = new THREE.Ray(), localRubbleRay = new THREE.Ray(), rubbleHit = new THREE.Vector3();
 
 function insideExpandedBounds(bounds, point, margin) {
   return point.x>=bounds.min.x-margin&&point.x<=bounds.max.x+margin&&
@@ -225,6 +226,23 @@ export class DestructionSystem {
     this.debris=[];this.alarms=new Map();this.time=0;this.disposed=false;
   }
   warm(){this.renderer.geometry.setDrawRange(0,3);}
+  prepareOcclusion(){
+    for(const part of this.debris){
+      const mesh=part.mesh;
+      mesh.updateMatrix();
+      (part.occlusionBounds??=new THREE.Box3()).copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrix);
+      (part.occlusionInverse??=new THREE.Matrix4()).copy(mesh.matrix).invert();
+    }
+  }
+  occludes(point,direction){
+    rubbleRay.set(point,direction);
+    return this.debris.some(part=>{
+      const bounds=part.occlusionBounds;
+      if(!bounds||rubbleRay.intersectBox(bounds,rubbleHit)===null||rubbleHit.distanceToSquared(point)>=30*30)return false;
+      localRubbleRay.copy(rubbleRay).applyMatrix4(part.occlusionInverse);
+      return localRubbleRay.intersectsBox(part.mesh.geometry.boundingBox);
+    });
+  }
   reset(){
     for(const object of [...this.alarms.keys()])this.stopAlarm(object);
     while(this.debris.length)this.removeDebris(0);

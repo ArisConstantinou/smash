@@ -51,14 +51,16 @@ async function verifyCompactHud(page,mobile){
     return {width:innerWidth,height:innerHeight,title:document.querySelector('.goal-heading>span').textContent,
       top:box('.hud-top'),hero:box('.hero-status'),health:box('.health-track'),wave:box('.run-status'),
       goal:box('.goal-panel'),bar:box('.goal-track'),value:box('.goal-heading>div'),map:box('.minimap-panel'),fps:box('#performanceHud'),
-      upgrade:box('#upgradesToggle'),joystick:box('#joystick'),actions:box('#combatDock')};
+      utilities:['#mountToggle','#mountWorkshopButton','#upgradesToggle'].map(box),joystick:box('#joystick'),actions:box('#combatDock')};
   });
   assert.equal(layout.title,'ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ');
   assert.ok(layout.fps.x>=layout.map.x&&layout.fps.right<=layout.map.right&&layout.fps.y>=layout.map.y);
   if(mobile){
     assert.ok(layout.top.y<=8&&layout.top.height<=100,'No separate performance strip or full-width wave row');
     assert.ok(layout.wave.y>=layout.health.bottom+2&&layout.wave.bottom<=layout.hero.bottom+1&&layout.wave.right<=layout.hero.right+1,'Wave counter stays under the player health bar');
-    assert.ok(layout.upgrade.x>=layout.joystick.right+6&&layout.upgrade.right<=layout.actions.x-6,'Upgrade access stays between both control groups');
+    assert.ok(layout.joystick.right+6<=layout.actions.x,'Steering clears the combined dock');
+    assert.ok(layout.utilities.every(({x,right,height})=>x>=layout.actions.x&&right<=layout.actions.right&&height>=44),'Mount, equipment and upgrades share the touch dock');
+    if(layout.width>layout.height)assert.ok(layout.goal.width<=264,'Landscape progress does not stretch across the center');
     assert.ok(Math.abs(layout.map.right-layout.actions.right)<1);
     if(layout.width<360&&layout.width<layout.height)assert.ok(layout.bar.right+3<=layout.value.x,'The small-phone bar must clear its percentage');
   }

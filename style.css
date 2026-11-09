@@ -1123,7 +1123,7 @@ body[data-touch-controls="true"] .goal-heading,body[data-touch-controls="true"] 
 body[data-touch-controls="false"] .minimap-panel{top:180px}
 body[data-touch-controls="true"]{
  --mobile-safe-top:6px;
- --mobile-actions-width:min(222px,calc(100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - var(--mobile-joystick-size) - 68px));
+ --mobile-actions-width:min(222px,calc(100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - var(--mobile-joystick-size) - 12px));
  --mobile-hero-width:calc((100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - 4px)*.5);
  --mobile-map-top:calc(var(--mobile-safe-top) + 78px);
  --mobile-hud-space:calc(var(--mobile-safe-top) + 128px);
@@ -1152,11 +1152,6 @@ body[data-touch-controls="true"] #minimap{width:70px!important;height:70px!impor
 body[data-touch-controls="true"] #combatDock{width:var(--mobile-actions-width)}
 body[data-touch-controls="true"] #combatDock .action-name{font-size:12px;line-height:14px;letter-spacing:-.2px}
 body[data-touch-controls="true"] #combatDock .action-picture{max-width:100%}
-body[data-touch-controls="true"] .upgrade-dock{
- top:auto;right:auto;left:calc(var(--mobile-safe-left) + var(--mobile-joystick-size) + 8px);
- bottom:calc(var(--mobile-safe-bottom) + var(--mobile-joystick-size)*.5 - 26px);width:52px;
-}
-body[data-touch-controls="true"] .upgrades-toggle{width:52px;min-width:52px;height:52px;min-height:52px}
 body[data-touch-controls="true"] .boss-panel{
  top:var(--mobile-hud-space);left:var(--mobile-safe-left);right:auto;
  width:calc(100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - 94px);
@@ -1227,7 +1222,70 @@ body[data-touch-controls="true"] .boss-panel{width:calc(100vw - var(--mobile-saf
  body[data-touch-controls="true"] .announcement{top:max(30%,260px)}
 }
 @media(orientation:landscape) and (max-height:500px){
- body[data-touch-controls="true"] .minimap-panel{display:block}
- body[data-touch-controls="true"] #minimap{width:72px!important;height:72px!important}
- body[data-touch-controls="true"] .hud-top{grid-template-columns:var(--mobile-hero-width) minmax(0,1fr) 120px}
+ body[data-touch-controls="true"]{
+  --mobile-map-width:132px;
+  --mobile-tile-height:clamp(44px,14dvh,60px);
+ }
+ body[data-touch-controls="true"] .hud-top{grid-template-columns:var(--mobile-hero-width) minmax(0,1fr) var(--mobile-map-width)}
+ body[data-touch-controls="true"] .goal-panel{width:min(100%,264px);height:64px;justify-self:center}
+ body[data-touch-controls="true"] .goal-track{margin-top:2px}
+ body[data-touch-controls="true"] .goal-breakdown{margin-top:3px}
+ body[data-touch-controls="true"] .minimap-panel{
+  display:grid;width:var(--mobile-map-width);grid-template-columns:56px minmax(0,1fr);
+  column-gap:5px;align-items:center;
+ }
+ body[data-touch-controls="true"] .minimap-status{grid-column:1/-1;margin-bottom:1px}
+ body[data-touch-controls="true"] #minimap{width:56px!important;height:56px!important}
+ body[data-touch-controls="true"] .map-legend{grid-template-columns:1fr;gap:0;margin:0;line-height:14px}
+ body[data-touch-controls="true"] .boss-panel{
+  top:calc(var(--mobile-safe-top) + 70px);
+  left:calc(var(--mobile-safe-left) + var(--mobile-hero-width) + 4px);
+  right:calc(var(--mobile-safe-right) + var(--mobile-map-width) + 4px);
+  width:auto;max-width:264px;margin-inline:auto;
+ }
+ body[data-touch-controls="true"] .toasts{
+  left:calc(var(--mobile-safe-left) + var(--mobile-joystick-size) + 8px);
+  right:calc(var(--mobile-safe-right) + var(--mobile-actions-width) + 8px);
+  bottom:var(--mobile-safe-bottom);width:auto;max-width:220px;
+ }
+}
+
+body[data-touch-controls="true"]{
+ --mobile-dock-height:calc(2 * var(--mobile-tile-height) + 70px);
+}
+body[data-touch-controls="true"] #upgradePanel{
+ max-height:calc(var(--app-height,100dvh) - var(--mobile-hud-space) - var(--combat-dock-space) - 6px);
+ overflow:auto;overscroll-behavior:contain;touch-action:pan-y;
+}
+@media(orientation:landscape){
+ body[data-touch-controls="true"]{
+  --mobile-actions-width:min(350px,calc(100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - var(--mobile-joystick-size) - 12px));
+  --mobile-dock-height:calc(2 * var(--mobile-tile-height) + 17px);
+ }
+ body[data-touch-controls="true"] #combatDock.combat-dock{
+  width:var(--mobile-actions-width);
+  display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:5px;
+ }
+ body[data-touch-controls="true"] #touchUtilitySlot{grid-column:2;grid-row:1}
+ body[data-touch-controls="true"] #combatDock .dock-main{grid-column:1;grid-row:1}
+}
+@media(orientation:landscape) and (max-height:500px){
+ body[data-touch-controls="true"] #upgradePanel{
+  top:calc(var(--mobile-safe-top) + 70px);
+  left:calc(var(--mobile-safe-left) + var(--mobile-joystick-size) + 8px);
+  right:calc(var(--mobile-safe-right) + var(--mobile-actions-width) + 8px);
+  max-height:calc(var(--app-height,100dvh) - var(--mobile-safe-top) - 70px - var(--mobile-safe-bottom));
+ }
+}
+@media(orientation:landscape) and (max-height:500px) and (max-width:620px){
+ body[data-touch-controls="true"] #upgradePanel{
+  left:calc(var(--mobile-safe-left) + var(--mobile-joystick-size) + 8px);
+  right:var(--mobile-safe-right);width:auto;max-width:380px;
+ }
+}
+body[data-touch-controls="true"][data-state="playing"]{
+ -webkit-touch-callout:none;
+}
+body[data-touch-controls="true"][data-state="playing"] :is(#gameCanvas,#combatDock,#combatDock button,.hud-top,.hud-buttons,.hud-buttons button,.minimap-panel,#joystick){
+ touch-action:none;
 }

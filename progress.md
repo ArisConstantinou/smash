@@ -1,5 +1,11 @@
 Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\Smash; find failed ChatGPT/GitHub WebGPU/WASM work and fix hammer/whirlwind destruction FPS collapse plus the recorded pending updates. Keep this source folder and project structure for future work.
 
+## Rubble visibility and first contact with new buildings — 2026-11-09
+
+- Candidate `codex/combat-readability` uses published `29c2ccd` as the baseline. In a phone-sized WebGPU fixture, a collapsed office still left the player and enemy active, but its foreground fragments covered them. The player silhouette and a cyan marker now show through rubble, with a coral marker for covered nearby enemies.
+- Approaching buildings now prepares the exact collision data in small steps. The first contact probe still uses the same geometry, including any damage that happened after preparation started. In six CPU-throttled first-contact probes, the baseline built two geometry caches on each contact. The candidate built zero at contact. This measures one source of stalls, not frame rates on a physical phone.
+- Reproducible browser evidence is under the stable `tests/combat-readability` output directory. The candidate uses the existing port 8000.
+
 ## Boss trophy weapons — 2026-11-09
 
 - Candidate `codex/boss-trophy-weapons` is based on published `8f70106`. The Siege Transformer's barrel hammer (w19) and Hollow Marshal's shock baton (w20) use the approved boss designs. Both have editable meshes, matching Workshop illustrations, physical hit volumes, and independently saved upgrades.
@@ -238,3 +244,19 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 
 - Final local validation passed524/524, the installed input client and all4 expanded browser cases (clipped0, nearestroof58m in each). Current client screenshot/state visually inspected: foreground roofs and rooftop plant/antenna are complete in ordinary gameplay. One backward-compatibility issue in the isolated ribbon camera stub was fixed with optional effect-eye metadata fallback; the original48-buffer allocation tests pass unchanged. Final A/B wide images captured after warmup use actual RAF telemetry instead of stale setup FPS.
 - Branchfix/roof-near-plane is ready for PR/CI. Publicmain949932e remains the protected baseline until separate promotion approval. StorageGuardSmash exemption verified; no+48MiB cap increase, globalcap65.6328125 unchanged. Physical-phone acceptance and older cold-start stalls remain open.
+
+## Mobile combat HUD and page gestures — 2026-11-09
+
+- Candidate `codex/combat-readability` at `29c2ccd` includes the existing combat readability changes. The touch dock reuses the ride, Workshop and upgrades controls. In landscape, the progress card is capped at 264 px, with a shorter map that retains FPS and all four legend items.
+- Gameplay blocks page zoom, pan, scroll and selection while leaving internal panels usable. Fixed-port preview at `http://127.0.0.1:8000/candidate/`. Matched WebGPU captures and layout measurements are in `E:/CodexGenerated/smash/staging/tests/hud-layout`. Physical iPhone Safari remains to be checked.
+- Verified 601 Node tests, nine Chromium HUD viewports, four browser smoke viewports and the Workshop browser suite. At 932×313 with emulated landscape safe areas, the goal narrowed from 542 px to 264 px. Chromium touch input kept the page at scale 1 and scroll (0, 0) in both orientations while steering still registered. Desktop WebKit passed touch mount, orientation change, upgrade access and cancellation of synthetic Safari gesture events.
+
+## Two-row touch controls and attachment upgrade previews — 2026-11-09
+
+- Portrait hides the vehicle readout. Landscape arranges all nine dock buttons in two aligned rows and keeps the vehicle HP and energy in the spare cell. At 932×313 with simulated safe areas, the dock is 350×106 px and clears the minimap and joystick.
+- Workshop previews the selected attachment's next rank, actual stat changes, core effects and required versus available materials before purchase. Tests cover first construction, the next rank, the rank cap, paid materials and isolated test purchases. Passed 601 Node tests, the responsive HUD and Workshop browser checks, and the installed gameplay client. Evidence is under `tests/hud-layout` and `tests/mount-workshop` in staging. Physical iPhone testing remains open.
+
+## Workshop inventory layout — 2026-11-09
+
+- On phones, the compact header aligns title, save and close, with status alongside the current equipment context. The portrait parts strip scrolls horizontally and leaves the 3D preview and upgrade details full width. Landscape aligns the parts, preview and details in three columns. The armory preset shares the preview controls row and the empty feedback footer collapses.
+- Matched browser captures and layout measurements are under `tests/mount-workshop` in staging. Portrait upgrade details grew from 308 to 402 px at 430×932. At 932×430, the details column grew from 280 to 362 px and the armory canvas from 166 to about 219 px high. Purchase access and alignment were also checked at 320×568 and 667×313. The isolated preview stays at `http://127.0.0.1:8000/candidate/`.

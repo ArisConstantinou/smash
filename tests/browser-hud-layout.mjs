@@ -1,7 +1,7 @@
 // Native rendering + real interactions at matched viewports. Safe-area values
 // are simulated CSS inputs, not certification of a physical iPhone.
 import assert from 'node:assert/strict';
-import {readFile,mkdir,writeFile} from 'node:fs/promises';
+import {mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const out=resolve(process.env.CODEX_TEST_OUTPUT,'hud-layout');await mkdir(out,{recursive:true});
@@ -10,7 +10,7 @@ const skill=resolve(process.env.USERPROFILE,'.codex/skills/develop-web-game');
 const {chromium}=await import(pathToFileURL(resolve(skill,'node_modules/playwright/index.mjs')));
 const {launchManagedBrowser}=await import(pathToFileURL(resolve(skill,'scripts/browser_lifecycle.mjs')));
 const label=process.env.SMASH_HUD_LABEL||'before',origin=process.env.SMASH_HUD_ORIGIN||'http://127.0.0.1:8000/';
-const game=origin.startsWith('http://127.')?await readFile('E:/Smash/game.js','utf8'):await(await fetch(new URL('game.js?v=20261108-colossus1',origin))).text();
+const game=await(await fetch(new URL('game.js',origin))).text();
 const hook=`
 const hudQAFrame=frame;let hudQAFrozen=false;
 frame=function(t){if(hudQAFrozen){renderer.render(scene,camera);requestAnimationFrame(frame);}else hudQAFrame(t);};
@@ -28,18 +28,56 @@ const cases=[
  {name:'small',width:320,height:568,safe:0},
  {name:'landscape',width:844,height:390,safe:0},
  {name:'short-landscape',width:667,height:360,safe:0},
+ {name:'iphone-landscape',width:932,height:313,safe:0,left:59,right:59,bottom:21},
  {name:'inset-browser',width:393,height:682,safe:44},
  {name:'standalone',width:393,height:852,safe:44,standalone:true},
  {name:'desktop',width:1440,height:900,safe:0},
-].filter(c=>!process.env.SMASH_HUD_CASE||c.name===process.env.SMASH_HUD_CASE);
+].filter(c=>!process.env.SMASH_HUD_CASE||process.env.SMASH_HUD_CASE.split(',').includes(c.name));
 let context;const results=[],errors=[];
+async function verifyBattleGestures(page){
+ const session=await page.context().newCDPSession(page);
+ const {width,height}=page.viewportSize(),x=Math.round(width*.5),y=Math.round(height*.42);
+ const touch=(type,positions)=>session.send('Input.dispatchTouchEvent',{
+  type,touchPoints:positions.map(([x,y],id)=>({x,y,id}))
+ });
+ await touch('touchStart',[[x-20,y],[x+20,y]]);
+ for(const d of [28,40,55,70])await touch('touchMove',[[x-d,y],[x+d,y]]);
+ await touch('touchEnd',[]);
+ await touch('touchStart',[[x,y]]);
+ await touch('touchMove',[[x,y+40]]);
+ await touch('touchMove',[[x,y+60]]);
+ await touch('touchEnd',[]);
+ await page.touchscreen.tap(x,y);
+ await page.touchscreen.tap(x,y);
+ const stick=await page.locator('#joystick').boundingBox();
+ const cx=Math.round(stick.x+stick.width/2),cy=Math.round(stick.y+stick.height/2);
+ await touch('touchStart',[[cx,cy]]);
+ await touch('touchMove',[[cx+30,cy-30]]);
+ await page.waitForFunction(()=>document.querySelector('#joystick').dataset.intent==='walk');
+ await touch('touchEnd',[]);
+ await page.waitForFunction(()=>document.querySelector('#joystick').dataset.intent==='idle');
+ await page.waitForTimeout(200);
+ const gestures=await page.evaluate(()=>{
+  const canvas=document.querySelector('#gameCanvas');
+  const blocked=name=>!canvas.dispatchEvent(new Event(name,{bubbles:true,cancelable:true}));
+  return {scale:visualViewport.scale,x:visualViewport.offsetLeft,y:visualViewport.offsetTop,
+   scrollX,scrollY,selection:getSelection().toString(),width:document.documentElement.scrollWidth,
+   height:document.documentElement.scrollHeight,gesture:blocked('gesturestart')&&blocked('gesturechange'),
+   selectionBlocked:blocked('selectstart'),callout:blocked('contextmenu')};
+ });
+ assert.deepEqual(gestures,{scale:1,x:0,y:0,scrollX:0,scrollY:0,selection:'',width,height,
+  gesture:true,selectionBlocked:true,callout:true});
+ await session.detach();
+ return gestures;
+}
 try{
- context=await session.browser.newContext({viewport:{width:393,height:682}});
- await context.route('**/game.js*',r=>r.fulfill({status:200,contentType:'text/javascript',body:game+hook}));
  for(const c of cases){
-  await context.unroute('**/*.css*');
+  const mobile=c.name!=='desktop';
+  context=await session.browser.newContext({viewport:{width:c.width,height:c.height},hasTouch:mobile,isMobile:mobile});
+  await context.route('**/game.js*',r=>r.fulfill({status:200,contentType:'text/javascript',body:game+hook}));
   await context.route('**/*.css*',async r=>{const response=await r.fetch();let css=await response.text();
    css=css.replace(/env\(safe-area-inset-top(?:,\s*0px)?\)/g,c.safe+'px');
+   for(const side of ['left','right','bottom'])if(c[side])css=css.replace(new RegExp('env\\(safe-area-inset-'+side+'(?:,\\s*0px)?\\)','g'),c[side]+'px');
    if(c.standalone)css=css.replace(/\(display-mode:standalone\)/g,'(min-width:0px)');
    await r.fulfill({response,body:css});});
   const page=await context.newPage();page.on('pageerror',e=>errors.push({case:c.name,error:e.message}));
@@ -50,24 +88,45 @@ try{
   const layout=await page.evaluate(()=>{
    const box=s=>{const r=document.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
    const labels=[...document.querySelectorAll('.goal-heading>span,.goal-breakdown>span')].map(e=>({text:e.textContent,font:parseFloat(getComputedStyle(e).fontSize),y:e.getBoundingClientRect().y,bottom:e.getBoundingClientRect().bottom,width:e.getBoundingClientRect().width,scroll:e.scrollWidth}));
-   return {touch:document.body.dataset.touchControls==='true',fps:document.querySelector('#performanceHud').textContent,title:document.querySelector('.goal-heading>span').textContent,scroll:document.documentElement.scrollWidth,width:innerWidth,top:box('.hud-top'),map:box('.minimap-panel'),fpsBox:box('#performanceHud'),toolbar:box('.hud-buttons'),upgrade:box('#upgradesToggle'),joystick:box('#joystick'),actions:box('#combatDock'),goal:box('.goal-panel'),track:box('.goal-track'),number:box('.goal-heading>div'),hero:box('.hero-status'),health:box('.health-track'),wave:box('.run-status'),labels};
+   return {touch:document.body.dataset.touchControls==='true',fps:document.querySelector('#performanceHud').textContent,title:document.querySelector('.goal-heading>span').textContent,scroll:document.documentElement.scrollWidth,width:innerWidth,top:box('.hud-top'),map:box('.minimap-panel'),fpsBox:box('#performanceHud'),toolbar:box('.hud-buttons'),utility:['#mountToggle','#mountWorkshopButton','#upgradesToggle'].map(box),mount:box('#mountControls'),joystick:box('#joystick'),actions:box('#combatDock'),combat:box('.dock-actions'),battleButtons:['#guardButton','#leapButton','#dashButton','#throwButton','#kickButton','#attackButton'].map(box),readout:getComputedStyle(document.querySelector('#mountReadout')).display,goal:box('.goal-panel'),track:box('.goal-track'),number:box('.goal-heading>div'),hero:box('.hero-status'),health:box('.health-track'),wave:box('.run-status'),labels};
   });
   await page.screenshot({path:resolve(out,label+'-'+c.name+'.png')});results.push({case:c.name,state,...layout});
-  if(label==='after'){
+  if(label.startsWith('after')){
    assert.match(layout.fps,/^\d+ FPS$/);assert.equal(layout.title,'ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ');assert.equal(state.kills,7);assert.equal(state.goal,Math.floor(state.destruction+7)+'%');
    assert.ok(layout.scroll<=c.width);assert.ok(layout.fpsBox.x>=layout.map.x&&layout.fpsBox.right<=layout.map.right);
    if(layout.touch){
     assert.ok(c.standalone?layout.top.y>=44:layout.top.y<=8,'The browser HUD must use its top space; standalone keeps the notch inset');
-    assert.ok(layout.upgrade.x>=layout.joystick.right+6);assert.ok(layout.upgrade.right<=layout.actions.x-6);
-    assert.ok(layout.upgrade.width>=44&&layout.upgrade.height>=44);
+    assert.ok(layout.actions.x>=layout.joystick.right+6);
+    assert.ok(layout.utility.every(b=>b.x>=layout.actions.x&&b.right<=layout.actions.right&&b.width>=44&&b.height>=44));
+    if(c.width>c.height){
+     const rows=new Map();
+     for(const b of [...layout.utility,...layout.battleButtons]){
+      const key=Math.round(b.y);rows.set(key,(rows.get(key)||0)+1);
+     }
+     assert.deepEqual([...rows.values()].sort(),[4,5],'All nine buttons fit in exactly two rows');
+     assert.ok(layout.mount.x>=layout.combat.right);
+    }else{
+     assert.equal(layout.readout,'none');
+     assert.ok(layout.utility.every(b=>b.y===layout.utility[0].y));
+     assert.ok(layout.mount.bottom<=layout.combat.y&&layout.mount.y>=layout.actions.y);
+    }
+    for(const name of ['toolbar','joystick','map','actions','goal','hero']){
+     const b=layout[name];
+     assert.ok(b.x>=(c.left||0)&&b.right<=c.width-(c.right||0)&&b.y>=0&&b.bottom<=c.height-(c.bottom||0),name+' fits the visible safe area');
+    }
     assert.ok(layout.wave.x>=layout.hero.x&&layout.wave.right<=layout.hero.right+1&&layout.wave.y>=layout.health.bottom+2&&layout.wave.bottom<=layout.hero.bottom+1,'Wave count belongs inside the health card');
     assert.ok(layout.wave.height<=24&&layout.top.height<=100);
     if(c.width<360&&c.width<c.height)assert.ok(layout.track.right+3<=layout.number.x,'Small portrait progress bar must clear its number');
-    if(c.width>c.height){assert.ok(Math.abs(layout.map.y-layout.top.y)<1);assert.ok(layout.goal.right+3<=layout.map.x);}
+    if(c.width>c.height){assert.ok(Math.abs(layout.map.y-layout.top.y)<1);assert.ok(layout.goal.width<=264&&layout.goal.right+3<=layout.map.x);}
     else{assert.ok(layout.map.y>=layout.goal.bottom+3);assert.ok(layout.toolbar.right+3<layout.map.x);if(c.width>=360)assert.ok(Math.abs(layout.map.y-layout.toolbar.y)<1);}
 
     assert.ok(Math.abs(layout.map.right-layout.actions.right)<1);assert.ok(layout.map.bottom<=layout.actions.y-3,'Map must clear the action dock');
     assert.ok(layout.labels.every(l=>l.font>=12&&l.scroll<=l.width+1&&l.y>=layout.goal.y&&l.bottom<=layout.goal.bottom-3),'Contribution labels must stay inside the goal card');
+    await page.locator('#mountToggle').tap();
+    assert.equal(await page.locator('#mountToggle').getAttribute('aria-pressed'),'true');
+    await page.locator('#mountToggle').tap();
+    assert.equal(await page.locator('#mountToggle').getAttribute('aria-pressed'),'false');
+    if(['iphone-browser','iphone-landscape'].includes(c.name))results.at(-1).gestures=await verifyBattleGestures(page);
    }
    await page.locator('#upgradesToggle').click();await assert.doesNotReject(()=>page.locator('#upgradePanel').waitFor({state:'visible'}));
    await page.locator('#upgradeGearTab').click();assert.equal(await page.locator('#upgradeGearTab').getAttribute('aria-selected'),'true');
@@ -80,7 +139,7 @@ try{
    }
 
   }
-  await page.close();
+  await context.close();
  }
  assert.deepEqual(errors,[]);
 }catch(error){console.error(JSON.stringify({results,errors}));throw error;}
