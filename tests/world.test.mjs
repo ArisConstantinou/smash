@@ -14,6 +14,30 @@ const distanceToBox=(x,z,o)=>Math.hypot(Math.max(0,Math.abs(x-o.x)-o.w/2),Math.m
 const kinds=['townhouse','apartment','shop','office','townhall','police','hospital','skyscraper','construction','warehouse'];
 test.after(()=>world.dispose());
 
+test('rain covers a wide orthographic view at the map edge and above city roofs',()=>{
+  const rain=world.group.children.find(node=>node.isLineSegments&&node.geometry.attributes.position?.count===1360);
+  const camera=new THREE.OrthographicCamera(-48,48,15,-15,.1,300);
+  const point=new THREE.Vector3();
+  for(const [x,z] of [[0,0],[77,33],[-77,33]]){
+    camera.position.set(x+39,69.6,z+54);
+    camera.lookAt(x,.6,z);camera.updateMatrixWorld(true);
+    world.update(1/60,3,{x,z},undefined,camera);
+    const buckets=new Uint16Array(8),attribute=rain.geometry.attributes.position;
+    let highest=0;
+    assert.equal(rain.visible,true);
+    for(let i=0;i<rain.geometry.drawRange.count;i+=2){
+      point.fromBufferAttribute(attribute,i);
+      highest=Math.max(highest,point.y);
+      point.project(camera);
+      if(Math.abs(point.x)<1&&Math.abs(point.y)<1)buckets[Math.floor((point.x+1)*4)]++;
+    }
+    assert.ok(buckets.every(count=>count>25),`Dry view strip at ${x},${z}: ${buckets}`);
+    assert.ok(highest>Math.max(...world.buildingObjects.map(building=>building.h)));
+  }
+  world.update(1/60,3,{x:-77,z:-66},undefined,camera);
+  assert.equal(rain.visible,false);
+});
+
 test('single ground surfaces keep their authored location and remain fractureable without an identity instance',()=>{
   const singles=[];
   world.group.traverse(mesh=>{

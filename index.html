@@ -28,7 +28,7 @@
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261109.8">
-  <link rel="stylesheet" href="./controls.css?v=20261109-scream-live1">
+  <link rel="stylesheet" href="./controls.css?v=20261109-shout-brace">
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
   <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
@@ -388,17 +388,9 @@
           <svg class="movement-directions" viewBox="0 0 60 14" aria-hidden="true"><path d="M4 7H56M4 7l5-4M4 7l5 4M56 7l-5-4M56 7l-5 4M30 1v12m0-12-4 4m4-4 4 4m-4 8-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
         </div>
         <div class="dock-actions" role="group" aria-label="Ενέργειες πολεμιστή">
-          <button id="attackButton" class="action-tile" type="button" aria-label="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." title="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." data-desktop-label="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." data-touch-label="Πάτησε για χτύπημα. Κράτα για συνεχή περιστροφή. Πάτησε στον αέρα για κατέβασμα.">
-            <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg>LMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="attackIcon" href="#a-swing"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="attackTouchIcon" href="#t-attack"/></svg><span id="attackName" class="action-name">ΣΦΥΡΙΑ</span><small id="attackValue" class="action-status">ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°</small>
-          </button>
           <button id="kickButton" class="action-tile" data-key="KeyE" type="button" aria-label="E: κλωτσιά προς τα εμπρός. Η μάζα καθορίζει την ώθηση." title="E: κλωτσιά. Με δύο αναβαθμίσεις μετακινεί αυτοκίνητα." data-desktop-label="E: κλωτσιά προς τα εμπρός. Με δύο αναβαθμίσεις μετακινεί αυτοκίνητα." data-touch-label="Κλωτσιά προς τα εμπρός. Με δύο αναβαθμίσεις μετακινεί αυτοκίνητα.">
             <kbd class="action-key">E</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-kick"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-kick"/></svg><span class="action-name">ΚΛΩΤΣΙΑ</span><small id="kickValue" class="action-status">ΒΑΘΜΙΔΑ 1</small>
-          </button>
-          <button id="guardButton" class="action-tile" type="button" aria-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." title="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-desktop-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-touch-label="Κράτα την άμυνα για προστασία μπροστά σου. Άφησε για να σταματήσεις.">
-            <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-right"/></svg>RMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-guard"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-guard"/></svg><span class="action-name">ΑΜΥΝΑ</span><small id="guardValue" class="action-status">ΚΡΑΤΑ RMB</small>
           </button>
           <button id="leapButton" class="action-tile" data-key="Space" type="button" aria-label="Space: άλμα. LMB στον αέρα: μικρό smash. Shift: εναέριο dash." title="Space: άλμα. LMB στον αέρα: μικρό smash. Shift: εναέριο dash." data-desktop-label="Space: άλμα. LMB στον αέρα: μικρό smash. Shift: εναέριο dash." data-touch-label="Άλμα. Πάτα επίθεση στον αέρα για μικρό smash ή αποφυγή για εναέριο dash.">
             <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg>
@@ -408,7 +400,7 @@
             <kbd class="action-key">R</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-throw"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-throw"/></svg><span class="action-name">ΡΙΨΗ</span><small id="throwValue" class="action-status">ΣΤΟΧΕΥΣΕ</small>
           </button>
-          <button id="screamButton" class="action-tile" data-key="KeyZ" type="button" aria-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα." title="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα." data-desktop-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα." data-touch-label="Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα.">
+          <button id="screamButton" class="action-tile" data-key="KeyZ" type="button" aria-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής." title="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής." data-desktop-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής." data-touch-label="Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής.">
             <kbd class="action-key">Z</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-scream"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-scream"/></svg><span class="action-name">ΚΡΑΥΓΗ</span><small id="screamValue" class="action-status">ΕΤΟΙΜΗ</small>
           </button>
@@ -416,6 +408,16 @@
             <kbd class="action-key">SHIFT</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-dodge"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-dodge"/></svg><span id="dashName" class="action-name">ΑΠΟΦΥΓΗ</span><small id="dashValue" class="action-status">ΕΤΟΙΜΟ</small>
           </button>
+          <div class="mouse-actions" role="group" aria-label="Χειριστήρια ποντικιού">
+          <button id="attackButton" class="action-tile" type="button" aria-label="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." title="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." data-desktop-label="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." data-touch-label="Πάτησε για χτύπημα. Κράτα για συνεχή περιστροφή. Πάτησε στον αέρα για κατέβασμα.">
+            <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg>LMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="attackIcon" href="#a-swing"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="attackTouchIcon" href="#t-attack"/></svg><span id="attackName" class="action-name">ΣΦΥΡΙΑ</span><small id="attackValue" class="action-status">ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°</small>
+          </button>
+          <button id="guardButton" class="action-tile" type="button" aria-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." title="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-desktop-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-touch-label="Κράτα την άμυνα για προστασία μπροστά σου. Άφησε για να σταματήσεις.">
+            <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-right"/></svg>RMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-guard"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-guard"/></svg><span class="action-name">ΑΜΥΝΑ</span><small id="guardValue" class="action-status">ΚΡΑΤΑ RMB</small>
+          </button>
+          </div>
         </div>
       </div>
       <div class="dock-status desktop-only">
@@ -449,7 +451,7 @@
         <dl class="desktop-only"><dt>W A S D</dt><dd>Ελεύθερη κίνηση προς κάθε κατεύθυνση. Ο πολεμιστής στρέφεται πάντα προς την κίνησή του.</dd>
         <dt>ΠΟΝΤΙΚΙ</dt><dd>Όταν στέκεσαι, στρέφει τον πολεμιστή, τη σφυριά και την άμυνα. Η ρίψη με R ακολουθεί τη στόχευση, με προαιρετική αυτόματη επιλογή ορατού εχθρού.</dd>
         <dt>LMB</dt><dd>Αριστερό κλικ: χτύπημα. Κράτημα: περιστροφή με όπλο. Χωρίς όπλο: γροθιά, κράτημα για διαδοχικές γροθιές. Άφησε για να σταματήσεις.</dd>
-        <dt>Z</dt><dd>Κραυγή προς το σημείο που κοιτάς. Κράτα έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα από τη λήξη. Τα επίπεδα και οι αναβαθμίσεις δυναμώνουν το κύμα.</dd>
+        <dt>Z</dt><dd>Κραυγή προς το σημείο που κοιτάς. Κράτα έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα από τη λήξη, ανάλογα με τη δύναμη της κραυγής. Τα επίπεδα και οι αναβαθμίσεις δυναμώνουν το κύμα.</dd>
         <dt>G</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά G για επαναφορά.</dd>
         <dt>Κράτα RMB</dt><dd>Δεξί κλικ: κατακόρυφη περιστροφή του σφυριού μπροστά σου. Προστατεύει προς την κατεύθυνση που κοιτάς και ανακλά μετωπικά βλήματα.</dd>
         <dt>SPACE</dt><dd>Ψηλό άλμα προς τα εμπρός και μικρό χτύπημα στην προσγείωση.</dd>
@@ -465,7 +467,7 @@
         <dt>ΑΜΥΝΑ</dt><dd>Κράτα πατημένο για προστασία προς την κατεύθυνση που κοιτάς.</dd>
         <dt>ΑΛΜΑ</dt><dd>Πάτησε για άλμα και, με το όπλο στα χέρια, πάτα ΧΤΥΠΗΜΑ στον αέρα για μικρό smash. Με σιδερένιο σφυρί ή καλύτερο, κράτα για μεγάλη συντριβή.</dd>
         <dt>ΡΙΨΗ</dt><dd>Κράτα για κατακόρυφη περιστροφή, σύρε προς τον στόχο και άφησε. Το σφυρί αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με ηλεκτρική λάμψη.</dd>
-        <dt>ΚΡΑΥΓΗ</dt><dd>Κράτα έως 10 δευτερόλεπτα και στρέψε τον πολεμιστή με τον μοχλό. Επαναφόρτιση 30 δευτερόλεπτα από τη λήξη.</dd>
+        <dt>ΚΡΑΥΓΗ</dt><dd>Κράτα έως 10 δευτερόλεπτα και στρέψε τον πολεμιστή με τον μοχλό. Επαναφόρτιση 2–30 δευτερόλεπτα από τη λήξη, ανάλογα με τη δύναμη της κραυγής.</dd>
         <dt>ΛΑΒΗ</dt><dd>Άνοιξε τις αναβαθμίσεις επάνω και πάτα ΛΑΒΗ. Βάζει την ασπίδα στην πλάτη και κρατά το σφυρί με δύο χέρια για +25% ζημιά. Πάτησε ξανά για επαναφορά.</dd>
         <dt>ΕΥΡΗΜΑΤΑ</dt><dd>Άνοιξε τις αναβαθμίσεις από το επάνω κουμπί και πάτα την επιλογή σου. Η μάχη συνεχίζεται.</dd></dl>
         <p>Η ασπίδα στο χέρι μειώνει τη μετωπική ζημιά κατά 35%. Η πλάτη και τα χτυπήματα εδάφους παραμένουν εκτεθειμένα.</p>
@@ -552,6 +554,6 @@
       "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261109-scream-live1"></script>
+  <script type="module" src="./game.js?v=20261109-shout-brace"></script>
 </body>
 </html>

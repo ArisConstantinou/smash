@@ -4502,22 +4502,22 @@ test('Z taps at level one and the held scream enforces its duration and cooldown
   const near = stationaryEnemy('zombie', 0, 2.5);
   const far = stationaryEnemy('zombie', 0, 8);
   key('KeyZ', true); key('KeyZ', false);
-  api.updateScream(1 / 60);
+  for (let i = 0; i < 6; i++) api.updateScream(1 / 60);
   assert.equal(api.stanceTarget, stance);
   assert.ok(near.hp < near.maxHp && near.hp >= near.maxHp - 3);
   assert.equal(far.hp, far.maxHp);
-  for (let i = 0; i < 15; i++) api.updateScream(1 / 60);
+  for (let i = 0; i < 9; i++) api.updateScream(1 / 60);
   assert.equal(api.scream, null);
-  assert.ok(api.screamCooldown > 29.9);
+  assert.equal(api.screamCooldown, 2);
   key('KeyZ', true); key('KeyZ', false);
   assert.equal(api.scream, null);
-  api.updateScream(30);
+  api.updateScream(2);
   key('KeyZ', true);
   for (let i = 0; i < 599; i++) api.updateScream(1 / 60);
   assert.ok(api.scream);
   api.updateScream(1 / 60);
   assert.equal(api.scream, null);
-  assert.equal(api.screamCooldown, 30);
+  assert.equal(api.screamCooldown, 2);
   key('KeyZ', false);
 });
 
@@ -4529,7 +4529,8 @@ test('an upgraded scream pushes enemies and vehicles, fractures scenery and resp
   const wall = placeObject('office', 0, 13, {w: 3, h: 4, d: 2});
   const car = placeObject('car', 3.4, 9, {w: 1.6, h: 1.5, d: 2.8});
   const [wallHP, carHP] = [wall.hp, car.hp];
-  key('KeyZ', true); api.updateScream(1 / 60);
+  key('KeyZ', true);
+  for (let i = 0; i < 6; i++) api.updateScream(1 / 60);
   assert.ok(near.hp < near.maxHp && near.vz > 6 && near.kickFlight);
   assert.equal(covered.hp, covered.maxHp);
   assert.equal(behind.hp, behind.maxHp);
@@ -4537,4 +4538,5 @@ test('an upgraded scream pushes enemies and vehicles, fractures scenery and resp
   assert.ok(car.vz > 2 && api.movingVehicles.has(car));
   key('KeyZ', false); api.clearInput();
   assert.equal(api.scream, null);
+  assert.equal(api.screamCooldown, 30);
 });

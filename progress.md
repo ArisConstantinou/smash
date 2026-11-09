@@ -320,3 +320,22 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 - Paint is stored per weapon or shield attachment variant. The picker sits in the attachment header and resets only that variant. Older whole-blueprint colors still render and part paint leaves combat stats intact.
 - Touch layouts omit the preview toolbar and put stock equipment in the catalogue. Tablet portrait allocates the remaining height to the turntable, and tall phones show the model below the attachment controls. Drag rotation remains available.
 - Passed 604 automated tests, seven Workshop layouts, the mount Workshop suite and the game browser smoke. All 18 model-card images retained their exact hashes.
+
+## Scream and desktop mouse controls — 2026-11-09
+
+- Local branch `codex/sonic-scream` starts from `de7aa20` on `main`. The shared preview serves the working source at port 8000. Desktop attack and defense are the original illustrated actions inside a 128 × 210 graphite mouse without lettering. The touch dock retains its action buttons and adds a hold control for the scream. Grip change uses G and remains in the equipment panel.
+- Z starts a directional shout. A tap gives a brief pulse, holding extends it to 10 seconds, and the 30-second cooldown starts on release or at the cap. Character levels and the saved scream rank scale range from 4 to 24 m, along with damage and impulse. The pulse uses the existing damage, fracture and body/vehicle physics paths and checks intervening solid geometry.
+- All 607 automated tests passed. Chromium WebGPU checked three desktop widths (900, 1280 and 2048) plus emulated touch in portrait and landscape. In one warmed 1280 × 720 desktop run, the highest half-second p95 frame interval over four windows was 12.6 ms idle and 12.5 ms during an upgraded scream. Physical-phone performance remains unverified. Runtime captures and measurements are in `E:/CodexGenerated/smash/staging/tests/scream`.
+- After visual feedback, the desktop mouse silhouette was removed. Two standalone action buttons use the original in-game illustrations with a consistent inset and no visible key labels. Chromium WebGPU checked artwork bounds, placement and activation at 760, 1280 and 2048 px, plus attack on an emulated 390 px touch viewport. Latest captures are in `E:/CodexGenerated/smash/staging/tests/scream/mouse-buttons`.
+
+## Battle pause audio and rain coverage — 2026-11-09
+
+- Pausing zeros the shared audio output, stops active cues and blocks new ones. Resume restores the chosen volume and mute state. A Chromium analyser measured nonzero output before and after pause and exactly zero during it.
+- Rain samples the orthographic view in 3D, reaching the edges of wide screens and extending above city roofs. Buildings still occlude drops beneath them. Authored snow, ash and clear climates retain their effects. The rain draw remains bounded to 680 streaks and uses 115 at the tested 390 × 844 emulated phone viewport.
+- The paired WebGPU capture at 2061 × 650 filled both outer strips that previously had zero drops. In the warmed desktop comparison the median of the sampled frame p95 values was about 8.4 ms in both modes. Touch pause and resume passed in the phone viewport. Evidence is in `E:/CodexGenerated/smash/staging/tests/pause-rain`.
+- Sonic Scream audio uses a bundled CC0 human battle cry at onset. Bass and filtered pressure follow the initial shout and subsequent gameplay pulses. The recording plays once, and release fades the pressure and any remaining voice. Chromium WebGPU verified a Z tap, a held upgraded shout, a second pulse, and release; the isolated Web Audio renders are in the existing tests/scream directory.
+
+## Sonic Scream cooldown and brace
+
+- Cooldown now scales from 2 to 30 seconds with shout power. The upgrade card previews the current and next cost. The warrior prepares, flexes both knees when stationary, leans from the pelvis, and returns to neutral on release. The travelling wave follows the posed mouth.
+- 609 tests passed. Chromium WebGPU verified the keyboard hold, emulated touch tap, the first 2s to 3s upgrade, and a slower close-up capture. In a short desktop A/B, median p95 intervals were 25 ms with the brace bypassed (noisy warmup) and 8.4 ms with the brace enabled. This does not establish a performance gain.

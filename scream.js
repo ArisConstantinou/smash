@@ -1,20 +1,34 @@
 import * as THREE from './vendor/three.module.js';
 
 export const SCREAM_DURATION = 10;
-export const SCREAM_COOLDOWN = 30;
+export const SCREAM_WINDUP = .075;
+export const SCREAM_RECOVERY = .22;
 export const SCREAM_INTERVAL = .64;
 const HALF_ANGLE = .52;
 export const SCREAM_ARC_DOT = Math.cos(HALF_ANGLE);
 
 export function screamStats(level, rank) {
-  const power = Math.min(1, (level - 1) * .021 + rank * .074);
+  const power = Math.min(1, Math.max(0, (level - 1) * .021 + rank * .074));
   return {
     power,
+    cooldown: Math.round(2 + 28 * power ** 1.45),
     range: 4 + 20 * power,
     damage: 3 + 32 * power,
     structureDamage: 1 + 84 * power ** 1.4,
     impulse: .9 + 21 * power ** 1.25,
   };
+}
+
+function smoothStep(t) {
+  t = Math.max(0, Math.min(1, t));
+  return t * t * (3 - 2 * t);
+}
+
+export function screamBrace(age) {
+  // Open the chest briefly, drive the shout forward, then settle into the hold.
+  if (age < SCREAM_WINDUP) return -.23 * smoothStep(age / SCREAM_WINDUP);
+  const onset = smoothStep((age - SCREAM_WINDUP) / .10);
+  return -.23 + 1.35 * onset - .12 * smoothStep((age - .175) / .23);
 }
 
 // Four reused crests make a widening pressure front. The geometry sits in

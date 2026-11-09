@@ -28,13 +28,13 @@ import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,tr
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261109-armory-wire';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261109-gauntlet1';
-import {createWorld} from './world.js?v=20261109-civilians1';
+import {createWorld} from './world.js?v=20261109-rain-view';
 import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=fauna1';
-import {GameAudio} from './audio.js?v=20261109-rage';
+import {GameAudio} from './audio.js?v=20261109-pause';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
 import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261109-scream';
-import {ScreamWave,screamStats,SCREAM_ARC_DOT,SCREAM_COOLDOWN,SCREAM_DURATION,SCREAM_INTERVAL} from './scream.js?v=20261109-scream';
+import {ScreamWave,screamStats,screamBrace,SCREAM_ARC_DOT,SCREAM_DURATION,SCREAM_INTERVAL,SCREAM_WINDUP,SCREAM_RECOVERY} from './scream.js?v=20261109-shout-brace';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
 import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261109-gauntlet1';
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
@@ -119,7 +119,7 @@ let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0,landingPose=null;
 let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null,hydrantEffects=null,levelStorm=null,groundScars=null;
-let scream=null,screamCooldown=0,screamWave;
+let scream=null,screamCooldown=0,screamWave,screamRecover=0,screamReleaseBrace=0;
 const screamOrigin=new THREE.Vector3(),screamDirection=new THREE.Vector3();
 let punch=null,punchSequence=0,throwLock=null,throwPreviewTargets=[],dashFollowup=0;
 const movingVehicles=new Set();
@@ -323,6 +323,7 @@ function setPhase(next){
   const menuContext=next==='menu'||next==='settings'&&previousPhase==='menu';
   $('menu').hidden=!menuContext;$('menu').inert=next==='settings';$('hud').hidden=menuContext;
   forgeMenu?.setVisible(next==='menu');
+  audio.setPaused?.(next==='paused'||(next==='settings'&&!menuContext));
   audio.setMenuActive?.(next==='menu');menuBackdropReady=false;
   $('pauseMenu').hidden=next!=='paused';$('settingsMenu').hidden=next!=='settings';
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
@@ -484,6 +485,7 @@ function updateHammerAura(){
 }
 function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   endScream();
+  screamRecover=0;
   if(!keepUpgrades)screamCooldown=0;
   armoryEffects.clear();
   mountRide?.reset(hero);mountWeapons?.reset();
@@ -709,8 +711,15 @@ function renderUpgradePanel(){
   choices.forEach((choice,index)=>{
     const button=document.createElement('button');button.className='upgrade-card';button.style.setProperty('--card-accent',choice.color);
     const compact={power:['ΔΥΝΑΜΗ','+25% ζημιά'],size:['ΜΕΓΕΘΟΣ','+18% κεφαλή · +8% εμβέλεια'],range:['ΕΜΒΕΛΕΙΑ','+22% εμβέλεια'],speed:['ΤΑΧΥΤΗΤΑ','+12% κίνηση'],vitality:['ΑΝΤΟΧΗ','+25 ζωή · +40 αναπλήρωση'],quake:['ΣΥΝΤΡΙΒΗ','Μεγαλύτερη περιοχή'],kick:['ΚΛΩΤΣΙΑ','+δύναμη · αυτοκίνητα στη βαθμίδα 3'],scream:['ΚΡΑΥΓΗ','+εμβέλεια · ζημιά · ώθηση']}[choice.id];
-    button.setAttribute('aria-label',choice.name+' · '+choice.text);button.setAttribute('title',choice.name+' · '+choice.text);
-    button.innerHTML='<kbd class="upgrade-key">'+(index+1)+'</kbd><svg class="upgrade-icon" viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-'+choice.id+'"/></svg><small>'+choice.label+'</small><h3>'+compact[0]+'</h3><p>'+compact[1]+'</p><span class="upgrade-level">'+((levels[choice.id]||0)+(choice.id==='kick'?2:1))+' <b>+</b></span>';
+    let cooldownCost='';
+    if(choice.id==='scream'){
+      const rank=levels.scream||0;
+      const current=screamStats(level,rank).cooldown,next=screamStats(level,rank+1).cooldown;
+      cooldownCost='Επαναφόρτιση '+current+'s → '+next+'s';
+    }
+    const description=choice.name+' · '+choice.text+(cooldownCost?' · '+cooldownCost:'');
+    button.setAttribute('aria-label',description);button.setAttribute('title',description);
+    button.innerHTML='<kbd class="upgrade-key">'+(index+1)+'</kbd><svg class="upgrade-icon" viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-'+choice.id+'"/></svg><small>'+choice.label+'</small><h3>'+compact[0]+'</h3><p>'+compact[1]+(cooldownCost?'<span class="scream-upgrade-cooldown">'+cooldownCost+'</span>':'')+'</p><span class="upgrade-level">'+((levels[choice.id]||0)+(choice.id==='kick'?2:1))+' <b>+</b></span>';
     button.onclick=()=>{
       if(phase!=='playing'||!upgradePanelOpen||upgradeTab!=='powers'||upgradeQueue[0]!==choices)return;
       levels[choice.id]=(levels[choice.id]||0)+1;relics++;upgradeQueue.shift();applyStats();
@@ -2396,6 +2405,7 @@ function recoverRiverPlayer(){
   leap=null;dashTime=0;landingRecovery=0;
 }
 function updatePlayer(dt){
+  screamRecover=Math.max(0,screamRecover-dt);
   for(const sequence of swingSequences)tickSwingSequence(sequence,dt,!!(swing||spin));
   player.invincible=Math.max(0,player.invincible-dt);player.hurtAgo+=dt;
   hammerLightning=Math.max(0,hammerLightning-dt);
@@ -2604,6 +2614,22 @@ function poseHero(dt,moving=false){
     u.body.position.y=-kickPose.weight;
   }
   if(punch&&punchPose){u.body.rotation.y=punchPose.bodyYaw;u.body.rotation.x=punchPose.bodyPitch;}
+  if((scream||screamRecover>0)&&!swing&&!spin&&!punch&&!kick&&!guarding&&!throwWindup&&!mountRide?.active){
+    const brace=scream?screamBrace(scream.age)*(.76+.24*scream.profile.power):screamReleaseBrace*smooth(screamRecover/SCREAM_RECOVERY);
+    const lean=.31*brace,hipHeight=u.legRest?.height??.62;
+    const kneeBend=!moving&&!leap&&dashTime<=0?-.40*Math.max(0,brace):0;
+    const hipsBack=.30*Math.sin(kneeBend),hipsDown=.30*(1-Math.cos(kneeBend));
+    // Pivot at the pelvis. Counter-rotate the shins to keep the soles flat
+    // while the thighs flex and the pelvis shifts down and back.
+    u.body.rotation.x+=lean;
+    u.body.position.y+=hipHeight*(1-Math.cos(lean))-hipsDown-.05*Math.max(0,brace);
+    u.body.position.z+=hipsBack-hipHeight*Math.sin(lean);
+    if(kneeBend)for(const leg of [u.leftLeg,u.rightLeg]){
+      if(!leg?.userData.shin)continue;
+      leg.rotation.x+=kneeBend;leg.userData.shin.rotation.x-=kneeBend;
+      leg.position.y-=hipsDown;leg.position.z+=hipsBack;
+    }
+  }
   if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:spin?.55:motion?.18+Math.abs(torque)*.3:moving?.25:0);u.cape.rotation.z=spin?.3-Math.sin(spin.rotation)*.1:motion?-torque*.38:Math.sin(visualTime*3)*.045;}
   u.setStance?.(stance);
   const rest=u.weaponRest||{x:.55,y:0,z:-.72},rp=u.weaponRestPosition||{x:0,y:1.04,z:.38};
@@ -2795,7 +2821,8 @@ function startScream(owner){
   if(phase!=='playing'||scream||screamCooldown>0)return;
   cancelAttack();swing=null;punch=null;kick=null;guardHeld=guarding=false;
   cancelTouchThrow();
-  scream={owner,age:0,nextPulse:0,released:false,profile:screamStats(level,levels.scream||0)};
+  screamRecover=0;
+  scream={owner,age:0,nextPulse:SCREAM_WINDUP,released:false,profile:screamStats(level,levels.scream||0)};
 }
 function releaseScream(owner){
   if(scream?.owner!==owner)return;
@@ -2804,7 +2831,10 @@ function releaseScream(owner){
 }
 function endScream(){
   if(!scream)return;
-  scream=null;screamCooldown=SCREAM_COOLDOWN;
+  screamCooldown=scream.profile.cooldown;
+  screamReleaseBrace=screamBrace(scream.age)*(.76+.24*scream.profile.power);
+  screamRecover=SCREAM_RECOVERY;
+  scream=null;
   screamWave?.hide();audio.stopScream();
 }
 function screamContact(target,profile,solids,isObject){
@@ -2857,6 +2887,7 @@ function screamPulse(profile){
 }
 function updateScream(dt){
   if(!scream){screamCooldown=Math.max(0,screamCooldown-dt);return;}
+  if(scream.age+1e-7<SCREAM_WINDUP){scream.age+=dt;return;}
   const {profile}=scream,body=hero.userData.body;
   screamOrigin.set(0,characterStats.weaponTier>=4?1.42:1.45,characterStats.weaponTier>=4?.31:.245);
   body.localToWorld(screamOrigin);
@@ -2867,7 +2898,7 @@ function updateScream(dt){
     if(audioWasStarted)audio.pulseScream(profile.power);
     screamPulse(profile);if(!scream)return;scream.nextPulse+=SCREAM_INTERVAL;
   }
-  screamWave.update(screamOrigin,screamDirection,scream.age,profile);
+  screamWave.update(screamOrigin,screamDirection,scream.age-SCREAM_WINDUP,profile);
   scream.age+=dt;
   if(scream.age>=SCREAM_DURATION-1e-7||scream.released&&scream.age>=.24)endScream();
 }
@@ -3196,7 +3227,7 @@ function resize({preserveHeldTouch=false}={}){
   fxDpr=Math.min(devicePixelRatio,2);fx.width=Math.round(screenW*fxDpr);fx.height=Math.round(screenH*fxDpr);fx.style.width=screenW+'px';fx.style.height=screenH+'px';fxContext.setTransform(fxDpr,0,0,fxDpr,0,0);
   $('gameCanvas').style.height=screenH+'px';
 }
-function pauseGame(){if(phase==='playing'){setPhase('paused');audio.play('ui');}else if(phase==='paused'){setPhase('playing');audio.play('ui');}}
+function pauseGame(){if(phase==='playing')setPhase('paused');else if(phase==='paused'){setPhase('playing');audio.play('ui');}}
 function pressAttack(){
   if(phase!=='playing'||scream)return;audio.unlock();
   if(touchThrowAim||touchThrowQueued)cancelTouchThrow();
@@ -3561,7 +3592,6 @@ function frame(now){
   const weather=world.regionAt?.(player.x,player.z)?.weather||'rain';
   const environmentDt=phase==='playing'?simulated:phase==='menu'?realDt:0;
   if(phase==='playing')updateObjects(simulated);
-  world.update(environmentDt,visualTime,player,weather);
   destruction?.update(environmentDt,player,{active:phase==='playing'});
   if(phase==='playing'){vehicleEffects?.update(environmentDt,player,camera);hydrantEffects?.update(environmentDt,player,camera);levelStorm?.update(environmentDt,player,camera);}
   updateEffects(phase==='paused'||phase==='settings'?0:realDt);
@@ -3569,7 +3599,9 @@ function frame(now){
   updateBattleCamera(realDt,desired);
   if(settings.shake&&shake>0)shakeCamera(shake);
   camera.lookAt(cameraTarget);
-  camera.updateMatrixWorld(true);world.updateVisibility?.(player,camera);updateBattleVisibility(realDt);
+  camera.updateMatrixWorld(true);
+  world.update(environmentDt,visualTime,player,weather,camera);
+  world.updateVisibility?.(player,camera);updateBattleVisibility(realDt);
   if(phase==='playing'&&performance.now()-frameStart<8)world.prepareNearbyCollision?.(player.x,player.z);
   sun.position.set(player.x-15,28,player.z+8);sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
   // Subtle moving storm illumination, kept bright enough for readable combat.
@@ -3665,7 +3697,7 @@ window.render_game_to_text=()=>JSON.stringify({
   wildlife:world?.wildlife?.actors.filter(a=>Math.hypot(a.x-player.x,a.z-player.z)<35).map(a=>({kind:a.kind,x:a.x,y:a.y,z:a.z,mode:a.mode,hp:a.kind==='boar'?a.hp:undefined})),
   civilians:world?.civilians?.actors.filter(a=>a.rig.root.visible).map(a=>({id:a.id,kind:a.rig.name,x:a.x,y:a.y,z:a.z,mode:a.mode})),
   player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),
-  scream:{active:!!scream,remaining:scream?Math.max(0,SCREAM_DURATION-scream.age):0,cooldown:screamCooldown,rank:levels.scream||0,range:screamStats(level,levels.scream||0).range},
+  scream:{active:!!scream,remaining:scream?Math.max(0,SCREAM_DURATION-scream.age):0,cooldown:screamCooldown,rank:levels.scream||0,cooldownCost:screamStats(level,levels.scream||0).cooldown,range:screamStats(level,levels.scream||0).range},
   armory:{weapon:hero?.userData.armoryWeaponId||'classic',shield:hero?.userData.armoryShieldId||'classic',weaponCore:armoryWeaponStats?.core||'none',shieldCore:armoryShieldStats?.core||'none',trophies:Object.keys(garage.armory.trophies),signature:armoryWeaponStats?.signature||null,branded:armoryEffects.branded.size,burning:armoryEffects.burning.size},
   progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL,next:BOSS_GATES[bossGate]?.threshold??GOAL},
   encounter:encounter?{type:encounter.leader.type,state:encounter.entry?.stage||encounter.leader.state,

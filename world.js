@@ -337,6 +337,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   const rainGeo=own(new THREE.BufferGeometry());rainGeo.setAttribute('position',new THREE.BufferAttribute(rainArray,3));
   const rainMat=own(new THREE.LineBasicMaterial({color:0xa5c5cc,transparent:true,opacity:.27,depthWrite:false}));
   const rainMesh=new THREE.LineSegments(rainGeo,rainMat);rainMesh.frustumCulled=false;group.add(rainMesh);
+  const rainHeight=buildingObjects.reduce((height,building)=>Math.max(height,building.h+12),40);
   const snowArray=new Float32Array(380*3),ashArray=new Float32Array(170*3);
   const snowGeo=own(new THREE.BufferGeometry());snowGeo.setAttribute('position',new THREE.BufferAttribute(snowArray,3));
   const ashGeo=own(new THREE.BufferGeometry());ashGeo.setAttribute('position',new THREE.BufferAttribute(ashArray,3));
@@ -395,19 +396,48 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   }
 
 
-  function update(dt,time,player,weather) {
+  function updateCameraRain(camera,time,wind) {
+    // Sample across the orthographic frame, then intersect each parallel
+    // view ray at a drop's world height. Roofs still occlude drops below them.
+    const m=camera.matrixWorld.elements, rayX=m[8]/m[9],rayZ=m[10]/m[9];
+    const rightX=m[0]-m[1]*rayX,rightZ=m[2]-m[1]*rayZ;
+    const upX=m[4]-m[5]*rayX,upZ=m[6]-m[5]*rayZ;
+    const eyeX=m[12]-m[13]*rayX,eyeZ=m[14]-m[13]*rayZ;
+    const width=(camera.right-camera.left)/camera.zoom,height=(camera.top-camera.bottom)/camera.zoom;
+    const left=(camera.right+camera.left)/(2*camera.zoom)-width/2-1;
+    const bottom=(camera.top+camera.bottom)/(2*camera.zoom)-height/2-1;
+    const spanX=width+2,spanY=height+2;
+    const driftX=time*2.9*m[0],driftY=time*(2.9*m[4]-18*m[5]);
+    const count=Math.min(weatherBase.length,Math.max(1,Math.round(spanX*spanY/4.4)));
+    for(let i=0;i<count;i++){
+      const a=weatherBase[i],o=i*6;
+      const u=left+modulo((a[0]+26)/52*spanX+driftX,spanX);
+      const v=bottom+modulo((a[2]+24)/48*spanY+driftY,spanY);
+      const y=modulo(a[1]/20*rainHeight-time*18,rainHeight)+.4;
+      const x=eyeX+rightX*u+upX*v+rayX*y,z=eyeZ+rightZ*u+upZ*v+rayZ*y;
+      rainArray[o]=x;rainArray[o+1]=y;rainArray[o+2]=z;
+      rainArray[o+3]=x+.35+wind*.12;rainArray[o+4]=y-1.1;rainArray[o+5]=z+.12;
+    }
+    rainGeo.setDrawRange(0,count*2);
+  }
+
+  function update(dt,time,player,weather,camera) {
     const px=player?.x??player?.position?.x??0,pz=player?.z??player?.position?.z??0;
     currentZone=regionAt(px,pz);
     const mode=weather||currentZone.weather;
     const wind=Math.sin(time*.47)*.6+Math.sin(time*.13)*.4;
     rainMesh.visible=mode==='rain';snowMesh.visible=mode==='snow';ashMesh.visible=mode==='ash';
     if(rainMesh.visible) {
-      for(let i=0;i<weatherBase.length;i++) {
-        const a=weatherBase[i],o=i*6;
-        const x=px+modulo(a[0]+time*2.9,52)-26;
-        const y=modulo(a[1]-time*18,20)+.4,z=pz+a[2];
-        rainArray[o]=x;rainArray[o+1]=y;rainArray[o+2]=z;
-        rainArray[o+3]=x+.35+wind*.12;rainArray[o+4]=y-1.1;rainArray[o+5]=z+.12;
+      if(camera?.isOrthographicCamera)updateCameraRain(camera,time,wind);
+      else {
+        rainGeo.setDrawRange(0,weatherBase.length*2);
+        for(let i=0;i<weatherBase.length;i++) {
+          const a=weatherBase[i],o=i*6;
+          const x=px+modulo(a[0]+time*2.9,52)-26;
+          const y=modulo(a[1]-time*18,20)+.4,z=pz+a[2];
+          rainArray[o]=x;rainArray[o+1]=y;rainArray[o+2]=z;
+          rainArray[o+3]=x+.35+wind*.12;rainArray[o+4]=y-1.1;rainArray[o+5]=z+.12;
+        }
       }
       rainGeo.attributes.position.needsUpdate=true;
     }

@@ -21,6 +21,7 @@ class Param {
   setValueAtTime(value, time) { this.record('set', value, time); }
   exponentialRampToValueAtTime(value, time) { this.record('exponential', value, time); }
   setTargetAtTime(value, time) { this.record('target', value, time); }
+  cancelScheduledValues(time) { this.calls = this.calls.filter(call => call.time < time); }
 }
 class Node {
   constructor(ctx, kind) {
@@ -69,6 +70,29 @@ function environment(t, { supported = true, session = true } = {}) {
   return { audio, window, document, audioSession };
 }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+test('battle pause silences the shared output and restores the selected mute and volume',async t=>{
+  const {audio}=environment(t);
+  audio.setPaused(true);
+  await audio.unlock();
+  assert.equal(audio.master.gain.value,0,'Unlocking in the pause menu stays silent');
+  audio.setPaused(false);
+  assert.ok(audio.master.gain.value>0);
+  assert.ok(audio.play('levelStorm',1));
+  audio.setPaused(true);
+  assert.equal(audio.master.gain.value,0);
+  assert.equal(audio._sources.size,0);
+  assert.equal(audio.play('ui'),false);
+  assert.equal(await audio.preview(),false);
+  audio.setVolume(.35);
+  assert.equal(audio.master.gain.value,0);
+  assert.equal(audio.muted,false);
+  audio.setPaused(false);
+  assert.equal(audio.master.gain.value,.35*.82);
+  audio.toggle();
+  audio.setPaused(true);audio.setPaused(false);
+  assert.equal(audio.master.gain.value,0);
+});
 
 test('level thunder schedules finite crack and rumble layers, honors mute and stops with the world',async t=>{
  const {audio}=environment(t);await audio.unlock();for(const source of [...audio._sources])source.finish();

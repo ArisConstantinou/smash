@@ -24,6 +24,7 @@ export class GameAudio {
     this._time = 0;
     this._mixTime = 0;
     this._hidden = false;
+    this._paused = false;
     this._activated = false;
     this._disposed = false;
     this._session = null;
@@ -101,7 +102,7 @@ export class GameAudio {
     if (!AudioContext) return false;
     const ctx = this.ctx = new AudioContext({ latencyHint: 'interactive' });
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : this.volume * .82;
+    this.master.gain.value = this.muted || this._paused ? 0 : this.volume * .82;
     const limiter = this._limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -10;
     limiter.knee.value = 12;
@@ -188,9 +189,23 @@ export class GameAudio {
     return this.muted;
   }
 
+  setPaused(paused) {
+    if (this._paused === paused) return;
+    this._paused = paused;
+    this._applyVolume();
+    if (paused) {
+      this._cancelPreview();
+      this._stopTransientSources();
+    }
+  }
+
   _applyVolume() {
     if (!this.master || this._disposed || this.ctx?.state === 'closed') return;
-    this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume * .82, this.ctx.currentTime, .018);
+    const gain = this.master.gain, now = this.ctx.currentTime;
+    if (this._paused) {
+      gain.cancelScheduledValues(now);
+      gain.setValueAtTime(0, now);
+    } else gain.setTargetAtTime(this.muted ? 0 : this.volume * .82, now, .018);
   }
 
   _register(source, nodes = [], onEnded = null) {
@@ -211,7 +226,7 @@ export class GameAudio {
     return source;
   }
 
-  _canAllocate() { return !!this.ctx && !this._disposed && this._sources.size < MAX_SOURCES; }
+  _canAllocate() { return !!this.ctx && !this._paused && !this._disposed && this._sources.size < MAX_SOURCES; }
 
   _tone(wave, from, to, volume, duration, delay = 0, attack = .003) {
     if (!this._canAllocate()) return;
@@ -274,6 +289,7 @@ export class GameAudio {
   }
 
   async preview() {
+    if (this._paused) return false;
     this._cancelPreview();
     const generation = this._preview;
     // resume must run synchronously in the click stack, before any fetch/await.
@@ -727,7 +743,7 @@ export class GameAudio {
   }
 
   update(dt, danger = 0, weather = 'rain') {
-    if (!this.ready || !this._ambient || this._disposed || this._hidden || this.muted || this.volume <= 0 || this.ctx?.state !== 'running') return;
+    if (!this.ready || !this._ambient || this._paused || this._disposed || this._hidden || this.muted || this.volume <= 0 || this.ctx?.state !== 'running') return;
     this._time += clamp(dt, 0, .1);
     if (this._time - this._mixTime < .12) return;
     this._mixTime = this._time;
