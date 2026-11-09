@@ -19,12 +19,12 @@ export const CHARACTER_WEAPONS = Object.freeze([
   weapon('log', 'ΚΟΥΤΣΟΥΡΟ', 1, {}, {
     power: 22, size: .98, range: 2.75, jumpVelocity: 10.5, jumpCooldown: 1.35,
     canAirSmash: false, canReturn: false, canRicochet: false, canLightning: false,
-    maxChainHits: 1, hasShield: false, armorTier: 0, throwRange: 10, throwDamageMultiplier: 1.5,
+    maxChainHits: 1, hasShield: true, armorTier: 0, throwRange: 10, throwDamageMultiplier: 1.5,
   }),
   weapon('club', 'ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ', 3, {wood: 8}, {
     power: 30, size: 1, range: 2.95, jumpVelocity: 12.5, jumpCooldown: 1.5,
     canAirSmash: false, canReturn: false, canRicochet: false, canLightning: false,
-    maxChainHits: 1, hasShield: false, armorTier: 0, throwRange: 12, throwDamageMultiplier: 1.65,
+    maxChainHits: 1, hasShield: true, armorTier: 0, throwRange: 12, throwDamageMultiplier: 1.65,
   }),
   weapon('iron', 'ΣΙΔΕΡΕΝΙΟ ΣΦΥΡΙ', 6, {wood: 10, scrap: 8}, {
     power: 38, size: 1.03, range: 3.15, jumpVelocity: 16, jumpCooldown: 1.8,

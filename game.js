@@ -1,4 +1,4 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261109-loot1';
+import {createMountWorkshop} from './mount-workshop.js?v=20261110-shield';
 import {createSaveStore} from './save-store.js?v=20261108-armory1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-loot1';
 import {createWeaponModel} from './armory-models.js?v=20261109-trophies1';
@@ -27,10 +27,10 @@ import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPi
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-mount1';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261109-armory-wire';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261110-shield';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261110-tank-drive';
-import {createWorld} from './world.js?v=20261109-rain-view';
-import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=opening2';
+import {createWorld} from './world.js?v=20261110-falling-trees';
+import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=falling-trees';
 import {GameAudio} from './audio.js?v=20261110-tank-drive';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -41,7 +41,7 @@ import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
 import {createThrowIndicator} from './throw-indicator.js?v=20261107-perf14-fix3';
 import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
-import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261108-mount1';
+import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProgression,awardCharacterXp,collectCharacterMaterial,getCharacterStats,getForgeStatus,forgeNextWeapon,xpForNextLevel,restoreCharacterProgression} from './character-progression.js?v=20261110-shield';
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
 import {beastObstacleContacts} from './beast-obstacles.js?v=20261109-beast1';
@@ -116,7 +116,7 @@ let aimPreviewTimer=0,meleeHint=null,meleeHintTargets=[];
 const aimDiagnostics={previews:0,throwPreviews:0};
 const SPIN_HOLD_SECONDS=.22,ATTACK_BUFFER_SECONDS=.45,TOUCH_THROW_BUFFER_SECONDS=.30,SIMULATION_STEP=1/120;
 let facing={x:-0.585491,z:-0.810679},dashDirection={x:0,z:-1},levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0,scream:0},stats=calculateStats(levels);
-let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardAngle=0;
+let stance=0,stanceTarget=0,guardHeld=false,guarding=false,guardBlend=0;
 let combatPointer=null,mouseButtons=0;
 let leap=null,leapCooldown=0,throwWindup=null,throwFlight=null,throwCooldown=0,landingRecovery=0,landingPose=null;
 let kick=null,kickCooldown=0,vehicleNavTimer=0,vehicleEffects=null,hydrantEffects=null,levelStorm=null,groundScars=null;
@@ -126,11 +126,10 @@ let punch=null,punchSequence=0,throwLock=null,throwPreviewTargets=[],dashFollowu
 const movingVehicles=new Set();
 const THROW_CHAIN_RADIUS=9,THROW_MAX_HITS=5,HAMMER_LIGHTNING_SECONDS=2.8;
 let hammerLightning=0,hammerAura=null,hammerMaterials=[];
-let hpEchoes=[],aimPreview=null,nearbyTargets=[],focusedTarget=null,guardRing,landingMarker,groundShadow;
+let hpEchoes=[],aimPreview=null,nearbyTargets=[],focusedTarget=null,landingMarker,groundShadow;
 const pointer={active:false,x:0,y:0},aim={x:-.585491,z:-.810679};
 const raycaster=new THREE.Raycaster(),aimPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-1.2);
 const headPrevious=new THREE.Vector3(),headNow=new THREE.Vector3(),shaftUp=new THREE.Vector3(0,1,0),poseDirection=new THREE.Vector3();
-const guardHits=new Map();
 let player={x:0,z:0,y:0,vx:0,vz:0,radius:0.44,hp:120,maxHp:120,invincible:0,hurtAgo:100,walk:0};
 const cameraTarget=new THREE.Vector3(0,0,0),cameraOffset=new THREE.Vector3(13,23,18),tempV=new THREE.Vector3();
 // Orthographic framing is independent of eye distance. The old close eye plane
@@ -333,7 +332,7 @@ function setPhase(next){
   $('endMenu').hidden=next!=='dead'&&next!=='victory';syncUpgradePanel();
   if($('performanceHud'))$('performanceHud').hidden=next!=='playing';
   performanceMonitor.reset();
-  if(next!=='playing'){if(throwIndicator)throwIndicator.mesh.visible=false;audio.stopEnvironment?.();clearInput();if(guardRing)guardRing.visible=false;if(hammerAura)hammerAura.root.visible=false;}
+  if(next!=='playing'){if(throwIndicator)throwIndicator.mesh.visible=false;audio.stopEnvironment?.();clearInput();if(hammerAura)hammerAura.root.visible=false;}
   else $('gameCanvas').focus({preventScroll:true});
   syncTouchControls();syncMountHud();
 }
@@ -543,8 +542,8 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   for(const e of [...rings,...arcs])removeEffect(e.mesh);rings=[];arcs=[];
   if(throwFlight){disposeInstance(throwFlight);throwFlight=null;}
   hammerLightning=0;if(hammerAura){hammerAura.root.visible=false;hammerAura.lastPattern=-1;}
-  stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
-  hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
+  stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardBlend=0;leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
+  hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(landingMarker)landingMarker.visible=false;
   vehicleEffects?.reset();
   if(reusePreparedWorld)world.stopCivilians?.();
   if(!reusePreparedWorld){
@@ -567,7 +566,7 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   roundTime=0;currentDistrict='';bossSpawned=false;bossGate=0;encounter=null;encounterRetry=0;battleKills=0;beginWave(round);spawnCounter=0;lootCounter=0;chargeHeld=false;chargeStarted=false;charge=0;swing=null;attackBuffer=null;spin=null;spinRecovery=null;holdElapsed=0;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
   $('bossHud').hidden=true;fragments?.clear();impactClouds?.clear();numbers=[];cameraTarget.set(player.x,.6,player.z);
   hero.position.set(player.x,0,player.z);facing=world.spawn?{x:1,z:0}:{x:-.585491,z:-.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);
-  applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();updateHUD(true);
+  applyStats();stance=stanceTarget=0;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();updateHUD(true);
 }
 function startGame(startLevel=1,options={}){
   const stored=read('ironfall.character',null);
@@ -582,7 +581,7 @@ function startGame(startLevel=1,options={}){
   resetWorld(false,requested,reusePreparedWorld);
   if(options.resume){
     const restored=restoreCharacterProgression(stored?.character);
-    if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();}
+    if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();stance=stanceTarget=0;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();}
   }
   if(options.camps!==false)spawnCamps();
   if(options.civilians!==false)world.startCivilians?.();
@@ -808,7 +807,7 @@ function beginPunch(){
   if(phase!=='playing'||!throwFlight||punch||kick||throwWindup||attackCooldown>0||guardHeld||dashTime>0)return false;
   updateAim(false);const dir=manualAttackDirection();
   facing={...dir};if(!mountRide?.active)hero.rotation.y=Math.atan2(dir.x,dir.z);
-  const spec=punchStats(level,levels.power,punchSequence++);spec.damage=Math.round(spec.damage*playerCustomization.power);
+  const spec=punchStats(level,levels.power,1+2*(punchSequence++%2));spec.damage=Math.round(spec.damage*playerCustomization.power);
   punch={...spec,time:0,hit:false,dir:{...dir}};
   if(dashFollowup>0){punch.damage=Math.round(punch.damage*1.25);punch.dashBoost=true;dashFollowup=0;}
   poseHero(0);hero.updateMatrixWorld(true);
@@ -837,6 +836,7 @@ function startSpin(previousHits=null){
   spin={startLocalAzimuth:Math.atan2(entryHead.x,entryHead.z),entryYawOffset:0,time:0,angle:hero.rotation.y,rotation:0,cycle:0,momentum:1,hitTimes:new Map(),hitAngles:new Map(),touching:new Set(),entryHits:new Set(previousHits||spinCharge.hits),attackDir:{...facing},trailTime:0,soundTime:-1,recoil:0,
     damage:Math.round(stats.power*SPIN_DAMAGE_SCALE*stancePower()),knockback:4.6,lift:1.1,
     fromRotation:weaponPoseRotation(),fromPosition:rig.position.clone(),fromBody:hero.userData.body.rotation.clone(),fromBodyY:hero.userData.body.position.y};
+  spin.shieldPrevious=spinShieldPoint();spin.shieldAngles=new Map();spin.shieldTouching=new Set();
   spinCharge=null;spinRecovery=null;chargeStarted=false;charge=0;attackBuffer=null;attackCooldown=0;guarding=false;
   hero.updateMatrixWorld(true);hero.userData.hammerHead.getWorldPosition(headPrevious);rememberBarbedSegment(spin);audio.play('swing',.3,{weapon:characterStats.weaponTier<2?'wood':'metal',exert:false});return true;
 }
@@ -934,6 +934,31 @@ const armoryEffects=new ArmoryEffects({
   else fragments.add(a.x,a.y,a.z,core==='fire'?3:4,core==='fire'?[0xffae39,0xe76025]:core==='frost'?[0x98dfff,0xd6ffff]:core==='arc'?[0x72e5ff]:[0xffdc83],core==='impact'?4:1.5,.045);
  }
 });
+function spinShieldPoint(){
+  const {shieldRig}=hero.userData;
+  return shieldRig.localToWorld(new THREE.Vector3(-.18,0,.13));
+}
+function spinShieldImpact(state){
+  const current=spinShieldPoint(),previous=state.shieldPrevious;
+  if(!previous)return;
+  const touching=new Set(),objects=segmentObjects(previous,current,.32);
+  for(const target of [...combatEnemies(),...(boss&&!boss.dead?[boss]:[])]){
+    if(target.dead||Math.hypot(target.x-player.x,target.z-player.z)>2.5)continue;
+    const hit=firstHammerHit(previous,current,[target],.32);
+    if(!hit||firstHammerHit({x:player.x,y:current.y,z:player.z},hit,objects,.08))continue;
+    touching.add(target);
+    if(state.shieldTouching.has(target)||state.rotation-(state.shieldAngles.get(target)??-Infinity)<Math.PI*2-1e-7)continue;
+    state.shieldAngles.set(target,state.rotation);
+    state.momentum=1;
+    const dir=normalize(target.x-player.x,target.z-player.z),damage=Math.max(1,Math.round(state.damage*.42));
+    if(target===boss)hitBoss(damage,dir,3,{weapon:'shield-spin',combo:false});
+    else hitEnemy(target,damage,dir,3,.25,hit,{weapon:'shield-spin',combo:false});
+    audio.play('hit',.32,{material:'metal'});
+  }
+  state.shieldTouching=touching;
+  for(const target of state.shieldAngles.keys())if(target.dead)state.shieldAngles.delete(target);
+  previous.copy(current);
+}
 function spinImpact(from,to){
   const s=spin;if(!s)return;
   if(armoryVolumes){armoryImpact(s,from,to,true);return;}
@@ -1039,7 +1064,7 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
 }
 function killEnemy(e,credited=true){
   if(e.dead)return;
-  e.dead=true;guardHits.delete(e);enemies=enemies.filter(n=>n!==e);
+  e.dead=true;enemies=enemies.filter(n=>n!==e);
   if(credited){kills++;battleKills++;score+=Math.round((e.miniBoss?420:25*(e.xp||1))*comboMultiplier(combatCombo));}
   armoryEffects.defeat(e);
   if(e.waveNumber===wave?.number)wave.defeated++;
@@ -1104,16 +1129,21 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
     floatText(o.x,o.h+1,o.z,'ΕΚΡΗΞΗ — ΦΥΓΕ!','#ff915d',17);audio.play(isVehicle(o)?'carAlarm':'charge',.75);return false;
   }
   const nearest=impactPoint||nearestPoint(player.x,player.z,o),contact={x:nearest.x,y:nearest.y??Math.min(player.y+1,o.h),z:nearest.z};
-  const fracture=destruction?.hit(o,contact,player);
+  const tree=(o.type==='jungle-trunk'||o.type==='tree')&&typeof world.fellTree==='function';
+  const fracture=!tree&&destruction?.hit(o,contact,player);
   vehicleEffects?.damage(o);
   if(!fracture)audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
   impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7,!['explosion','level-storm'].includes(weapon));
-  if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
-  if(o.type==='jungle-trunk')flashMaterials(o,0);
-  o.dead=true;o.mesh.visible=false;world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
+  if(o.hp>0){if(!tree)fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
+  o.dead=true;
+  if(tree){
+    flashMaterials(o,0);
+    world.fellTree(o,o.x-player.x,o.z-player.z);
+  }else o.mesh.visible=false;
+  world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
   if(o.isBuilding||o.explosionComplete)world.civilians?.alarm(o.x,o.z,o.isBuilding?17:13);
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
-  fragments.add(o.x,o.h*.35,o.z,o.weight>2?30:16,palette,5+q*5,o.weight>2?.5:.25,true);
+  if(!tree)fragments.add(o.x,o.h*.35,o.z,o.weight>2?30:16,palette,5+q*5,o.weight>2?.5:.25,true);
   pulse(o.x,o.z,Math.max(o.w,o.d)*.65,0xbb9f78,.3);
   const point=nearestPoint(player.x,player.z,o),dx=point.x+(player.x-point.x)*.2,dz=point.z+(player.z-point.z)*.2;
   if(lootCounter%4===0||Math.random()<.1)spawnDrop(dx,dz,'relic');
@@ -1427,7 +1457,6 @@ function syncMountHud(){
   $('mountFlight').hidden=!v.active||!v.hover;
   $('dashName').textContent=v.active?'BOOST':'ΑΠΟΦΥΓΗ';
   $('leapDesktopName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΨΗΛΟ ΑΛΜΑ';$('leapTouchName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΑΛΜΑ';
-  if($('mobileStanceButton'))$('mobileStanceButton').disabled=v.active;
   if(v.active){$('attackName').textContent='ΜΟΝΟ ΧΕΡΙ';$('attackValue').textContent='ΚΡΑΤΑ · ΣΥΝΕΧΗ ΧΤΥΠΗΜΑΤΑ';$('dashValue').textContent='ΚΡΑΤΑ ΓΙΑ ΩΘΗΣΗ';$('leapValue').textContent=v.hover?'ΚΡΑΤΑ ΓΙΑ ΑΝΟΔΟ':v.kind==='bicycle'?'ΑΛΜΑ ΜΕ ΠΟΔΗΛΑΤΟ':'ΑΠΟΒΙΒΑΣΗ + ΑΛΜΑ';for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent='ΜΟΝΟ ΧΕΡΙ · ΤΙΜΟΝΙ';}
   for(const [id,label]of [['dashButton','Κράτα για boost με κατανάλωση ενέργειας.'],['leapButton',v.hover?'Κράτα για άνοδο. X ή το κουμπί καθόδου για κάθοδο.':v.kind==='bicycle'?'Άλμα με το ποδήλατο χωρίς αποβίβαση.':'Αποβίβαση από το όχημα και άλμα.']]){const b=$(id),text=v.active?label:b.dataset[touchLayout?'touchLabel':'desktopLabel'];b.setAttribute('aria-label',text);b.title=text;}
   syncSiegeHud();
@@ -1482,13 +1511,6 @@ function syncSiegeHud(){
   for(const [id,label] of [['attackButton','Βολή από τέσσερις κάννες.'],['guardButton','Κράτα, σύρε για στόχευση και άφησε για εκτόξευση.'],['kickButton','Εναλλαγή άρματος και περιπατητή.'],['screamButton','Κατευθυντική ηχητική έκρηξη.'],['dashButton',walker?'Dash προς την κίνηση.':'Κράτα για επιτάχυνση.'],['leapButton','Άλμα στη μορφή περιπατητή.']]){
     $(id).setAttribute('aria-label',label);$(id).title=label;
   }
-}
-function toggleStance(){
-  if(mountRide?.active){toast('ΜΟΝΟ ΧΕΡΙ','Το αριστερό χέρι παραμένει στο τιμόνι.');return;}
-  if(phase==='playing'&&(touchThrowAim||touchThrowQueued))cancelTouchThrow();
-  if(phase!=='playing'||scream||kick||swing||throwFlight||throwWindup||leap||Math.abs(stance-stanceTarget)>.005)return;
-  cancelAttack();spinRecovery=null;stanceTarget=stanceTarget===0?1:0;guardHeld=false;guarding=false;
-  audio.play('ui');
 }
 function updateAim(preview=true){
   const committedDirection=touchThrowAim?.confirming?touchThrowAim.confirmedDirection:
@@ -1972,8 +1994,12 @@ function hurtPlayer(damage,dx=0,dz=0,blockable=true,contact={}){
   }
   if(phase!=='playing'||player.invincible>0||dashTime>0||(player.y>1.6&&blockable&&!mountRide?.active))return;
   const directionLength=Math.hypot(dx,dz),source={x:player.x-dx,z:player.z-dz};
-  if(blockable&&directionLength>.01&&guarding&&facingCoverage(facing,source,player,Math.PI*.36)&&(!armoryVolumes||actualEquipmentRay(hero.userData.hammerHead,contact.from||{x:source.x,y:player.y+1.3,z:source.z},{x:player.x,y:player.y+1.3,z:player.z})!==null)){
-    fragments.add(player.x+facing.x,player.y+1.3,player.z+facing.z,7,[0xa5e5de,0xffd490],4,.07);audio.play('hit',.1,{material:characterStats.weaponTier<2?'wood':'metal'});return;
+  if(blockable&&directionLength>.01&&guarding&&facingCoverage(facing,source,player,armoryShieldStats?.coverage||Math.PI*.36)){
+    const point=hero.userData.shieldRig.getWorldPosition(new THREE.Vector3());
+    if(armoryShieldStats)shieldRespond(contact.attacker,damage,point);
+    fragments.add(point.x,point.y,point.z,7,[0xa5e5de,0xffd490],4,.07);
+    audio.play('hit',.15,{material:characterStats.weaponTier<2?'wood':'metal'});
+    return;
   }
   const shieldFacing=spin?{x:Math.sin(hero.rotation.y),z:Math.cos(hero.rotation.y)}:facing;
   const shieldFrom=contact.from||{x:source.x,y:player.y+1,z:source.z},shieldTo=contact.to||{x:player.x,y:player.y+1,z:player.z};
@@ -1985,15 +2011,9 @@ function hurtPlayer(damage,dx=0,dz=0,blockable=true,contact={}){
   if(player.hp<=0)endGame(false);
 }
 function guardContact(from,to){
-  if(!guarding||!facingCoverage(facing,from,player,Math.PI*.42))return null;
-  if(armoryVolumes)return actualEquipmentRay(hero.userData.hammerHead,from,to);
-  const g=guardDimensions();
-  const before=(from.x-player.x)*facing.x+(from.z-player.z)*facing.z-g.forward;
-  const after=(to.x-player.x)*facing.x+(to.z-player.z)*facing.z-g.forward;
-  if(before<0||after>0||before===after)return null;
-  const t=before/(before-after),x=lerp(from.x,to.x,t)-player.x,z=lerp(from.z,to.z,t)-player.z;
-  const lateral=x*facing.z-z*facing.x,vertical=lerp(from.y,to.y,t)-player.y-g.height;
-  return lateral*lateral+vertical*vertical<=(g.radius+.13)**2?t:null;
+  if(!guarding||!facingCoverage(facing,from,player,armoryShieldStats?.coverage||Math.PI*.36))return null;
+  const {armoryShieldModel,shield}=hero.userData;
+  return actualEquipmentRay(armoryShieldModel||shield,from,to);
 }
 function shoot(e){
   const dir=normalize(player.x-e.x,player.z-e.z),count=e.burst||1;
@@ -2211,9 +2231,8 @@ function updateEnemies(dt){
     const hit=firstHammerHit(from,to,targets,.13);
     const playerT=player.y<1.6?segmentCircleHit(from.x,from.z,to.x,to.z,player.x,player.z,.65):null;
     const guardT=b.reflected?null:guardContact(from,to),shieldT=b.reflected?null:shieldSurface(from,to);
-    if(guardT!==null&&(!hit||guardT<hit.t)&&(!playerT||guardT<=playerT)){
-      b.x=lerp(from.x,to.x,guardT)+facing.x*.12;b.z=lerp(from.z,to.z,guardT)+facing.z*.12;b.vx=facing.x*14;b.vz=facing.z*14;b.damage=Math.round(stats.power*.8);b.reflected=true;b.life=1.5;b.mesh.material.color.setHex(0x8ce4d8);
-      fragments.add(b.x,1,b.z,8,[0x8ce4d8,0xffe1a5],4,.06);audio.play('hit',.15,{material:characterStats.weaponTier<2?'wood':'metal'});
+    if(guardT!==null&&(!hit||guardT<hit.t)&&(playerT===null||guardT<=playerT)){
+      hurtPlayer(b.damage,b.vx/10,b.vz/10,true,{attacker:b.owner,from,to,shieldHit:true});b.life=0;
     }else if(shieldT!==null&&(!hit||shieldT<hit.t)&& (playerT===null||shieldT<=playerT)){
       hurtPlayer(b.damage,b.vx/10,b.vz/10,true,{attacker:b.owner,from,to,shieldHit:true});b.life=0;
     }else if(!b.reflected&&playerT!==null&&(!hit||playerT<hit.t)){
@@ -2614,17 +2633,6 @@ function updateMovingVehicles(dt){
   if(vehicleNavTimer<=0){world.invalidateNavigation?.();vehicleNavTimer=.20;}
 }
 
-function guardDimensions(){
-  const h=hero.userData.getHeadHalfExtents?.()||{x:.725*stats.size,y:.365*stats.size},gripCenter=stance>.9?.255:.43;
-  const fullReach=Math.max(.65,stats.range-.55-(hero.userData.getHeadForwardExtent?.()||.52*stats.size)-.43);
-  if((levels.range>0||levels.size>0)&&(fullReach>2.2||h.x>1.4))return {brace:true,reach:fullReach,radius:1.2,height:1.32,forward:.70,gripCenter};
-  // Wind around the held grip, with enough room for the complete equipped
-  // head. Stock equipment fits a 1.30 m disk within the articulated arm span;
-  // very large head upgrades retain their actual larger physical clearance.
-  const reach=Math.max(.35,Math.min(1.05,Math.sqrt(Math.max(0,1.3**2-h.x**2))-h.y-.43+gripCenter));
-  const radius=Math.hypot(.43+reach-gripCenter+h.y,h.x);
-  return {reach,radius,height:radius+.08,forward:.70,gripCenter};
-}
 const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
 function recoverRiverPlayer(){
   if(!world.inRiver)return;
@@ -2668,7 +2676,7 @@ function updatePlayer(dt){
     const angle=from+delta*(1-Math.exp(-18*dt*movementStrength()));
     leap.dir={x:Math.sin(angle),z:Math.cos(angle)};
   }
-  updateAim(false);guarding=guardHeld&&!swing&&!spin&&!weaponBusy()&&!chargeStarted;
+  updateAim(false);guarding=guardHeld&&!swing&&!spin&&!punch&&!kick&&!leap&&!throwWindup&&!mountRide?.active&&dashTime<=0&&!chargeStarted;
   // Walking follows travel; attacking follows deliberate manual direction.
   // Once contact starts, the stroke keeps its heading so a 180-degree mouse
   // flick cannot teleport a damaging swept segment through the crowd.
@@ -2685,7 +2693,7 @@ function updatePlayer(dt){
     else if(touch.aimX||touch.aimY)facing=screenMovement(touch.aimX,touch.aimY);
     else if(pointer.active)facing={...aim};
   }
-  if(guarding)guardAngle+=dt*19;
+  guardBlend=lerp(guardBlend,guarding?1:0,1-Math.exp(-dt*25));
   if(mountRide?.active){
     mountRide.update(dt,{player,hero,world,move,strength:movementStrength(),up:keys.has('Space')||mountTouch.up,down:keys.has('KeyX')||keys.has('ControlLeft')||mountTouch.down,boost:keys.has('ShiftLeft')||keys.has('ShiftRight')||mountTouch.boost});
     if(!swing&&!punch&&!kick&&!throwWindup&&!touchThrowAim)facing=manualAttackDirection();
@@ -2788,10 +2796,8 @@ function updatePlayer(dt){
   }else if(spin){
     if(spin.time-spin.trailTime>=1/60){weaponTrail(headPrevious,headNow,.27*stats.size,0xffcf79);spin.trailTime=spin.time;}
     spinImpact(headPrevious,headNow);
+    if(spin)spinShieldImpact(spin);
     if(spin&&spin.momentum<=0)stopSpin(true);
-  }else if(guarding){
-    weaponTrail(headPrevious,headNow,.16,0x8ce4d8);
-    for(const e of [...enemies]){if((guardHits.get(e)||0)>=elapsed||!facingCoverage(facing,e,player,Math.PI*.42))continue;const contacts=armoryVolumes?catalogHeadHits(headPrevious,headNow,[e]):[firstHammerHit(headPrevious,headNow,[e],.45*stats.size)].filter(Boolean);if(!contacts.length)continue;guardHits.set(e,elapsed+.38*characterStats.cooldownScale);for(const c of contacts)hitEnemy(e,Math.round(stats.power*.3*(c.damageScale||1)),normalize(e.x-player.x,e.z-player.z),6*(c.forceScale||1)*(armoryWeaponStats?.force||1),1.5,c,{weapon:'guard'});if(armoryWeaponStats)armoryEffects.hit(e,armoryWeaponStats,stats.power*.3,contacts[0]);}
   }else if(touchThrowAim?.channeling&&touchThrowAim.channelTime>.10){
     const g=touchThrowAim;
     if(g.channelTime-g.trailTime>=1/45){weaponTrail(g.trailFrom||headPrevious,headNow,.13,0x8aeaff);g.trailTime=g.channelTime;g.trailFrom=headNow.clone();}
@@ -2810,6 +2816,35 @@ function updatePlayer(dt){
   updateAim(false);
   updateHammerAura();
 }
+function poseShieldKneel(u,blend,moving){
+  const thighLength=.30,shinLength=.22,hipHeight=u.legRest?.height??.62;
+  const hipDrop=.22;
+  const phase=player.walk*1.8;
+  u.body.position.y-=hipDrop*blend;
+  u.body.rotation.x+=.14*blend;
+  u.body.position.z-=.06*blend;
+  for(const [leg,side] of [[u.leftLeg,-1],[u.rightLeg,1]]){
+    const {shin,ankle}=leg.userData;
+    const cycle=(phase+(side>0?0:Math.PI))%(Math.PI*2);
+    const swingPhase=Math.max(0,(cycle-Math.PI)/Math.PI);
+    const stride=Math.PI/10.8;
+    // The planted foot moves backward at the same rate as the root advances.
+    const step=cycle<=Math.PI?stride*.5-cycle/10.8:-stride*.5+stride*smooth(swingPhase);
+    const lift=moving?.082*Math.sin(Math.PI*swingPhase):0;
+    const dz=(moving?.03:.15)*side+(moving?step:0)+.06;
+    const dy=hipDrop+lift-thighLength-shinLength;
+    const distance=Math.hypot(dy,dz);
+    const knee=Math.acos(clamp((distance**2-thighLength**2-shinLength**2)/(2*thighLength*shinLength),-1,1));
+    const hip=Math.atan2(-dz,-dy)-Math.atan2(shinLength*Math.sin(knee),thighLength+shinLength*Math.cos(knee));
+    leg.position.y=hipHeight-hipDrop*blend;
+    leg.position.z-=.06*blend;
+    leg.rotation.x=lerp(leg.rotation.x,hip,blend);
+    leg.rotation.y*=1-blend;
+    leg.rotation.z*=1-blend;
+    shin.rotation.x=knee*blend;
+    ankle.rotation.x=(-hip-knee)*blend;
+  }
+}
 function poseHero(dt,moving=false){
   const u=hero.userData;u.body.position.x=u.body.position.z=0;
   if(!mountRide?.active){u.setRidingAnchor?.(null);mountedAimYaw=0;}
@@ -2819,7 +2854,7 @@ function poseHero(dt,moving=false){
   if(spin)hero.rotation.y=spin.angle+spin.entryYawOffset;
   else if(moving||leap||dashTime>0||guarding||swing||punch)hero.rotation.y=targetAngle;
   else hero.rotation.y+=diff*(1-Math.exp(-dt*24));
-  hero.position.set(player.x,player.y+(dashTime>0&&!leap?.15:Math.abs(walk)*(swing?.025:.07)),player.z);
+  hero.position.set(player.x,player.y+(dashTime>0&&!leap?.15:Math.abs(walk)*(swing?.025:.07)*(1-guardBlend)),player.z);
   const p=swing?clamp(swing.time/swing.duration,0,1):0;
   const motion=swing?(swing.blocked?swing.blockPose:sampleHammerSwing(p,{twoHanded:swing.twoHanded,charge:swing.q,variant:swing.variant})):null;
   const settle=swing?.blocked?1-smooth((swing.time-swing.blockTime)/.12):1;
@@ -2838,7 +2873,7 @@ function poseHero(dt,moving=false){
     leg.rotation.y=(leg.userData.restYaw||0)+(spin?side*.12+Math.sin(spin.rotation)*.10:0);
   }
   if(u.body){
-    u.body.rotation.x=leap?(dashTime>0?.30:leap.diving?.30:-.12):dashTime>0?.25:spinPose?spinPose.bodyPitch:guarding?.14:motion?motion.bodyPitch*settle-impactRecoil:landingRecovery>0?.32:0;
+    u.body.rotation.x=leap?(dashTime>0?.30:leap.diving?.30:-.12):dashTime>0?.25:spinPose?spinPose.bodyPitch:motion?motion.bodyPitch*settle-impactRecoil:landingRecovery>0?.32:0;
     u.body.rotation.y=torque;u.body.rotation.z=motion?motion.bodyRoll*settle:spinPose?spinPose.bodyRoll:0;
     u.body.position.y=landingRecovery>0?-.07:spinPose?spinPose.bodyDrop:motion?motion.bodyDrop*settle:Math.sin(visualTime*2)*.015;
   }
@@ -2849,7 +2884,10 @@ function poseHero(dt,moving=false){
     u.body.rotation.z=lerp(source.z,u.body.rotation.z,blend);
     u.body.position.y=lerp(swing?swing.fromBodyY:spin.fromBodyY,u.body.position.y,blend);
   }
-  for(const leg of [u.leftLeg,u.rightLeg])if(leg?.userData.shin)leg.userData.shin.rotation.x=0;
+  for(const leg of [u.leftLeg,u.rightLeg]){
+    if(leg?.userData.shin)leg.userData.shin.rotation.x=0;
+    if(leg?.userData.ankle)leg.userData.ankle.rotation.x=0;
+  }
   if(kickPose){
     u.rightLeg.rotation.set(kickPose.hip,u.rightLeg.userData.restYaw||0,(u.rightLeg.userData.restRoll||0)+.045);u.rightLeg.position.z=.08*kickPose.extension;
     u.rightLeg.rotation.y-=.42*kickPose.extension;
@@ -2876,6 +2914,9 @@ function poseHero(dt,moving=false){
     }
   }
   if(u.cape){u.cape.rotation.x=.15+Math.sin(visualTime*6)*.07+(leap?.85:spin?.55:motion?.18+Math.abs(torque)*.3:moving?.25:0);u.cape.rotation.z=spin?.3-Math.sin(spin.rotation)*.1:motion?-torque*.38:Math.sin(visualTime*3)*.045;}
+  const kneel=leap||kick||punch||swing||spin||dashTime>0||mountRide?.active||siegeTank?.active?0:guardBlend;
+  if(kneel>.001)poseShieldKneel(u,kneel,moving);
+  u.setShieldAction?.(kneel,spin?smooth(spin.time/.10):0);
   u.setStance?.(stance);
   const rest=u.weaponRest||{x:.55,y:0,z:-.72},rp=u.weaponRestPosition||{x:0,y:1.04,z:.38};
   const rig=u.weaponRig,restQuaternion=new THREE.Quaternion().setFromEuler(new THREE.Euler(rest.x,rest.y,rest.z));
@@ -2917,10 +2958,6 @@ function poseHero(dt,moving=false){
       spin.entryYawOffset=Math.atan2(Math.sin(offset),Math.cos(offset));
       hero.rotation.y=spin.angle+spin.entryYawOffset;
     }
-  }else if(guarding){
-    const g=guardDimensions();u.setReach?.(g.reach);rig.rotation.set(0,0,g.brace?-.99:guardAngle);
-    const shaftDirection=poseDirection.set(0,1,0).applyQuaternion(rig.quaternion);
-    rig.position.set(g.brace?.22:0,g.height,g.forward).addScaledVector(shaftDirection,-g.gripCenter);
   }
   else if(leap){
     // A readable load and downward blow, with both hands following the same
@@ -2986,7 +3023,7 @@ function poseHero(dt,moving=false){
     rig.position.copy(landingPose.position).lerp(new THREE.Vector3(rp.x,rp.y,rp.z),t);
   }
   else if(spinRecovery){const t=smooth(spinRecovery.time/.12);if(spinRecovery.fromReach!==undefined)u.setReach?.(lerp(spinRecovery.fromReach,u.reachScale,t));rig.position.lerpVectors(spinRecovery.fromPosition,new THREE.Vector3(rp.x,rp.y,rp.z),t);rig.quaternion.copy(spinRecovery.fromRotation).slerp(restQuaternion,t);}
-  if((swing||spin||leap?.strike||landingRecovery>0)&&u.getHeadFloorY)rig.position.y+=Math.max(0,.04-u.getHeadFloorY());
+  if((swing||spin||kneel>.001||leap?.strike||landingRecovery>0)&&u.getHeadFloorY)rig.position.y+=Math.max(0,.04-u.getHeadFloorY());
   if(mountRide?.active){
     mountRide.pose(hero,{kick:!!kick});
     const localYaw=Math.atan2(Math.sin(targetAngle-mountRide.yaw),Math.cos(targetAngle-mountRide.yaw));
@@ -2996,13 +3033,12 @@ function poseHero(dt,moving=false){
   }
   // Keep both wrists within the anatomical span when head/range upgrades
   // make the old ground-clearance lift physically unreachable.
-  if((!guarding||guardDimensions().brace)&&!touchThrowAim?.channeling&&!throwWindup)constrainLargeWeaponPose(u,stance>.9);
+  if(!touchThrowAim?.channeling&&!throwWindup)constrainLargeWeaponPose(u,stance>.9);
   u.updateGrip?.();
   flashMaterials(player,player.invincible>0&&player.hurtAgo<1?(Math.sin(visualTime*30)*.5+.5)*.55:0,0xff8b71);
   chargeRing.visible=!!spin;chargeRing.position.set(player.x,player.y+.07,player.z);chargeRing.scale.setScalar(stats.range*.88);chargeRing.material.opacity=spin?.12+Math.sin(spin.rotation*2)*.04:0;chargeRing.material.color.setHex(0xffcb7d);
   const markerDirection=touchThrowQueued||throwWindup?aim:facing;
   directionMarker.position.set(player.x+markerDirection.x*1.15,player.y+.055,player.z+markerDirection.z*1.15);directionMarker.rotation.y=Math.atan2(markerDirection.x,markerDirection.z);directionMarker.visible=phase==='playing'&&!touchThrowAim&&!touchThrowQueued&&!throwWindup;
-  if(guardRing){const g=guardDimensions();guardRing.visible=guarding;guardRing.position.set(player.x+facing.x*g.forward,player.y+g.height,player.z+facing.z*g.forward);guardRing.scale.setScalar(g.radius/1.72);guardRing.rotation.set(0,Math.atan2(facing.x,facing.z),0);guardRing.material.opacity=.12+Math.sin(guardAngle*2)*.035;}
   if(groundShadow){groundShadow.position.set(player.x,.035,player.z);groundShadow.scale.setScalar(1+player.y*.035);groundShadow.material.opacity=clamp(.34-player.y*.018,.15,.34);groundShadow.visible=phase!=='menu';}
   if(landingMarker){landingMarker.visible=!!leap;landingMarker.position.set(player.x,.09,player.z);landingMarker.scale.setScalar(leap?.slam?5.2+stats.quake*.7:leap?.strike?1.65:.9);landingMarker.material.color.setHex(leap?.slam?0xffbf6d:0x9edac9);}
 }
@@ -3033,6 +3069,7 @@ function updateDrops(dt){
 function updateObjects(dt){
   for(const o of world.objects){
     if(o.dead)continue;
+    if(o.type==='jungle-trunk'&&o.hurtTimer<=0&&o.flash<=0&&o.shudder<=0)continue;
     o.hurtTimer=Math.max(0,(o.hurtTimer||0)-dt);o.flash=Math.max(0,o.flash-dt);o.shudder=Math.max(0,o.shudder-dt);flashMaterials(o,o.flash/.15);
     if(o.renderActive===false&&o.shudder===0)continue;
     const jitter=o.shudder>0?Math.sin(o.shudder*100)*o.shudder*.3:0;
@@ -3212,10 +3249,8 @@ function updateHUD(force=false){
     $('bossFill').style.width=Math.max(0,activeBoss.hp/activeBoss.maxHp*100)+'%';
     $('bossValue').textContent=(boss?.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(activeBoss.hp))+' / '+Math.ceil(activeBoss.maxHp)+' HP';
   }
-  const stanceLabel=throwFlight?'ΑΟΠΛΟΣ · ΓΡΟΘΙΕΣ + ΚΛΩΤΣΙΑ':Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':characterStats.hasShield?'ΣΦΥΡΙ + ΑΣΠΙΔΑ':'ΛΑΒΗ ΜΕ ΕΝΑ ΧΕΡΙ';
-  for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent=stanceLabel;
-  $('mobileStanceButton')?.setAttribute('aria-pressed',String(stanceTarget===1));
-  if($('guardValue'))$('guardValue').textContent=guarding?'ΠΡΟΣΤΑΣΙΑ ΜΠΡΟΣΤΑ':throwFlight?'ΧΩΡΙΣ ΣΦΥΡΙ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
+  $('stanceValue').textContent=throwFlight?'ΑΣΠΙΔΑ · ΓΡΟΘΙΑ + ΚΛΩΤΣΙΑ':'ΟΠΛΟ + ΑΣΠΙΔΑ';
+  if($('guardValue'))$('guardValue').textContent=guarding?'ΑΣΠΙΔΑ ΜΠΡΟΣΤΑ':touchLayout?'ΚΡΑΤΑ ΓΙΑ ΑΜΥΝΑ':'ΚΡΑΤΑ RMB';
   if($('leapValue'))$('leapValue').textContent=leap?(throwFlight?'ΓΡΟΘΙΑ / DASH':leap.slam?'ΣΥΝΤΡΙΒΗ!':touchLayout?'ΧΤΥΠΗΜΑ / DASH':'ΚΛΙΚ: SMASH · SHIFT: DASH'):leapCooldown>0?leapCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   if($('throwValue'))$('throwValue').textContent=touchThrowQueued?'ΕΤΟΙΜΑΖΕΤΑΙ':touchThrowAim?(touchThrowAim.mode==='confirm'?'ΠΑΤΑ ΞΑΝΑ · ΡΙΨΗ':'ΑΦΗΣΕ · ΡΙΨΗ'):throwFlight?(throwFlight.grounded?'ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ':throwFlight.returning?'ΕΠΙΣΤΡΟΦΗ':throwFlight.hitCount&&characterStats.canRicochet?'ΑΛΥΣΙΔΑ '+throwFlight.hitCount:'ΣΤΟΝ ΑΕΡΑ'):throwCooldown>0?throwCooldown.toFixed(1)+'s':hammerLightning>0?'ΚΕΡΑΥΝΟΣ!':settings.throwMode==='confirm'?'ΠΑΤΑ · ΣΤΟΧΕΥΣΗ':'ΚΡΑΤΑ · ΣΤΟΧΕΥΣΗ';
   const aimStatus=$('throwAimStatus');
@@ -3231,6 +3266,7 @@ function updateHUD(force=false){
   if($('dashValue'))$('dashValue').textContent=dashTime>0?'ΑΠΟΦΥΓΗ!':dashCooldown>0?dashCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   updateAttackFeedback();
   $('guardButton')?.classList.toggle('active',guardHeld||guarding);
+  $('guardButton')?.setAttribute('aria-pressed',String(guarding));
   $('leapButton')?.classList.toggle('cooldown',!leap&&leapCooldown>0);
   $('leapButton')?.classList.toggle('airborne',!!leap);
   $('throwButton')?.classList.toggle('cooldown',!!(throwFlight||throwWindup)||throwCooldown>0);
@@ -3532,8 +3568,8 @@ function cancelAttack(){resetAttackChain();spinCharge=null;if(leap)leap.attackHe
 function pressGuard(){
   if(phase==='playing'&&siegeTank?.active){siegeTank.startAim();updateSiegeAim();return;}
   if(phase!=='playing'||scream)return;
-  if(throwFlight)return;
-  guardHeld=true;cancelAttack();spinRecovery=null;
+  if(mountRide?.active||leap||throwWindup)return;
+  guardHeld=true;cancelAttack();swing=null;spinRecovery=null;
 }
 function releaseGuard(){
   if(siegeTank?.active&&siegeTank.aiming){updateSiegeAim();siegeTank.fireMissiles();}
@@ -3715,7 +3751,6 @@ function initInput(){
     $(id).addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.code))return;e.preventDefault();e.stopPropagation?.();upgradeTab=e.code==='Home'?'powers':e.code==='End'?'gear':upgradeTab==='powers'?'gear':'powers';syncUpgradePanel();$(upgradeTab==='powers'?'upgradePowerTab':'upgradeGearTab').focus();});
   }
   // A completed tap changes grip without pausing the battle.
-  if($('mobileStanceButton'))$('mobileStanceButton').onclick=toggleStance;
   $('settingsButton').onclick=()=>{previousPhase=phase;setPhase('settings');};
   $('closeSettingsButton').onclick=()=>{setPhase(previousPhase);save('ironfall.settings',settings);};
   $('qualitySelect').value=settings.quality;$('shakeToggle').checked=settings.shake;$('volumeRange').value=Math.round(settings.volume*100);
@@ -3730,7 +3765,7 @@ function initInput(){
   $('volumeRange').oninput=e=>{settings.volume=Number(e.target.value)/100;audio.setVolume(settings.volume);if(settings.volume>0&&settings.muted){settings.muted=audio.toggle();}audio.unlock();updateSoundButtons();save('ironfall.settings',settings);};
   updateSoundButtons();
   window.addEventListener('keydown',e=>{
-    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyG','KeyQ','KeyU','KeyE','KeyC','KeyI','KeyX','ControlLeft'];
+    const handled=['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Escape','KeyR','KeyZ','KeyQ','KeyU','KeyE','KeyC','KeyI','KeyX','ControlLeft'];
     const focused=document.activeElement,editable=['INPUT','SELECT','TEXTAREA'].includes(focused?.tagName)||focused?.isContentEditable;
     const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
     if(phase==='playing'&&handled.includes(e.code)&&!editable&&!nativeActivation)e.preventDefault();
@@ -3746,7 +3781,6 @@ function initInput(){
     if(e.code==='KeyE'&&!e.repeat)startKick();
     if(e.code==='KeyR'&&!e.repeat)beginTouchThrow({pointerId:'keyboard',pointerType:'keyboard'});
     if(e.code==='KeyZ'&&!e.repeat)startScream('keyboard');
-    if(e.code==='KeyG'&&!e.repeat)toggleStance();
     if((e.code==='ShiftLeft'||e.code==='ShiftRight')&&!e.repeat)dodge();
   });
   window.addEventListener('keyup',e=>{
@@ -3958,7 +3992,7 @@ async function init(){
   const arrowGeo=new THREE.BufferGeometry();arrowGeo.setAttribute('position',new THREE.Float32BufferAttribute([-.19,0,-.1,.19,0,-.1,0,0,.25],3));
   directionMarker=new THREE.Mesh(arrowGeo,new THREE.MeshBasicMaterial({color:0xf6cf8a,side:THREE.DoubleSide,transparent:true,opacity:.64,depthWrite:false}));scene.add(directionMarker);
   throwIndicator=createThrowIndicator(THREE,$('throwArrowImage'));scene.add(throwIndicator.mesh);
-  guardRing=new THREE.Mesh(new THREE.RingGeometry(1.68,1.72,64),new THREE.MeshBasicMaterial({color:0x9ee4db,side:THREE.DoubleSide,transparent:true,opacity:.15,depthWrite:false}));guardRing.visible=false;scene.add(guardRing);
+
   landingMarker=makeTelegraph(0,0,1,0xffc371);landingMarker.visible=false;
   groundShadow=new THREE.Mesh(new THREE.CircleGeometry(.65,24),new THREE.MeshBasicMaterial({color:0x081719,transparent:true,opacity:.32,depthWrite:false}));groundShadow.rotation.x=-Math.PI/2;scene.add(groundShadow);
   occlusionDepth=new OcclusionDepth(scene);groundScars=new GroundScars(scene);levelStorm=new LevelStorm(scene,{onStrike:levelUpStrike});

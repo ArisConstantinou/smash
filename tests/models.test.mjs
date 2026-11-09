@@ -290,16 +290,16 @@ test('cached throw bounds match projectiles and ignore hero or held-weapon rotat
   }
 });
 
-test('equipment swaps retain the animated skeleton while a new survivor has no armor attachments', () => {
+test('equipment swaps retain the animated skeleton while a new survivor has a wooden shield', () => {
   const hero = makeWarrior(), u = hero.userData;
   const body = u.body, head = u.hammerHead, rightAnchor = u.rightGripAnchor;
   const defaultArmor = new Set();
   hero.traverse(node => { if (node.isMesh) defaultArmor.add(node); });
   assert.equal(u.equipmentTier, 4);
   u.setEquipment(0);
-  assert.equal(u.weaponKind, 'log'); assert.equal(u.shieldEquipped, false);
-  assert.equal(u.shieldRig.visible, false); assert.equal(u.cape.visible, false);
-  assert.equal(u.shield.children.length, 0); assert.equal(u.cape.children.length, 0);
+  assert.equal(u.weaponKind, 'log'); assert.equal(u.shieldEquipped, true);
+  assert.equal(u.shieldRig.visible, true); assert.equal(u.cape.visible, false);
+  assert.ok(u.shield.children.some(node=>node.isMesh)); assert.equal(u.cape.children.length, 0);
   assert.equal(u.body, body); assert.equal(u.hammerHead, head); assert.equal(u.rightGripAnchor, rightAnchor);
   let vertices = 0;
   hero.traverse(node => {
@@ -323,12 +323,7 @@ test('all equipment tiers keep both arms connected through grips, throwing and s
       restingPose(hero, stance);
       contact(u.rightGrip, u.rightGripAnchor);
       if (stance === 1) contact(u.leftGrip, u.leftGripAnchor);
-      if (stance === 0 && tier >= 2) contact(u.leftGrip, u.shieldGripAnchor);
-      if (stance === 0 && tier < 2) {
-        assert.ok(worldPosition(u.leftGrip).distanceTo(worldPosition(u.shieldGripAnchor)) > .1,
-          'An unarmored survivor must not hold an invisible shield');
-        assert.equal(u.shieldRig.userData.attachment, 'none');
-      }
+      if (stance === 0) contact(u.leftGrip, u.shieldGripAnchor);
       armsConnected(hero);
       u.setWeaponVisible(false); armsConnected(hero);
       u.setWeaponVisible(true); armsConnected(hero);
@@ -555,7 +550,7 @@ test('elbow side does not depend on a previous reverse pose or full rotation',()
 test('equipment swaps preserve the real foot contact marker and independent knees',()=>{
  const hero=makeWarrior(),u=hero.userData,foot=u.rightLeg.userData.foot;
  for(const tier of [0,1,2,3,4,0]){
-  u.setEquipment(tier);assert.equal(u.rightLeg.userData.foot,foot);assert.equal(foot.parent,u.rightLeg.userData.shin);
+  u.setEquipment(tier);assert.ok(u.rightLeg.userData.foot===foot,'Equipment must preserve the foot marker');assert.ok(foot.parent===u.rightLeg.userData.ankle&&foot.parent.parent===u.rightLeg.userData.shin,'The ankle must connect the foot to the shin');
   assert.ok(u.rightLeg.userData.thigh.children.length>0);assert.ok(u.rightLeg.userData.shin.children.length>1);
   assert.equal(u.leftLeg.userData.shin.rotation.x,0);
  }

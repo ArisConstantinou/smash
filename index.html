@@ -73,7 +73,7 @@
         <path d="m7 31 5-5m74 28 5-5" stroke="#84cbbf" stroke-width="2" opacity=".7"/>
         <text x="48" y="77" text-anchor="middle" fill="#ffe0a0" font-family="Courier New,monospace" font-weight="bold" font-size="11">360°</text>
       </symbol>
-      <symbol id="a-guard" viewBox="0 0 96 80"><use href="#a-warrior" transform="translate(29 47) scale(.76)"/><ellipse cx="66" cy="40" rx="17" ry="31" fill="none" stroke="#88dccc" stroke-width="3.3"/><path d="m78 16 6 10-11-2M54 63l-6-10 11 3" fill="#b5f2df"/><path d="M32 41H62M32 49H61" stroke="#b9d5da" stroke-width="5.5" stroke-linecap="round"/><use href="#a-hammer" transform="translate(65 16) scale(.52)"/><path d="m95 37-9 4 9 4" fill="#ffb96f"/><path d="M89 41H78" stroke="#ffc986" stroke-width="2"/><path d="m77 39-5-5m5 10-5 5" stroke="#ffe1a3" stroke-width="2"/></symbol>
+      <symbol id="a-guard" viewBox="0 0 96 80"><use href="#a-warrior" transform="translate(28 45) scale(.76)"/><path d="M53 20 71 15 89 20v20c0 13-12 23-18 27-7-4-18-14-18-27Z" fill="#38646a" stroke="#afded2" stroke-width="3"/><path d="M71 22v35m-12-22h24" stroke="#e9c987" stroke-width="3"/><path d="m96 35-8 5 8 5" fill="#ffc986"/></symbol>
       <symbol id="a-leap" viewBox="0 0 96 80"><ellipse cx="27" cy="72" rx="18" ry="4" fill="#82b4ac" opacity=".25"/><path d="M8 68H88" stroke="#6d9b99" stroke-width="2"/><path d="M18 62C30 9 57-4 84 27" fill="none" stroke="#a6e6d6" stroke-width="3" stroke-dasharray="5 5"/><path d="m75 27 14 7-3-14Z" fill="#a6e6d6"/><path d="m36 40-13 21 17-9" fill="#ffc477" opacity=".7"/><use href="#a-warrior" transform="translate(53 33) rotate(-22) scale(.66)"/><use href="#a-hammer" transform="translate(68 14) rotate(51) scale(.36)"/></symbol>
       <symbol id="a-slam" viewBox="0 0 96 80">
         <ellipse cx="50" cy="65" rx="36" ry="10" fill="#5de4f0" opacity=".17"/>
@@ -365,9 +365,6 @@
               <div class="gear-experience"><span id="characterXpText">0 / 8 XP</span><div class="character-xp"><span id="forgeXpFill"></span></div></div>
               <p id="weaponAbilities">Μικρό άλμα · μάζεψε το όπλο μετά τη ρίψη</p>
             </section>
-            <button id="mobileStanceButton" class="loadout-stance" type="button" aria-pressed="false" aria-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών." data-touch-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών.">
-              <svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-stance"/></svg><span><b>ΛΑΒΗ</b><strong id="mobileStanceValue">ΔΥΟ ΧΕΡΙΑ</strong></span><svg class="stance-switch-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
-            </button>
           </div>
           <div class="material-inventory" aria-label="Συλλεγμένα υλικά"><span class="material-wood">ΞΥΛΟ <b id="material-wood">0</b></span><span class="material-scrap">ΜΕΤΑΛΛΟ <b id="material-scrap">0</b></span><span class="material-crystal">ΚΡΥΣΤΑΛΛΟΙ <b id="material-crystal">0</b></span></div>
           <section class="next-weapon" aria-label="Επόμενη κατασκευή"><small>ΕΠΟΜΕΝΟ ΟΠΛΟ</small><strong id="nextWeaponName">ΕΝΙΣΧΥΜΕΝΟ ΡΟΠΑΛΟ</strong><p id="forgeRequirements">LV 3 · Ξύλο 0/8</p><button id="forgeButton" type="button" disabled>ΛΕΙΠΟΥΝ ΥΛΙΚΑ</button></section>
@@ -445,7 +442,7 @@
             <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-left"/></svg>LMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="attackIcon" href="#a-swing"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="attackTouchIcon" href="#t-attack"/></svg><span id="attackName" class="action-name">ΣΦΥΡΙΑ</span><small id="attackValue" class="action-status">ΠΑΤΑ · ΚΡΑΤΑ ΓΙΑ 360°</small>
           </button>
-          <button id="guardButton" class="action-tile" type="button" aria-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." title="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-desktop-label="Κράτα δεξί κλικ: κατακόρυφη περιστροφή σφυριού για προστασία προς την κατεύθυνση που κοιτάς." data-touch-label="Κράτα την άμυνα για προστασία μπροστά σου. Άφησε για να σταματήσεις.">
+          <button id="guardButton" class="action-tile" type="button" aria-label="Κράτα δεξί κλικ για να σηκώσεις την ασπίδα μπροστά σου." title="Κράτα δεξί κλικ για να σηκώσεις την ασπίδα μπροστά σου." data-desktop-label="Κράτα δεξί κλικ για να σηκώσεις την ασπίδα μπροστά σου." data-touch-label="Κράτα την άμυνα για προστασία μπροστά σου. Άφησε για να σταματήσεις.">
             <kbd class="action-key mouse-key"><svg viewBox="0 0 32 40" aria-hidden="true"><use href="#a-mouse-right"/></svg>RMB</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="guardIcon" href="#a-guard"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="guardTouchIcon" href="#t-guard"/></svg><span id="guardName" class="action-name">ΑΜΥΝΑ</span><small id="guardValue" class="action-status">ΚΡΑΤΑ RMB</small>
           </button>
@@ -484,8 +481,7 @@
         <dt>ΠΟΝΤΙΚΙ</dt><dd>Όταν στέκεσαι, στρέφει τον πολεμιστή, τη σφυριά και την άμυνα. Η ρίψη με R ακολουθεί τη στόχευση, με προαιρετική αυτόματη επιλογή ορατού εχθρού.</dd>
         <dt>LMB</dt><dd>Αριστερό κλικ: χτύπημα. Κράτημα: περιστροφή με όπλο. Χωρίς όπλο: γροθιά, κράτημα για διαδοχικές γροθιές. Άφησε για να σταματήσεις.</dd>
         <dt>Z</dt><dd>Κραυγή προς το σημείο που κοιτάς. Κράτα έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα από τη λήξη, ανάλογα με τη δύναμη της κραυγής. Τα επίπεδα και οι αναβαθμίσεις δυναμώνουν το κύμα.</dd>
-        <dt>G</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά G για επαναφορά.</dd>
-        <dt>Κράτα RMB</dt><dd>Δεξί κλικ: κατακόρυφη περιστροφή του σφυριού μπροστά σου. Προστατεύει προς την κατεύθυνση που κοιτάς και ανακλά μετωπικά βλήματα.</dd>
+        <dt>Κράτα RMB</dt><dd>Σήκωσε την ασπίδα για να μπλοκάρεις μετωπικά χτυπήματα και βλήματα.</dd>
         <dt>SPACE</dt><dd>Ψηλό άλμα προς τα εμπρός και μικρό χτύπημα στην προσγείωση.</dd>
         <dt>SPACE → LMB</dt><dd>Πήδηξε και πάτησε LMB για μικρό smash σε κάθε επίπεδο. Με σιδερένιο σφυρί ή καλύτερο, κράτα LMB για μεγάλη συντριβή.</dd>
         <dt>R</dt><dd>Ρίξε προς τη στόχευση. Η βοήθεια στόχευσης είναι αρχικά ενεργή και κλείνει στις Ρυθμίσεις. Το ξύλο μένει στο έδαφος για συλλογή. Τα προχωρημένα όπλα ξεκλειδώνουν επιστροφή και έως πέντε αναπηδήσεις.</dd>
@@ -495,7 +491,7 @@
         <dt>1 / 2 / 3</dt><dd>Επιλογή αναβάθμισης, μόνο όσο το οπλοστάσιο είναι ανοιχτό.</dd></dl>
         <dl class="touch-only touch-help"><dt>ΜΟΧΛΟΣ</dt><dd>Σύρε για ελεύθερη κίνηση. Ο πολεμιστής κοιτάζει προς την πορεία του. Κράτα τον μοχλό με το ένα δάχτυλο και πάτα τις ενέργειες με το άλλο.</dd>
         <dt>ΧΤΥΠΗΜΑ</dt><dd>Πάτησε για χτύπημα. Χωρίς όπλο το κουμπί γίνεται γροθιά· κράτα το για διαδοχικές γροθιές. Η μπότα δίνει πάντα κλωτσιά.</dd>
-        <dt>ΠΕΡΙΣΤΡΟΦΗ</dt><dd>Κράτα πατημένο για συνεχή περιστροφή 360°. Άφησε για να σταματήσεις.</dd>
+        <dt>ΠΕΡΙΣΤΡΟΦΗ</dt><dd>Κράτα για περιστροφή 360° με όπλο και ασπίδα μετά από χτύπημα. Άφησε για να σταματήσεις.</dd>
         <dt>ΑΜΥΝΑ</dt><dd>Κράτα πατημένο για προστασία προς την κατεύθυνση που κοιτάς.</dd>
         <dt>ΑΛΜΑ</dt><dd>Πάτησε για άλμα και, με το όπλο στα χέρια, πάτα ΧΤΥΠΗΜΑ στον αέρα για μικρό smash. Με σιδερένιο σφυρί ή καλύτερο, κράτα για μεγάλη συντριβή.</dd>
         <dt>ΡΙΨΗ</dt><dd>Κράτα για κατακόρυφη περιστροφή, σύρε προς τον στόχο και άφησε. Το σφυρί αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με ηλεκτρική λάμψη.</dd>
@@ -586,6 +582,6 @@
       "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261110-tank-drive"></script>
+  <script type="module" src="./game.js?v=20261110-shield-trees"></script>
 </body>
 </html>

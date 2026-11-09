@@ -1,11 +1,11 @@
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior} from './models.js?v=20261108-workshop1';
+import {makeWarrior} from './models.js?v=20261110-shield';
 import {createMountModel} from './mount-models.js?v=20261108-workshop1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
 import {armoryArt} from './armory-art.js?v=20261109-trophies1';
 import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,paintArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-loot1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
-import {partArt,toolArt} from './workshop-art.js?v=20261108-workshop1';
+import {partArt,toolArt} from './workshop-art.js?v=20261110-shield';
 import {equipmentBuilder} from './equipment-shapes.js?v=20261108-workshop1';
 import {armoryPalette} from './armory-geometry.js';
 import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261109-loot1';
@@ -81,7 +81,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   const visit=node=>{if(!node.visible)return;if(node.isMesh){node.geometry.computeBoundingBox();partBox.copy(node.geometry.boundingBox).applyMatrix4(node.matrixWorld);bounds.union(partBox);}for(const child of node.children)visit(child);};visit(assembly);const sphere=bounds.getBoundingSphere(new THREE.Sphere());previewCenter.copy(sphere.center);previewRadius=Math.max(.8,sphere.radius);assembly.rotation.y=oldYaw;
   // Keep authored colors. The selected card identifies the part without tinting it.
  }
- function statsFor(g){return currentKind()==='player'?playerCustomStats(g,{hasShield:context.weaponTier>=2}):mountStats(g,kind);}
+ function statsFor(g){return currentKind()==='player'?playerCustomStats(g,{hasShield:true}):mountStats(g,kind);}
  function candidate(){
   const g=restoreGarage(context.garage),entry=garageParts(g,currentKind())[slot];
   const rank=entry.owned[option]||1;entry.owned[option]=rank;entry.selected=option;return g;

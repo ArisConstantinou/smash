@@ -21,7 +21,7 @@ test('an ordinary new game starts with a short-jumping log user and no magical a
   assert.equal(state.xp, 0);
   assert.equal(state.weaponId, 'log');
   assert.deepEqual(state.materials, {wood: 0, scrap: 0, crystal: 0});
-  assert.equal(starter.hasShield, false);
+  assert.equal(starter.hasShield, true);
   assert.equal(starter.armorTier, 0);
   assert.equal(starter.canAirSmash, false);
   assert.equal(starter.canReturn, false, 'Throwing a log must not activate a boomerang');

@@ -354,7 +354,23 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   }
   flushBatches();
   const navigation=createCityNavigation({objects,nearObjects,bounds:CITY_BOUNDS});
-  const collision=createGeometryCollision({nearObjects,bounds:CITY_BOUNDS});
+  const fallingTrees=[],landedTrees=[],treeFallAxis=new THREE.Vector3();
+  const collision=createGeometryCollision({
+    nearObjects:(x,z,radius)=>{
+      const nearby=nearObjects(x,z,radius);
+      for(const trunk of landedTrees){
+        if(Math.abs(trunk.x-x)<=radius+trunk.w/2&&Math.abs(trunk.z-z)<=radius+trunk.d/2)nearby.push(trunk);
+      }
+      return nearby;
+    },
+    bounds:CITY_BOUNDS,
+  });
+  function fellTree(tree,dx,dz){
+    const length=Math.hypot(dx,dz);
+    fallingTrees.push({tree,dx:length>1e-5?dx/length:1,dz:length>1e-5?dz/length:0,time:0});
+    tree.felled=true;
+    tree.mesh.visible=true;
+  }
   let warmX=Infinity,warmZ=Infinity,collisionPreparation=null;
   function prepareNearbyCollision(x,z){
     if((x-warmX)**2+(z-warmZ)**2>=16){
@@ -378,7 +394,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
     // The camera looks over the player: keep enough skyline beyond the view.
     const viewRadius=76;
     for(const o of objects) {
-      const visible=!o.dead&&Math.hypot(o.x-px,o.z-pz)<viewRadius+Math.min(20,o.h*.6);
+      const visible=(!o.dead||o.felled===true)&&Math.hypot(o.x-px,o.z-pz)<viewRadius+Math.min(20,o.h*.6);
       o.mesh.visible=visible;o.renderActive=visible;
     }
     for(const chunk of chunks.values())chunk.mesh.visible=Math.hypot(chunk.x-px,chunk.z-pz)<viewRadius+chunkSize*.72;
@@ -472,6 +488,20 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
       }
       a.needsUpdate=true;
     }
+    for(let i=fallingTrees.length-1;i>=0;i--){
+      const fall=fallingTrees[i],{tree,dx,dz}=fall;
+      fall.time+=dt;
+      const progress=Math.min(1,fall.time/.85),tilt=1.53*progress**2;
+      treeFallAxis.set(dz,0,-dx);
+      tree.mesh.quaternion.setFromAxisAngle(treeFallAxis,tilt);
+      tree.mesh.position.y=tree.baseY+tree.w*.42*progress**4;
+      if(progress<1)continue;
+      const length=tree.h*Math.sin(tilt);
+      landedTrees.push({mesh:tree.mesh,type:'fallen-city-tree',
+        x:tree.x+dx*length*.5,z:tree.z+dz*length*.5,
+        w:Math.abs(dx)*length+tree.w,d:Math.abs(dz)*length+tree.d});
+      fallingTrees.splice(i,1);
+    }
     for(const o of trees)if(!o.dead&&o.mesh.visible) {
       o.mesh.rotation.z=Math.sin(time*1.3+o.seed)*.016+wind*.012;
       o.mesh.rotation.x=Math.cos(time*.8+o.seed)*.009;
@@ -543,7 +573,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   update(0,0,{x:0,z:0},'rain');
   let civilians=null;
   const world={
-    city,group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
+    city,group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,fellTree,
     warmCollision:(x,z,radius=12)=>collision.warm(nearObjects(x,z,radius)),prepareNearbyCollision,
     supportHeight:collision.supportHeight,supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,
     moveBody:collision.moveBody,clearBody:collision.clearBody,collisionDiagnostics:collision.diagnostics,

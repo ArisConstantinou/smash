@@ -317,8 +317,9 @@ export function makeWarrior() {
     // Existing storm-tier geometry remains the reference for normal walking;
     // replacement equipment is authored into these two independent pieces.
     const thigh=group(leg,'thigh'),shin=group(leg,'shin',0,-.30,0);
-    leg.userData.thigh=thigh;leg.userData.shin=shin;
-    leg.userData.foot=group(shin,'footContact',0,-.22,.27);
+    const ankle=group(shin,'ankle',0,-.22,0);
+    leg.userData.thigh=thigh;leg.userData.shin=shin;leg.userData.ankle=ankle;
+    leg.userData.foot=group(ankle,'footContact',0,0,.27);
   }
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
@@ -442,7 +443,7 @@ export function makeWarrior() {
     compact(grip);
   }
   let stance = 0, weaponHeld = true, reachScale = 1, equipmentTier = 4;
-  let unarmedPose = null, ridingAnchor = null;
+  let unarmedPose = null, ridingAnchor = null, shieldGuard = 0, shieldSpin = 0;
   function setUnarmedPose(pose) { unarmedPose = pose; }
   function setRidingAnchor(anchor) { ridingAnchor=anchor; }
   let shieldEquipped = true;
@@ -450,6 +451,9 @@ export function makeWarrior() {
   const shieldBack = new THREE.Vector3(0, 1.11, -.55);
   const shieldPath = new THREE.CubicBezierCurve3(shieldFront,
     new THREE.Vector3(-1.04, 1.84, .42), new THREE.Vector3(-.91, 1.88, -.74), shieldBack);
+  const shieldRaised = new THREE.Vector3(-.27, 1.42, .66);
+  const shieldStrike = new THREE.Vector3(-.86, 1.13, .62);
+  const shieldLevel = new THREE.Quaternion();
   const shieldFrontQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.06, -.25, -.13));
   const shieldBackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.07, Math.PI, .04));
   const leftJoinControl = new THREE.Vector3(-.75, 1.43, .16);
@@ -463,13 +467,17 @@ export function makeWarrior() {
   const smooth = v => { const n = Math.max(0, Math.min(1, v)); return n * n * (3 - 2 * n); };
 
   function poseShield() {
-    const progress = ridingAnchor ? 1 : weaponHeld ? smooth(stance / .65) : 1;
+    const progress = ridingAnchor ? 1 : smooth(stance / .65);
     shieldPath.getPoint(progress, shieldRig.position);
     shieldRig.quaternion.slerpQuaternions(shieldFrontQuaternion, shieldBackQuaternion, progress);
     shieldRig.rotateX(-.35 * Math.sin(Math.PI * progress));
+    if (progress === 0) {
+      shieldRig.position.lerp(shieldStrike, shieldSpin).lerp(shieldRaised, shieldGuard);
+      shieldRig.quaternion.slerp(shieldLevel, shieldGuard);
+    }
     shieldRig.position.applyMatrix4(body.matrix);
     shieldRig.quaternion.premultiply(body.quaternion);
-    shieldRig.userData.attachment = shieldEquipped ? (weaponHeld && stance < .65 && !ridingAnchor ? 'left-hand' : 'back') : 'none';
+    shieldRig.userData.attachment = shieldEquipped ? (stance < .65 && !ridingAnchor ? 'left-hand' : 'back') : 'none';
   }
 
   function anchorInHero(anchor, position, quaternion) {
@@ -559,7 +567,7 @@ export function makeWarrior() {
         .addScaledVector(hammerContact, join ** 2);
       leftGrip.quaternion.slerpQuaternions(shieldContactQuaternion, hammerContactQuaternion, join);
     }
-    if (!weaponHeld && unarmedPose) {
+    if (!weaponHeld && unarmedPose && (!shieldEquipped || stance >= .65)) {
       leftGrip.position.copy(unarmedPose.left).applyMatrix4(body.matrix);
       // A stowed shield must not claim the free hand during a punch.
       shieldRig.visible = shieldEquipped;
@@ -599,7 +607,7 @@ export function makeWarrior() {
       poseSegment(arm.userData.upper, zero, elbow);
       poseSegment(arm.userData.fore, elbow, gripTarget);
       orientHand(arm,grip,grip===rightGrip?(weaponHeld?rightGripAnchor:null):
-        (ridingAnchor|| (weaponHeld&&join>.99?leftGripAnchor:shieldEquipped&&join<.01&&!(unarmedPose&&!weaponHeld)?shieldGripAnchor:null)));
+        (ridingAnchor|| (weaponHeld&&join>.99?leftGripAnchor:shieldEquipped&&join<.01?shieldGripAnchor:null)));
     }
   }
 
@@ -618,7 +626,7 @@ export function makeWarrior() {
       weaponRestPosition.set(.48 - .60 * stance, .93 - .03 * stance, .25 + .05 * stance);
     }
     root.userData.stance = stance;
-    root.userData.shieldStored = shieldEquipped && (!weaponHeld || stance >= .65);
+    root.userData.shieldStored = shieldEquipped && (stance >= .65 || !!ridingAnchor);
     updateGrip();
     return stance;
   }
@@ -906,10 +914,12 @@ export function makeWarrior() {
     const {thigh,shin}=leg.userData;
     box(thigh,P.blueDark,0,-.13,0,.25,.34,.28);compact(thigh);
     box(shin,P.steel,0,-.12,.035,.29,.24,.31);
-    box(shin,P.ink,0,-.21,.075,.32,.17,.45);compact(shin);
+    compact(shin);
+    box(leg.userData.ankle,P.ink,0,.01,.075,.32,.17,.45);compact(leg.userData.ankle);
     // compact consumes meshes only; retain the zero-geometry contact marker.
   }
-  const appearanceSlots = [body, leftLeg.userData.thigh, leftLeg.userData.shin, rightLeg.userData.thigh, rightLeg.userData.shin,
+  const appearanceSlots = [body, leftLeg.userData.thigh, leftLeg.userData.shin, leftLeg.userData.ankle,
+    rightLeg.userData.thigh, rightLeg.userData.shin, rightLeg.userData.ankle,
     leftArm.getObjectByName('pauldron'), leftArm.userData.upper, leftArm.userData.fore,
     rightArm.getObjectByName('pauldron'), rightArm.userData.upper, rightArm.userData.fore,
     cape, shield, leftGrip, rightGrip, handle, shaft, collar, handGuard, barbedWrap, hammerHead];
@@ -1015,11 +1025,13 @@ export function makeWarrior() {
       });
       draw(leg.userData.shin,g=>{
         beveledBox(g,cloth,0,-.09,.035,.27,.24,.30,.02);
-        box(g,tier?0x443b30:skin,0,-.215,.075,.30,.15,.42);
-        box(g,tier?0x272e2d:skinShadow,0,-.29,.075,.31,.035,.43);
-        if(!tier)for(let toe=0;toe<3;toe++)box(g,skinShadow,-.08+toe*.08,-.20,.28,.016,.05,.02);
         if(tier===1)box(g,0x99754f,0,-.11,.205,.24,.055,.03);
         if(tier>=2){beveledBox(g,iron,0,-.04,.18,.27,.22,.09,.025);box(g,0xc2c6b8,0,.06,.222,.12,.035,.025);}
+      });
+      draw(leg.userData.ankle,g=>{
+        box(g,tier?0x443b30:skin,0,.005,.075,.30,.15,.42);
+        box(g,tier?0x272e2d:skinShadow,0,-.07,.075,.31,.035,.43);
+        if(!tier)for(let toe=0;toe<3;toe++)box(g,skinShadow,-.08+toe*.08,.02,.28,.016,.05,.02);
       });
     }
     for (const arm of [leftArm, rightArm]) {
@@ -1061,10 +1073,9 @@ export function makeWarrior() {
       box(g, 0x502e2e, .21, -.55, -.13, .17, .20, .08, -.25, 0, .08);
     });
     draw(shield, g => {
-      if (tier < 2) return;
-      const radius = tier === 2 ? .43 : .50;
-      cylinder(g, 0x697b7f, 0, -.035, 0, radius, radius, .12, 10, Math.PI / 2);
-      cylinder(g, tier === 2 ? 0x6c5944 : 0x3b5966, 0, -.035, .075, radius - .07, radius - .07, .055, 10, Math.PI / 2);
+      const radius = tier < 2 ? .40 : tier === 2 ? .43 : .50;
+      cylinder(g, tier < 2 ? 0x564133 : 0x697b7f, 0, -.035, 0, radius, radius, .12, 10, Math.PI / 2);
+      cylinder(g, tier < 2 ? 0x98683e : tier === 2 ? 0x6c5944 : 0x3b5966, 0, -.035, .075, radius - .07, radius - .07, .055, 10, Math.PI / 2);
       for (const x of [-.16, .16]) box(g, iron, x, -.035, .115, .05, radius * 1.45, .035);
       for (let rivet = 0; rivet < 8; rivet++) {
         const angle = rivet * Math.PI / 4;
@@ -1130,11 +1141,11 @@ export function makeWarrior() {
     if (!equipmentCache.has(next)) equipmentCache.set(next, buildEquipment(next));
     const equipment = equipmentCache.get(next);
     for (const slot of appearanceSlots) {
-      for (const child of slot.children.slice()) if(child!==leftLeg.userData.foot&&child!==rightLeg.userData.foot)child.removeFromParent();
+      for (const child of slot.children.slice()) if(![leftLeg.userData.foot,rightLeg.userData.foot,leftLeg.userData.ankle,rightLeg.userData.ankle].includes(child))child.removeFromParent();
       for (const child of equipment.parts.get(slot)) slot.add(child);
     }
     equipmentTier = appliedEquipment = next;
-    shieldEquipped = next >= 2; shieldRig.visible = shieldEquipped; cape.visible = next >= 3;
+    shieldEquipped = true; shieldRig.visible = true; cape.visible = next >= 3;
     for (const m of equipment.materials) {
       if (m.userData.originalColor) m.color.copy(m.userData.originalColor);
       if (m.userData.originalEmissive) m.emissive.copy(m.userData.originalEmissive);
@@ -1159,6 +1170,7 @@ export function makeWarrior() {
     body, leftLeg, rightLeg, legRest, leftArm, rightArm, weaponRig, hammerPivot, hammerHead, handGuard, barbedWrap, cape,
     leftGrip, rightGrip, leftGripAnchor, rightGripAnchor,
     shield, shieldRig, shieldGripAnchor, updateGrip, setStance, setReach, setUnarmedPose, setRidingAnchor,
+    setShieldAction(guard, spin) { shieldGuard = guard; shieldSpin = spin; },
     setWeaponVisible, createThrownHammer, getThrowRadius, getThrowCenterWorld, getThrowMetrics,
     getSpinRadius, getHeadContactRadius, getHeadForwardExtent, getShaftContactRadius, getHeadHalfExtents, getHeadFloorY,
     getBarbedContactSegment, getBarbedContactRadius,
