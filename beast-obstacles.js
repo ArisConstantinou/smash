@@ -28,7 +28,7 @@ export function boxesOverlap(a,b){
  for(const axis of axes){let extent=0;for(let i=0;i<3;i++)extent+=Math.abs(axis.dot(a.axes[i]))*a.sizes[i]+Math.abs(axis.dot(b.axes[i]))*b.sizes[i];if(Math.abs(delta.dot(axis))>extent-1e-5)return false;}
  return true;
 }
-export function beastObstacleContacts(mesh,objects){
+export function beastObstacleContacts(mesh,objects,{plane=null}={}){
  mesh.updateMatrixWorld(true);const body=[];
  mesh.traverse(n=>{if(n.isMesh&&!n.userData.noCollision){if(!n.geometry.boundingBox)n.geometry.computeBoundingBox();body.push({...obb(n.geometry.boundingBox,n.matrixWorld),node:n,solids:null});}});
  const overall=new THREE.Box3();for(const p of body)overall.union(p.bounds);
@@ -43,7 +43,11 @@ export function beastObstacleContacts(mesh,objects){
     for(const section of body){
      if(!section.bounds.intersectsBox(other.bounds))continue;
      section.solids??=parts(section.node.geometry).map(p=>obb(p,section.node.matrixWorld));
-     for(const solid of section.solids)if(boxesOverlap(solid,other)){const overlap=solid.bounds.clone().intersect(other.bounds);contact=overlap.getCenter(new THREE.Vector3());break;}
+     for(const solid of section.solids){
+      // Only the material that has crossed the rift exists in this city.
+      if(plane&&plane.distanceToPoint(solid.center)+solid.bounds.getSize(v).length()*.5<0)continue;
+      if(boxesOverlap(solid,other)){const overlap=solid.bounds.clone().intersect(other.bounds),point=overlap.getCenter(new THREE.Vector3());if(plane&&plane.distanceToPoint(point)<0)continue;contact=point;break;}
+     }
      if(contact)break;
     }
     if(contact)break;

@@ -27,7 +27,7 @@ const server=createServer(async(req,res)=>{
   }catch{res.writeHead(404);res.end();}
 });
 if(!process.env.SMASH_EXISTING_SERVER)await new Promise(resolve=>server.listen(8000,'127.0.0.1',resolve));
-const origin='http://127.0.0.1:8000';
+const origin=process.env.SMASH_URL||'http://127.0.0.1:8000';
 let managed;
 const browser=process.env.SMASH_BROWSER_LIFECYCLE
  ?(managed=await (await import(process.env.SMASH_BROWSER_LIFECYCLE)).launchManagedBrowser(chromium,{headless:true,channel:'chrome',screenshotDir:output})).browser

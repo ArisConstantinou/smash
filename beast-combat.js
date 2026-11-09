@@ -2,8 +2,9 @@
 // of the marked space remains a valid dodge even in the enraged phase.
 import * as THREE from './vendor/three.module.js';
 import {VehicleExplosionBatch} from './vehicle-explosion.js?v=20261108-colossus1';
-export const BEAST_ATTACKS=Object.freeze(['missiles','rockets','laser','stomp']);
+export const BEAST_ATTACKS=Object.freeze(['missiles','rockets','laser','stomp','rearStomp']);
 const up=new THREE.Vector3(0,1,0);
+export function missileOffset(index){const angle=(index-1)*Math.PI*2/5;return index===0?{x:0,z:0}:{x:Math.sin(angle)*4,z:Math.cos(angle)*4};}
 // r170's small InstancedMesh uniform path kept the prewarmed identity matrices
 // on this WebGPU device. These bounded world-space batches use ordinary dynamic
 // attributes, as the verified explosion batch does; no per-frame mesh creation.
@@ -44,7 +45,8 @@ export class BeastCombat{
   if(!BEAST_ATTACKS.includes(kind))throw new Error('Unknown beast attack '+kind);
   const target=new THREE.Vector3(player.x,Math.max(0,player.y)+.9,player.z),u=b.mesh.userData;
   const origin=u.worldPoint(new THREE.Vector3(0,5.2,4));
-  this.attack={kind,time:0,windup:kind==='laser'?1.65:kind==='stomp'?1.35:1.25,target,origin,launched:false,angle:Math.atan2(target.x-origin.x,target.z-origin.z),distance:Math.max(12,Math.hypot(target.x-origin.x,target.z-origin.z)),hits:new Set(),feet:u.feet().slice(0,2)};
+  const stomp=kind==='stomp'||kind==='rearStomp';
+  this.attack={kind,time:0,windup:kind==='laser'?1.65:stomp?1.35:1.25,target,origin,launched:false,angle:Math.atan2(target.x-origin.x,target.z-origin.z),distance:Math.max(12,Math.hypot(target.x-origin.x,target.z-origin.z)),hits:new Set(),feet:u.feet().slice(kind==='rearStomp'?2:0,kind==='rearStomp'?4:2).map(p=>p.clone()),radius:5.8,damageScale:b.damageScale||1};
   this.cue(kind);return this.attack;
  }
  launch(b){
@@ -54,11 +56,11 @@ export class BeastCombat{
    for(let i=0;i<count&&this.projectiles.length<16;i++){
     const mount=(missile?u.missileMounts:u.rocketMounts)[(i*(missile?4:3))%(missile?u.missileMounts.length:u.rocketMounts.length)];
     const from=u.worldPoint(mount),to=a.target.clone();
-    if(missile){to.x+=Math.sin(i*Math.PI/3)*3.5;to.z+=Math.cos(i*Math.PI/3)*3.5;to.y=.25;}
+    if(missile){const offset=missileOffset(i);to.x+=offset.x;to.z+=offset.z;to.y=a.target.y>3?a.target.y:.25;}
     else {const offset=(i-1)*2.6;to.x+=Math.cos(a.angle)*offset;to.z-=Math.sin(a.angle)*offset;}
-    this.projectiles.push({kind:a.kind,from,to,previous:from.clone(),position:from.clone(),time:0,duration:missile?1.65+i*.13:Math.max(.9,from.distanceTo(to)/23),radius:missile?3.1:2.5,damage:missile?32:38});
+    this.projectiles.push({kind:a.kind,from,to,previous:from.clone(),position:from.clone(),time:0,duration:missile?1.65+i*.13:Math.max(.9,from.distanceTo(to)/23),radius:missile?3.1:2.5,damage:(missile?32:38)*a.damageScale});
    }
-  }else if(a.kind==='stomp')for(const point of a.feet){this.blast(point,7.5,38,{groundOnly:true});this.bursts.push({s:{destroyed:true,deadTime:0,burstOrigin:point.clone(),visualScale:.7}});}
+  }else if(a.kind==='stomp'||a.kind==='rearStomp')for(const point of a.feet){this.blast(point,a.radius,38*a.damageScale,{groundOnly:true});this.bursts.push({s:{destroyed:true,deadTime:0,burstOrigin:point.clone(),visualScale:.7}});}
   a.launched=true;
  }
  update(dt,b,player,camera){
@@ -66,7 +68,7 @@ export class BeastCombat{
   this.clock+=dt;
   const a=this.attack;
   if(a){a.time+=dt;if(!a.launched&&a.time>=a.windup)this.launch(b);
-   const duration=a.kind==='laser'?2.4:a.kind==='stomp'?.6:.25;
+   const duration=a.kind==='laser'?2.4:(a.kind==='stomp'||a.kind==='rearStomp')?.6:.25;
    if(a.kind==='laser'){
     const active=a.time>=a.windup,t=Math.max(0,Math.min(1,(a.time-a.windup)/2.4)),angle=a.angle-.38+t*.76;
     const origin=b.mesh.userData.worldPoint(new THREE.Vector3(0,5.2,4));
@@ -91,12 +93,12 @@ export class BeastCombat{
   const marker=(point,radius)=>{if(n>=24)return;
    const key=point.x.toFixed(2)+':'+point.z.toFixed(2);let floor=this.surfaceCache.get(key);
    if(!floor||this.clock-floor.at>.2){if(this.surfaceCache.size>64)this.surfaceCache.clear();floor={y:this.surface(point.x,point.z),at:this.clock};this.surfaceCache.set(key,floor);}
-   d.position.set(point.x,floor.y+.12,point.z);d.rotation.set(-Math.PI/2,0,0);d.scale.set(radius,radius,1);d.updateMatrix();this.markerPool.set(n++,d.matrix);};
+   d.position.set(point.x,point.y>3?point.y:floor.y+.12,point.z);d.rotation.set(-Math.PI/2,0,0);d.scale.set(radius,radius,1);d.updateMatrix();this.markerPool.set(n++,d.matrix);};
   const a=this.attack;
   if(a&&!a.launched){
-   if(a.kind==='stomp')for(const p of a.feet)marker(p,7.5);
-   else if(a.kind==='missiles')for(let i=0;i<6;i++)marker({x:a.target.x+Math.sin(i*Math.PI/3)*3.5,z:a.target.z+Math.cos(i*Math.PI/3)*3.5},3.1);
-   else if(a.kind==='rockets')for(let i=-1;i<=1;i++)marker({x:a.target.x+Math.cos(a.angle)*i*2.6,z:a.target.z-Math.sin(a.angle)*i*2.6},2.5);
+   if(a.kind==='stomp'||a.kind==='rearStomp')for(const p of a.feet)marker(p,a.radius);
+   else if(a.kind==='missiles')for(let i=0;i<6;i++){const offset=missileOffset(i);marker({x:a.target.x+offset.x,y:a.target.y,z:a.target.z+offset.z},3.1);}
+   else if(a.kind==='rockets')for(let i=-1;i<=1;i++)marker({x:a.target.x+Math.cos(a.angle)*i*2.6,y:a.target.y,z:a.target.z-Math.sin(a.angle)*i*2.6},2.5);
   }
   this.projectiles.forEach((p,i)=>{
    marker(p.to,p.radius);d.position.copy(p.position);const dir=new THREE.Vector3().subVectors(p.position,p.previous);if(dir.lengthSq()<1e-8)dir.subVectors(p.to,p.from);d.quaternion.setFromUnitVectors(up,dir.normalize());d.scale.set(1,1,1);d.updateMatrix();this.shellPool.set(i,d.matrix);

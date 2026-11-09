@@ -1200,3 +1200,7 @@ body[data-touch-controls="true"] .boss-panel{
  body[data-touch-controls="true"] .goal-breakdown{display:grid;grid-template-columns:1fr;gap:1px;margin-top:11px;line-height:12px}
  body[data-touch-controls="true"] .goal-breakdown>span{flex-direction:row;justify-content:space-between;gap:4px;line-height:12px}
 }
+
+/* Boss phase/HP labels remain readable with the new longer encounter states. */
+.boss-heading strong,body[data-touch-controls="true"] .boss-heading strong{font-size:12px;white-space:nowrap}
+.boss-heading{flex-wrap:wrap}

@@ -2,6 +2,7 @@
 // +Z is the muzzle direction. Rigid sections bake detail into two material
 // batches each; all four legs retain independent joints, feet and pistons.
 import * as THREE from './vendor/three.module.js';
+import {BEAST_HEIGHT} from './beast-rules.js?v=20261109-beast1';
 const P={armor:0x4f696b,edge:0x8d9997,dark:0x263437,joint:0x1b2427,steel:0xa0aaa5,orange:0xff7e22,yellow:0xe4ac48};
 const up=new THREE.Vector3(0,1,0);
 function beveledPlate(){
@@ -102,6 +103,7 @@ export function makeBeastMech(){
  for(let i=0;i<3;i++)head.plate(P.edge,[0,.72-i*.16,.05+i*.85],[1.45-i*.16,.32,1.0],[.20,0,0]);
  head.plate(P.armor,[0,-.14,2.95],[1.25,.48,.85],[.15,0,0]);
  const headRoot=at(body,head.finish(),0,6.1,3.3);
+ headRoot.rotation.order='YXZ'; // Yaw remains correct while the head pitches up/down.
  const jaw=new Section('hinged-jaw');jaw.plate(P.dark,[0,-.85,1.35],[1.65,.38,2.6],[.05,0,0]);
  for(const side of [-1,1]){jaw.plate(P.edge,[side*.7,-.72,1.45],[.24,.4,2.6]);for(let j=0;j<3;j++)jaw.raw(CONE,P.steel,[side*.66,-.45,.9+j*.7],[.16,.42,.18]);}
  const jawRoot=jaw.finish();headRoot.add(jawRoot);
@@ -134,12 +136,12 @@ export function makeBeastMech(){
   const foot=feet.finish();root.add(foot);legs.push({hip,rest,pole,upperLength,lowerLength,upper,lower,foot,knee:new THREE.Vector3(),target:rest.clone()});
  }
  const delta=new THREE.Vector3(),axis=new THREE.Vector3(),bend=new THREE.Vector3();
- function pose({time=0,moving=0,stomp=0}={}){
-  root.userData.poseState={time,moving,stomp};
-  body.position.y=Math.sin(time*1.6)*.035;headRoot.rotation.x=Math.sin(time*1.3)*.025; jawRoot.rotation.x=-.06-Math.max(0,stomp)*.12;
+ function pose({time=0,moving=0,stomp=0,rearStomp=0,roar=0}={}){
+  root.userData.poseState={time,moving,stomp,rearStomp,roar};
+  body.position.y=Math.sin(time*1.6)*.035;headRoot.rotation.x=Math.sin(time*1.3)*.025-roar*.16; jawRoot.rotation.x=-.06+Math.max(0,stomp)*.12+roar*.45;
   for(let i=0;i<4;i++){
    const l=legs[i],cycle=time*1.65+(i===0||i===3?0:Math.PI),lift=Math.max(0,Math.sin(cycle))*moving;
-   l.target.copy(l.rest);l.target.z+=Math.cos(cycle)*moving*.7;l.target.y+=lift*.75+(i<2?stomp*1.8:0);
+   l.target.copy(l.rest);l.target.z+=Math.cos(cycle)*moving*.7;l.target.y+=lift*.75+(i<2?stomp*1.8:rearStomp*1.8);
    delta.subVectors(l.target,l.hip);const distance=Math.min(delta.length(),l.upperLength+l.lowerLength-.01);axis.copy(delta).normalize();
    const along=(l.upperLength**2-l.lowerLength**2+distance**2)/(2*distance),height=Math.sqrt(Math.max(0,l.upperLength**2-along**2));
    bend.copy(l.pole).addScaledVector(axis,-l.pole.dot(axis)).normalize();l.knee.copy(l.hip).addScaledVector(axis,along).addScaledVector(bend,height);
@@ -147,7 +149,7 @@ export function makeBeastMech(){
   }
   root.updateMatrixWorld(true);
  }
- pose();const box=new THREE.Box3().setFromObject(root,true),height=box.max.y-box.min.y,scale=32.13/height;
+ pose();const box=new THREE.Box3().setFromObject(root,true),height=box.max.y-box.min.y,scale=BEAST_HEIGHT/height;
  root.scale.setScalar(scale);root.position.y=-box.min.y*scale;
  root.userData={body,head:headRoot,jaw:jawRoot,laser:laserRoot,legs,missileMounts,rocketMounts,pose,poseState:{time:0,moving:0,stomp:0},designScale:scale,groundOffset:root.position.y,
   worldPoint(point,out=new THREE.Vector3()){root.updateWorldMatrix(true,false);return root.localToWorld(out.copy(point));},
