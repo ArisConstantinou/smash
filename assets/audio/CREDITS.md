@@ -39,3 +39,11 @@ structural rumble and settling debris. Three original synthesized automotive
 alarm patterns are selected per car and attenuated by distance. No additional
 recordings or third-party audio requests were introduced. These electronic
 sirens are synthesized effects, not recordings of a particular vehicle.
+
+## Sonic Scream / rage
+**Male Yelling out a War Cry 1 - WITHOUT reverb.wav** performed by
+**WelvynZPorterSamples**. Source: https://freesound.org/s/621342/
+License: **CC0 1.0 Universal**, https://creativecommons.org/publicdomain/zero/1.0/
+The preview recording was excerpted, time-compressed without shifting pitch,
+filtered, normalized and encoded to mono MP3. The pressure layers are original
+procedural effects mixed in the game.

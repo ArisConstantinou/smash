@@ -5,6 +5,7 @@ export const SAMPLE_GROUPS = Object.freeze({
   metal: ['metal-1', 'metal-2', 'metal-3'],
   masonry: ['masonry-1', 'masonry-2', 'masonry-3'],
   wood: ['wood-1', 'wood-2', 'wood-3'],
+  rage: ['rage-1'],
   exert: ['exert-1', 'exert-2', 'exert-3'],
   pain: ['pain-1', 'pain-2', 'pain-3', 'pain-4'],
 });

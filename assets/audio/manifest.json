@@ -221,6 +221,21 @@
       "seconds": 0.2362,
       "bytes": 3805,
       "sha256": "b6e9b4606ef1e9a0e78ad49d9c3cf645430092dc1960a4229826dbd89815f677"
+    },
+    "rage-1": {
+      "file": "rage-1.mp3",
+      "source": {
+        "author": "WelvynZPorterSamples",
+        "file": "rage-source.mp3",
+        "excerpt": [
+          1.33,
+          4.99
+        ],
+        "license": "CC0-1.0"
+      },
+      "seconds": 1.8617,
+      "bytes": 23240,
+      "sha256": "6528266663c03a7a0745f72fcc73392491e0c25f3c297fe5db22bc574a5a9a2f"
     }
   },
   "sources": {
@@ -247,6 +262,10 @@
     "hurt_04.mp3": {
       "url": "https://opengameart.org/sites/default/files/hurt_04.mp3",
       "sha256": "a6249c89f037553c71529ece4eb443bd3cc06ab33b833c5b3d47121da284d7d8"
+    },
+    "rage-source.mp3": {
+      "url": "https://cdn.freesound.org/previews/621/621342_13749321-hq.mp3",
+      "sha256": "3f66e0cdd20593dc12fb71a6942d1a52794809afa5ddff847241c9eebb86f7a8"
     }
   }
 }

@@ -55,6 +55,7 @@ import * as playerCustomizationModule from '../player-customization.js';
 import * as mountWeaponsModule from '../mount-weapons.js';
 import * as performanceModule from '../performance-hud.js';
 import * as weaponPoseModule from '../weapon-pose.js';
+import * as screamModule from '../scream.js';
 
 assert.equal(typeof vm.SourceTextModule, 'function', 'Use --experimental-vm-modules');
 const browserErrors = [], audioEvents = [], listeners = new Map(), elements = new Map();
@@ -192,6 +193,9 @@ class StubAudio {
   setVolume(value) { this.volume = value; }
   toggle() { return this.muted = !this.muted; }
   update() {}
+  startScream() { return true; }
+  pulseScream() {}
+  stopScream() {}
 }
 const sandbox = vm.createContext({
   console: { log: console.log, warn: console.warn, error: (...args) => browserErrors.push(args) },
@@ -209,6 +213,7 @@ function synthetic(exports, identifier) {
   return new vm.SyntheticModule(names, function () { for (const name of names) this.setExport(name, exports[name]); }, { context: sandbox, identifier });
 }
 const imports = new Map([
+  ['./scream.js', synthetic(screamModule, 'real-scream')],
   ['./save-store.js', synthetic(saveStoreModule, 'real-save-store')],
   ['./armory-customization.js', synthetic(armoryCustomizationModule, 'real-armory-customization')],
   ['./armory-models.js', synthetic(armoryModelsModule, 'real-armory-models')],
@@ -271,6 +276,7 @@ export const __integration = {
   get punch(){return punch;},get settings(){return settings;},get throwPreviewTargets(){return throwPreviewTargets;},get throwLock(){return throwLock;},get dashFollowup(){return dashFollowup;},
   beginPunch,punchImpact,startThrow,releaseHammer,settleThrownWeapon,catchHammer,chooseThrowLock,nextThrowTarget,pressAttack,releaseAttack,cancelAttack,segmentObjects,
   get kick(){return kick;},get kickCooldown(){return kickCooldown;},get movingVehicles(){return movingVehicles;},get vehicleEffects(){return vehicleEffects;},startKick,kickImpact,updateMovingVehicles,advanceKickedEnemy,
+  updateScream,get scream(){return scream;},get screamCooldown(){return screamCooldown;},
   get phase(){return phase;}, get combatCombo(){return combatCombo;}, get comboXpCarry(){return comboXpCarry;}, get battleOccluders(){return battleOccluders;}, get heroSilhouette(){return heroSilhouette;}, get upgradeTab(){return upgradeTab;}, get comicState(){return comicState;}, get player(){return player;}, get world(){return world;},
   get enemies(){return enemies;}, get enemyFalls(){return enemyFalls;}, get drops(){return drops;}, get boss(){return boss;},
   get stats(){return stats;}, get levels(){return levels;}, get hero(){return hero;},
@@ -492,6 +498,7 @@ function placeObject(type, x, z, options = {}) {
   api.world.rebuildSpatialIndex();
   return object;
 }
+
 const angleStep = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 function headAzimuth() {
   const head = worldPosition(api.hero.userData.hammerHead);
@@ -702,7 +709,7 @@ test('the initial stance holds the hammer in one hand and the real shield in the
 test('Z carries the same shield onto the back, joins both hammer grips, and toggles back', () => {
   arena();
   const u = api.hero.userData, shield = u.shield, start = u.shieldRig.position.clone();
-  key('KeyZ', true); key('KeyZ', false);
+  key('KeyG', true); key('KeyG', false);
   assert.equal(api.stanceTarget, 1); assert.equal(api.stance, 0);
   playerSteps(.32);
   assert.ok(api.stance > .2 && api.stance < .5, 'The switch must animate through intermediate poses');
@@ -716,7 +723,7 @@ test('Z carries the same shield onto the back, joins both hammer grips, and togg
   assert.equal(u.shieldRig.userData.attachment, 'back'); assert.ok(u.shieldRig.position.z < -.45);
   close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.leftGripAnchor)), 0);
   close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)), 0);
-  key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
+  key('KeyG', true); key('KeyG', false); playerSteps(1.08);
   assert.equal(api.stance, 0); assert.equal(u.shieldStored, false); assert.equal(u.shield, shield);
   close(worldPosition(u.leftGrip).distanceTo(worldPosition(u.shieldGripAnchor)), 0);
 });
@@ -764,7 +771,7 @@ test('a quick left-click connects during acceleration and completes its responsi
 test('weighted swings move the torso and hammer vertically while every held grip stays attached', () => {
   for (const twoHanded of [false, true]) {
     arena();
-    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.08); }
+    if (twoHanded) { key('KeyG', true); key('KeyG', false); playerSteps(1.08); }
     mouseAttack(true); mouseAttack(false);
     const u = api.hero.userData, headHeights = [], torsoTurns = [], torsoLeans = [];
     for (let frame = 0; api.swing && frame < 240; frame++) {
@@ -814,7 +821,7 @@ test('the wider near-body sweep still stops at a surviving wall before the enemy
 test('each continuous hand-mode chain covers six strokes; switching stance resets its horizontal opener', () => {
   arena();const names=[[],[]];
   for(const mode of [0,1])for(let i=0;i<6;i++){
-    if(api.stance!==mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    if(api.stance!==mode){key('KeyG',true);key('KeyG',false);playerSteps(1.1);}
     mouseAttack(true);mouseAttack(false);assert.ok(api.swing);names[mode].push(api.swing.variant);
     assert.equal(api.swing.twoHanded,!!mode);playerSteps(api.swing.duration+.04);assert.equal(api.swing,null);
   }
@@ -831,7 +838,7 @@ test('an active combo stroke stays fixed and rejected recovery inputs do not ski
   playerSteps(.06);
   for (let i = 0; i < 3; i++) {
     mouseAttack(true); mouseAttack(false); api.beginSwing();
-    key('KeyZ', true); key('KeyZ', false);
+    key('KeyG', true); key('KeyG', false);
     playerSteps(.025);
     assert.equal(api.swing, first); assert.equal(first.variant, chain[0]);
     assert.equal(first.twoHanded, false); assert.equal(api.stanceTarget, 0);
@@ -854,7 +861,7 @@ test('every combo stroke hits close and forward enemies promptly once without da
   };
   for (const twoHanded of [false, true]) for (const sizeLevel of [0, 2]) for (const distance of [.9, 2.3]) {
     arena();
-    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    if (twoHanded) { key('KeyG', true); key('KeyG', false); playerSteps(1.1); }
     api.levels.size = sizeLevel; api.applyStats(); api.poseHero(1);
     const front = stationaryEnemy('brute', 0, distance), rear = stationaryEnemy('brute', 0, -1.1);
     front.hp = front.maxHp = rear.hp = rear.maxHp = 10000;
@@ -888,7 +895,7 @@ test('every combo stroke hits close and forward enemies promptly once without da
 test('all combo angles including the overhead smash stop at a surviving wall before targets behind it', () => {
   for (const twoHanded of [false, true]) {
     arena();
-    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    if (twoHanded) { key('KeyG', true); key('KeyG', false); playerSteps(1.1); }
     api.poseHero(1);
     const wall = placeObject('wall', 0, 1.7, { w: 5, d: .08, h: 3, hp: 10000, maxHp: 10000 });
     const enemy = stationaryEnemy('brute', 0, 2.9);
@@ -1058,7 +1065,7 @@ test('touch controls and accessible labels follow phone, landscape, tablet and d
       setViewport(width, height, { coarse, anyCoarse }); api.updateHUD(true);
       assert.equal(document.body.dataset.touchControls, String(expected));
       assert.equal(elements.get('touchControls').hidden, !expected);
-      for (const id of ['attackButton', 'guardButton', 'leapButton', 'throwButton', 'stanceButton', 'dashButton']) {
+      for (const id of ['attackButton', 'guardButton', 'leapButton', 'throwButton', 'screamButton', 'dashButton']) {
         const button = elements.get(id), label = expected ? button.dataset.touchLabel : button.dataset.desktopLabel;
         assert.ok(label, `${id} needs an accessible description for the current control surface`);
         if (id === 'attackButton') {
@@ -1938,8 +1945,8 @@ test('a second spin input preserves the active turn and its per-target contact c
   assert.equal(api.spin, null); assert.equal(api.swing, null);
 });
 
-test('RMB, Space, R and Z cancel a held spin and carry out their own actions without restarting it', () => {
-  for (const action of ['RMB', 'Space', 'KeyR', 'KeyZ']) {
+test('RMB, Space, R and G cancel a held spin and carry out their own actions without restarting it', () => {
+  for (const action of ['RMB', 'Space', 'KeyR', 'KeyG']) {
     arena(); spinFuel(true); mouseAttack(true); playerSteps(.3); assert.ok(api.spin);
     if (action === 'RMB') chordButtons(3, { button: 2 });
     else key(action, true);
@@ -1948,7 +1955,7 @@ test('RMB, Space, R and Z cancel a held spin and carry out their own actions wit
     if (action === 'RMB') assert.equal(api.guarding, true);
     if (action === 'Space') { assert.ok(api.leap); assert.equal(api.leap.slam, false, 'A spin held before take-off must not arm the jump impact'); }
     if (action === 'KeyR') {assert.ok(api.touchThrowAim);assert.equal(api.throwWindup,null,'Hold mode aims until R is released');}
-    if (action === 'KeyZ') assert.equal(api.stanceTarget, 1);
+    if (action === 'KeyG') assert.equal(api.stanceTarget, 1);
     if (action === 'RMB') chordButtons(1, { button: 2 });
     else key(action, false);
     playerSteps(.3);
@@ -2043,7 +2050,7 @@ test('an unrelated pointer cannot release a held mouse guard and unowned mouse m
 });
 
 test('two-handed spin keeps both hands attached and carries the stance damage bonus', () => {
-  arena(); spinFuel(true); key('KeyZ', true); key('KeyZ', false); playerSteps(1.08);
+  arena(); spinFuel(true); key('KeyG', true); key('KeyG', false); playerSteps(1.08);
   assert.equal(api.stance, 1);
   pointerEvent('attackButton', 'pointerdown');playerSteps(.45);assert.ok(api.spin);
   const enemy = stationaryEnemy('brute', 0, 2.1); enemy.hp = enemy.maxHp = 1000;
@@ -2083,7 +2090,7 @@ test('RMB aims a vertical frontal propeller while stationary, blocks the front a
 test('stock guards rotate about the hands with connected unstretched arms and an aligned defense plane', () => {
   for (const level of [1, 3, 6, 10, 15]) for (const twoHanded of [false, true]) {
     arena(level, {test: true});
-    if ((api.stance > .9) !== twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    if ((api.stance > .9) !== twoHanded) { key('KeyG', true); key('KeyG', false); playerSteps(1.1); }
     mouseGuard(true);
     playerSteps(.5, 1 / 120, () => {
       const u = api.hero.userData, g = api.guardDimensions();
@@ -2167,7 +2174,7 @@ test('moving defense reflects projectiles along the faced direction even with th
 test('stationary defense on a roof edge keeps support until the full player circle clears the building', () => {
   for (const twoHanded of [false, true]) {
     arena();
-    if (twoHanded) { key('KeyZ', true); key('KeyZ', false); playerSteps(1.1); }
+    if (twoHanded) { key('KeyG', true); key('KeyG', false); playerSteps(1.1); }
     const roof = placeObject('townhouse', 18, -12, { w: 12, d: 12, h: 4, hp: 10000, maxHp: 10000 });
     // Only 9 cm of the foot circle still overlaps the roof. A narrower support
     // circle would drop the actor into the building's larger side collider.
@@ -3818,7 +3825,7 @@ test('aim11: sustained contact at low rendering frequency has a bounded effect l
 
 test('aim12: pause after recovery always resets to the horizontal opener in both stances',()=>{
   for(const mode of [0,1]){
-    arena();if(mode){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    arena();if(mode){key('KeyG',true);key('KeyG',false);playerSteps(1.1);}
     const opener=mode?'two-broadside':'one-forehand';
     for(let chain=0;chain<4;chain++){
       mouseAttack(true);mouseAttack(false);assert.equal(api.swing.variant,opener);
@@ -3839,7 +3846,7 @@ test('aim12: interrupts, stance changes and thrown-weapon recovery reset the ope
     if(reason==='hurt')api.hurtPlayer(1,1,0,false);
     if(reason==='throw'){api.startThrow({x:0,z:1});playerSteps(3);}
     if(reason==='pause'){api.pauseGame();api.pauseGame();}
-    if(reason==='stance'){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    if(reason==='stance'){key('KeyG',true);key('KeyG',false);playerSteps(1.1);}
     mouseAttack(true);mouseAttack(false);
     assert.equal(api.swing?.variant,reason==='stance'?'two-broadside':'one-forehand',reason);
   }
@@ -3923,7 +3930,7 @@ test('enlarged catalog weapons can hit a close enemy during a normal swing',()=>
 test('aim13: long metal shafts slash close enemies with reduced damage, a grounded inward tug and immediate impact',()=>{
   for(const [level,range,distance] of [[6,5,1.7],[10,5,1.7],[15,5,1.7],[15,30,1.7],[15,30,6]])for(const twoHanded of [false,true]){
     arena(level);api.levels.range=range;api.applyStats();
-    if(twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+    if(twoHanded){key('KeyG',true);key('KeyG',false);playerSteps(1.1);}
     api.poseHero(1);
     const enemy=stationaryEnemy('brute',0,distance),hp=enemy.hp,rotation=enemy.mesh.quaternion.clone();
     mouseAttack(true);mouseAttack(false);const strike=api.swing;
@@ -4107,7 +4114,7 @@ test('perf14: damaged cars smoke then burn, effects follow movement and release 
 test('perf14: huge-hammer wielding, strikes and slam keep reachable hands and original bone lengths',()=>{
  for(const twoHanded of [false,true]){
   arena(15);api.levels.range=14;api.levels.size=12;api.applyStats();
-  if(twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+  if(twoHanded){key('KeyG',true);key('KeyG',false);playerSteps(1.1);}
   const verify=()=>{
    const u=api.hero.userData;for(const [arm,hand]of [[u.rightArm,u.rightGrip],[u.leftArm,u.leftGrip]]){
     assert.ok(worldPosition(arm).distanceTo(worldPosition(hand))<=.901,'The gigantic head must not stretch a forearm');
@@ -4268,7 +4275,7 @@ test('long hammer guard preserves the complete shaft beside the player with reac
  for(const twoHanded of [false,true]){
   arena(15,{test:true});api.levels.range=14;api.levels.size=12;api.applyStats();api.poseHero(0);
   const fullReach=api.hero.userData.reachScale;
-  if((api.stance>.9)!==twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
+  if((api.stance>.9)!==twoHanded){key('KeyG',true);key('KeyG',false);playerSteps(1.1);}
   mouseGuard(true);playerSteps(.6);const u=api.hero.userData,g=api.guardDimensions();
   close(u.reachScale,fullReach,1e-5);assert.equal(g.brace,true);
   const head=api.hero.worldToLocal(worldPosition(u.hammerHead));
@@ -4487,4 +4494,47 @@ test('airborne rear camping receives an actual airburst instead of harmless grou
  arena(25,{test:false});api.spawnBoss();const b=api.boss;Object.assign(b,{x:0,z:0,y:0,state:'walk',timer:0});b.mesh.rotation.y=0;b.mesh.position.set(0,b.mesh.userData.groundOffset,0);b.mesh.userData.pose();
  api.player.x=0;api.player.z=-25;api.player.y=12;api.player.invincible=0;const hp=api.player.hp;
  api.updateBoss(.01);assert.equal(api.beastCombat.attack.kind,'missiles');for(let i=0;i<240;i++)api.updateBoss(1/60);assert.ok(api.player.hp<hp,'A stationary airborne player must receive the marked airburst');
+});
+
+test('Z taps at level one and the held scream enforces its duration and cooldown', () => {
+  arena(1); api.poseHero(1);
+  const stance = api.stanceTarget;
+  const near = stationaryEnemy('zombie', 0, 2.5);
+  const far = stationaryEnemy('zombie', 0, 8);
+  key('KeyZ', true); key('KeyZ', false);
+  api.updateScream(1 / 60);
+  assert.equal(api.stanceTarget, stance);
+  assert.ok(near.hp < near.maxHp && near.hp >= near.maxHp - 3);
+  assert.equal(far.hp, far.maxHp);
+  for (let i = 0; i < 15; i++) api.updateScream(1 / 60);
+  assert.equal(api.scream, null);
+  assert.ok(api.screamCooldown > 29.9);
+  key('KeyZ', true); key('KeyZ', false);
+  assert.equal(api.scream, null);
+  api.updateScream(30);
+  key('KeyZ', true);
+  for (let i = 0; i < 599; i++) api.updateScream(1 / 60);
+  assert.ok(api.scream);
+  api.updateScream(1 / 60);
+  assert.equal(api.scream, null);
+  assert.equal(api.screamCooldown, 30);
+  key('KeyZ', false);
+});
+
+test('an upgraded scream pushes enemies and vehicles, fractures scenery and respects cover', () => {
+  arena(30); api.poseHero(1); api.levels.scream = 8;
+  const near = stationaryEnemy('brute', 0, 8);
+  const covered = stationaryEnemy('brute', 0, 17);
+  const behind = stationaryEnemy('brute', 0, -4);
+  const wall = placeObject('office', 0, 13, {w: 3, h: 4, d: 2});
+  const car = placeObject('car', 3.4, 9, {w: 1.6, h: 1.5, d: 2.8});
+  const [wallHP, carHP] = [wall.hp, car.hp];
+  key('KeyZ', true); api.updateScream(1 / 60);
+  assert.ok(near.hp < near.maxHp && near.vz > 6 && near.kickFlight);
+  assert.equal(covered.hp, covered.maxHp);
+  assert.equal(behind.hp, behind.maxHp);
+  assert.ok(wall.hp < wallHP && car.hp < carHP);
+  assert.ok(car.vz > 2 && api.movingVehicles.has(car));
+  key('KeyZ', false); api.clearInput();
+  assert.equal(api.scream, null);
 });

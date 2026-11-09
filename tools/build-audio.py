@@ -5,7 +5,9 @@ Runtime playback never contacts these third-party download services.
 """
 import argparse, array, hashlib, io, json, math, pathlib, subprocess, tempfile, urllib.request, zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+RAGE='rage-source.mp3'
 SOURCES={
+ RAGE:('https://cdn.freesound.org/previews/621/621342_13749321-hq.mp3','3f66e0cdd20593dc12fb71a6942d1a52794809afa5ddff847241c9eebb86f7a8'),
  'impact.zip':('https://kenney.nl/assets/impact-sounds','029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8'),
  'hero.wav':('https://opengameart.org/sites/default/files/Valiant%20Genericus%20%28Effort%20Noises%29.wav','d4d2ccd76df9697a9dd1c0709e00443894cf2cba8811f94ebc9c55d975593bcf'),
  'hurt_01.mp3':('https://opengameart.org/sites/default/files/hurt_01.mp3','45f19e4f637ff0e8936186977aa7cb131f67a95ca68660686476a47da224322e'),
@@ -21,19 +23,18 @@ def download(url):
   return data
 
 def main():
- parser=argparse.ArgumentParser();parser.add_argument('--source-dir',type=pathlib.Path);args=parser.parse_args()
+ parser=argparse.ArgumentParser();parser.add_argument('--source-dir',type=pathlib.Path);parser.add_argument('--rage-only',action='store_true');args=parser.parse_args()
  output=ROOT/'assets/audio';output.mkdir(parents=True,exist_ok=True)
  data={}
  for name,(url,expected) in SOURCES.items():
+  if args.rage_only and name!=RAGE: continue
   if args.source_dir: raw=(args.source_dir/name).read_bytes()
   else:
    if name=='impact.zip': url=json.loads(download('https://kenney.nl/download-link/6173736574732f696d706163742d736f756e6473'))['url']
    raw=download(url)
   if hashlib.sha256(raw).hexdigest()!=expected: raise ValueError('Source hash mismatch: '+name)
   data[name]=raw
- archive=zipfile.ZipFile(io.BytesIO(data['impact.zip']))
- (output/'KENNEY-LICENSE.txt').write_bytes(archive.read('License.txt'))
- rate=44100;manifest={};clips={}
+ rate=44100;manifest={}
  def decode(raw,start=None,end=None):
   pcm=subprocess.run(['ffmpeg','-v','error','-i','pipe:0','-f','f32le','-ac','1','-ar',str(rate),'pipe:1'],input=raw,stdout=subprocess.PIPE,check=True).stdout
   values=array.array('f');values.frombytes(pcm)
@@ -50,8 +51,21 @@ def main():
   for i,v in enumerate(values): values[i]=v*gain*min(1,i/(rate*.002),(n-1-i)/(rate*.012))
   target=output/(name+'.mp3')
   subprocess.run(['ffmpeg','-v','error','-y','-f','f32le','-ac','1','-ar',str(rate),'-i','pipe:0','-c:a','libmp3lame','-b:a','96k','-map_metadata','-1','-id3v2_version','3',str(target)],input=values.tobytes(),check=True)
-  clips[name]=values
   manifest[name]={'file':target.name,'source':source,'seconds':round(n/rate,4),'bytes':target.stat().st_size,'sha256':hashlib.sha256(target.read_bytes()).hexdigest()}
+ a,b=1.33,4.99
+ raw=decode(data[RAGE],a,b)
+ shaped=subprocess.run(['ffmpeg','-v','error','-f','f32le','-ac','1','-ar',str(rate),'-i','pipe:0',
+  '-af','highpass=f=68,atempo=1.95,afade=t=out:st=1.70:d=0.16','-f','f32le','pipe:1'],
+  input=raw.tobytes(),stdout=subprocess.PIPE,check=True).stdout
+ save('rage-1',array.array('f',shaped),{'author':'WelvynZPorterSamples','file':RAGE,'excerpt':[a,b],'license':'CC0-1.0'})
+ if args.rage_only:
+  path=output/'manifest.json'; existing=json.loads(path.read_text())
+  existing['clips'].update(manifest)
+  url,sha=SOURCES[RAGE];existing['sources'][RAGE]={'url':url,'sha256':sha}
+  path.write_text(json.dumps(existing,indent=2)+'\n')
+  return
+ archive=zipfile.ZipFile(io.BytesIO(data['impact.zip']))
+ (output/'KENNEY-LICENSE.txt').write_bytes(archive.read('License.txt'))
  for group,stem in [('flesh','impactPunch_heavy'),('metal','impactMetal_heavy'),('masonry','impactMining'),('wood','impactWood_heavy')]:
   for n in range(3):
    source=f'Audio/{stem}_{n:03}.ogg';save(f'{group}-{n+1}',decode(archive.read(source)),{'pack':'Kenney Impact Sounds','file':source,'license':'CC0-1.0'})

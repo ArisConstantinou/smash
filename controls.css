@@ -72,3 +72,24 @@ body[data-touch-controls="true"] #combatDock #attackButton[data-action="punch"]:
 .joystick.turn-only .joystick-turn-zone{background:#f0ce8b2b;border-color:#f3d395}
 .joystick.turn-only .joystick-caption{color:#f3d395}
 body[data-touch-controls="true"] .joystick-caption{font-size:8px;letter-spacing:.35px;white-space:nowrap}
+
+/* Sonic Scream */
+#combatDock #screamButton.active { border-color:#98eee6; background:linear-gradient(145deg,#346d71,#203c47); }
+#combatDock #screamButton.cooldown { border-color:#4e6870; }
+#combatDock #screamValue { color:#9af2ec; font:700 12px/14px Arial,sans-serif; }
+
+body[data-touch-controls="false"] #upgradePanel .loadout-stance {
+  display:flex; align-items:center; justify-content:center; gap:5px;
+  padding:4px; color:#ffedc6; background:#263f42; border:1px solid #6b8279; border-radius:5px;
+}
+body[data-touch-controls="false"] #upgradePanel .loadout-stance svg { width:24px;height:24px; flex:none; }
+body[data-touch-controls="false"] #upgradePanel .loadout-stance b,
+body[data-touch-controls="false"] #upgradePanel .loadout-stance strong { display:block;font-size:12px; }
+
+body[data-touch-controls="true"] #combatDock .dock-actions {
+  grid-template-columns:repeat(4,minmax(0,1fr));
+}
+body[data-touch-controls="true"] #combatDock #screamButton { grid-column:4; grid-row:1; }
+body[data-touch-controls="true"] #combatDock #attackButton { grid-column:3/5; grid-row:2; }
+body[data-touch-controls="true"] #combatDock #screamButton:is(.active,.cooldown) .action-icon { display:none; }
+body[data-touch-controls="true"] #combatDock #screamButton:is(.active,.cooldown) #screamValue { display:block!important; }

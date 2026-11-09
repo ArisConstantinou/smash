@@ -28,7 +28,7 @@
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261109.8">
-  <link rel="stylesheet" href="./controls.css?v=20261107-aim11">
+  <link rel="stylesheet" href="./controls.css?v=20261109-scream-live1">
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
   <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
@@ -116,6 +116,12 @@
       </symbol>
       <symbol id="t-kick" viewBox="0 0 24 24"><path d="m4 3 6 1-1 8 8 1 3 5-2 3-12-3-3-4Zm11 3 2-3m2 6 3-1M6 10l4 1"/></symbol>
       <symbol id="upgrade-kick" viewBox="0 0 96 80"><use href="#a-kick"/></symbol>
+      <symbol id="upgrade-scream" viewBox="0 0 96 80">
+        <path d="M11 71 15 51 12 41 15 22 28 12 43 14 49 23 49 31 55 38 49 42 49 47 39 47 37 54 45 67Z" fill="#60888c" stroke="#112e35" stroke-width="3"/>
+        <path d="m15 31 1-11 12-8 15 2 6 9v8l-12-1-5 9-15-1Z" fill="#a6c6be"/>
+        <path d="M45 39h7v8h-8z" fill="#143339"/><path d="M39 33h5" stroke="#ffe4ab" stroke-width="3"/>
+        <path d="M58 32q6 10 0 20m8-26q11 16 0 32m10-39q16 23 0 46m10-54q21 31 0 62" fill="none" stroke="#96eee8" stroke-width="3" stroke-linecap="round"/>
+      </symbol>
       <symbol id="a-punch" viewBox="0 0 96 80"><ellipse cx="40" cy="71" rx="23" ry="4" fill="#102730"/><use href="#a-warrior" transform="translate(34 43) scale(.88)"/><path d="m40 34 13 4 18-6" fill="none" stroke="#b8cfd1" stroke-width="9" stroke-linejoin="round"/><path d="m64 23 15-2 7 8-3 11-16 1-5-9Z" fill="#dec394" stroke="#193743" stroke-width="3"/><path d="m67 28 14-1m-11 5 11-1" stroke="#947c60" stroke-width="2"/><path d="m83 11 3 7m2 27 5 4M53 16l8 5" stroke="#9ee5cd" stroke-width="3"/><path d="m88 23 5-4-1 9 4 5-9-1" fill="#ffdb8b"/></symbol>
       <symbol id="t-punch" viewBox="0 0 24 24"><path d="M5 21V11l-1-4 3-2 2 1 1-3 3 1 2-1 3 2 3 1v8l-4 7ZM9 6v5m4-7v7m4-7v7M5 13l6-2 3 3-3 3"/></symbol>
       <symbol id="t-attack" viewBox="0 0 24 24"><path d="m4 5 4-3 10 10-3 4L4 5Zm9 8-9 9M3 12a10 10 0 0 0 9 9M16 3h5v5"/></symbol>
@@ -125,6 +131,7 @@
       <symbol id="t-slam" viewBox="0 0 24 24"><path d="M12 2v13m-5-5 5 5 5-5M3 21l4-5m14 5-4-5M2 12l3 2m17-2-3 2M8 22h8"/></symbol>
       <symbol id="t-throw" viewBox="0 0 24 24"><path d="M3 6h5m-6 5h4m-3 5h5m3-6 8-8 3 3-8 8Zm2 2-6 8m10-4h5m-3-3 3 3-3 3"/></symbol>
       <symbol id="t-stance" viewBox="0 0 24 24"><path d="m5 8 3-4h8l3 4M4 12l4-3 3 8m9-5-4-3-3 8M3 21h6m6 0h6M10 3h4v5h-4z"/></symbol>
+      <symbol id="t-scream" viewBox="0 0 24 24"><path d="M2 21v-4l2-3-1-4 2-4 4-1 3 2v3l2 2-2 1v2H9v3l3 3M16 9q3 3 0 6m3-8q4 5 0 10m2-13q6 8 0 16"/></symbol>
       <symbol id="t-dodge" viewBox="0 0 24 24"><path d="M2 7h7M1 12h6M2 17h7m3-12 8 7-8 7M17 5l6 7-6 7"/></symbol>
     </defs>
   </svg>
@@ -326,7 +333,7 @@
               <div class="gear-experience"><span id="characterXpText">0 / 8 XP</span><div class="character-xp"><span id="forgeXpFill"></span></div></div>
               <p id="weaponAbilities">Μικρό άλμα · μάζεψε το όπλο μετά τη ρίψη</p>
             </section>
-            <button id="mobileStanceButton" class="loadout-stance touch-only" type="button" aria-pressed="false" aria-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών." data-touch-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών.">
+            <button id="mobileStanceButton" class="loadout-stance" type="button" aria-pressed="false" aria-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών." data-touch-label="Αλλαγή λαβής μεταξύ ενός και δύο χεριών.">
               <svg viewBox="0 0 96 80" aria-hidden="true"><use href="#a-stance"/></svg><span><b>ΛΑΒΗ</b><strong id="mobileStanceValue">ΔΥΟ ΧΕΡΙΑ</strong></span><svg class="stance-switch-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-arrow"/></svg>
             </button>
           </div>
@@ -401,9 +408,9 @@
             <kbd class="action-key">R</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-throw"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-throw"/></svg><span class="action-name">ΡΙΨΗ</span><small id="throwValue" class="action-status">ΣΤΟΧΕΥΣΕ</small>
           </button>
-          <button id="stanceButton" class="action-tile desktop-only" data-key="KeyZ" type="button" aria-label="Ασπίδα στην πλάτη και σφυρί δύο χεριών. Ξανά Z για επιστροφή." title="Ασπίδα στην πλάτη και σφυρί δύο χεριών. Ξανά Z για επιστροφή." data-desktop-label="Ασπίδα στην πλάτη και σφυρί δύο χεριών. Ξανά Z για επιστροφή." data-touch-label="Πάτησε για ασπίδα στην πλάτη και σφυρί δύο χεριών. Πάτησε ξανά για επιστροφή.">
-            <kbd class="action-key">Z</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-stance"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-stance"/></svg><span class="action-name"><span class="desktop-only">ΑΛΛΑΓΗ ΛΑΒΗΣ</span><span class="touch-only">ΛΑΒΗ</span></span><small class="action-status">1 ΧΕΡΙ / 2 ΧΕΡΙΑ</small>
+          <button id="screamButton" class="action-tile" data-key="KeyZ" type="button" aria-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα." title="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα." data-desktop-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα." data-touch-label="Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα.">
+            <kbd class="action-key">Z</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#upgrade-scream"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-scream"/></svg><span class="action-name">ΚΡΑΥΓΗ</span><small id="screamValue" class="action-status">ΕΤΟΙΜΗ</small>
           </button>
           <button id="dashButton" class="action-tile" data-key="ShiftLeft" type="button" aria-label="Γρήγορη αποφυγή προς την κατεύθυνση κίνησης." title="Γρήγορη αποφυγή προς την κατεύθυνση κίνησης." data-desktop-label="Γρήγορη αποφυγή προς την κατεύθυνση κίνησης." data-touch-label="Πάτησε για γρήγορη αποφυγή προς την κατεύθυνση κίνησης.">
             <kbd class="action-key">SHIFT</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-dodge"/></svg>
@@ -442,7 +449,8 @@
         <dl class="desktop-only"><dt>W A S D</dt><dd>Ελεύθερη κίνηση προς κάθε κατεύθυνση. Ο πολεμιστής στρέφεται πάντα προς την κίνησή του.</dd>
         <dt>ΠΟΝΤΙΚΙ</dt><dd>Όταν στέκεσαι, στρέφει τον πολεμιστή, τη σφυριά και την άμυνα. Η ρίψη με R ακολουθεί τη στόχευση, με προαιρετική αυτόματη επιλογή ορατού εχθρού.</dd>
         <dt>LMB</dt><dd>Αριστερό κλικ: χτύπημα. Κράτημα: περιστροφή με όπλο. Χωρίς όπλο: γροθιά, κράτημα για διαδοχικές γροθιές. Άφησε για να σταματήσεις.</dd>
-        <dt>Z</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά Z για επαναφορά.</dd>
+        <dt>Z</dt><dd>Κραυγή προς το σημείο που κοιτάς. Κράτα έως 10 δευτερόλεπτα. Επαναφόρτιση 30 δευτερόλεπτα από τη λήξη. Τα επίπεδα και οι αναβαθμίσεις δυναμώνουν το κύμα.</dd>
+        <dt>G</dt><dd>Ασπίδα στην πλάτη, δύο χέρια στο σφυρί και +25% ζημιά. Ξανά G για επαναφορά.</dd>
         <dt>Κράτα RMB</dt><dd>Δεξί κλικ: κατακόρυφη περιστροφή του σφυριού μπροστά σου. Προστατεύει προς την κατεύθυνση που κοιτάς και ανακλά μετωπικά βλήματα.</dd>
         <dt>SPACE</dt><dd>Ψηλό άλμα προς τα εμπρός και μικρό χτύπημα στην προσγείωση.</dd>
         <dt>SPACE → LMB</dt><dd>Πήδηξε και πάτησε LMB για μικρό smash σε κάθε επίπεδο. Με σιδερένιο σφυρί ή καλύτερο, κράτα LMB για μεγάλη συντριβή.</dd>
@@ -457,7 +465,8 @@
         <dt>ΑΜΥΝΑ</dt><dd>Κράτα πατημένο για προστασία προς την κατεύθυνση που κοιτάς.</dd>
         <dt>ΑΛΜΑ</dt><dd>Πάτησε για άλμα και, με το όπλο στα χέρια, πάτα ΧΤΥΠΗΜΑ στον αέρα για μικρό smash. Με σιδερένιο σφυρί ή καλύτερο, κράτα για μεγάλη συντριβή.</dd>
         <dt>ΡΙΨΗ</dt><dd>Κράτα για κατακόρυφη περιστροφή, σύρε προς τον στόχο και άφησε. Το σφυρί αναπηδά σε έως πέντε κοντινούς εχθρούς και επιστρέφει με ηλεκτρική λάμψη.</dd>
-        <dt>ΛΑΒΗ</dt><dd>Άνοιξε τις αναβαθμίσεις επάνω και πάτα ΑΛΛΑΓΗ ΛΑΒΗΣ. Βάζει την ασπίδα στην πλάτη και κρατά το σφυρί με δύο χέρια για +25% ζημιά. Πάτησε ξανά για επαναφορά.</dd>
+        <dt>ΚΡΑΥΓΗ</dt><dd>Κράτα έως 10 δευτερόλεπτα και στρέψε τον πολεμιστή με τον μοχλό. Επαναφόρτιση 30 δευτερόλεπτα από τη λήξη.</dd>
+        <dt>ΛΑΒΗ</dt><dd>Άνοιξε τις αναβαθμίσεις επάνω και πάτα ΛΑΒΗ. Βάζει την ασπίδα στην πλάτη και κρατά το σφυρί με δύο χέρια για +25% ζημιά. Πάτησε ξανά για επαναφορά.</dd>
         <dt>ΕΥΡΗΜΑΤΑ</dt><dd>Άνοιξε τις αναβαθμίσεις από το επάνω κουμπί και πάτα την επιλογή σου. Η μάχη συνεχίζεται.</dd></dl>
         <p>Η ασπίδα στο χέρι μειώνει τη μετωπική ζημιά κατά 35%. Η πλάτη και τα χτυπήματα εδάφους παραμένουν εκτεθειμένα.</p>
       </details>
@@ -543,6 +552,6 @@
       "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261109-civilians1"></script>
+  <script type="module" src="./game.js?v=20261109-scream-live1"></script>
 </body>
 </html>

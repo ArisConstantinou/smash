@@ -1,4 +1,4 @@
-import { RecordedSounds } from './audio-samples.js?v=20261106-audio2';
+import { RecordedSounds } from './audio-samples.js?v=20261109-rage';
 // Recorded foley + human vocals, with lightweight procedural air/debris layers.
 // All recordings are bundled locally; attribution is in assets/audio/CREDITS.md.
 const clamp = (n, a = 0, b = 1) => Math.max(a, Math.min(b, Number(n) || 0));
@@ -328,6 +328,65 @@ export class GameAudio {
     this._register(source, nodes); this._voices.add(source);
     source.start(t); source.stop(t + duration + .02);
     this._noise(.075, Math.min(.11, duration), 1450, 'bandpass', delay, 650, .012);
+  }
+
+  startScream(power) {
+    if (this._scream || this.state !== 'ready' || !this._canAllocate()) return false;
+    power = clamp(power);
+    const t = this.ctx.currentTime;
+    // The player supplies the voice; the travelling pressure is a separate layer.
+    const buffer = this.samples.choose('rage') || this.samples.choose('exert');
+    let voice = null, voiceGain = null;
+    if (buffer && this._sources.size < MAX_SOURCES - 1) {
+      voice = this.ctx.createBufferSource(); voiceGain = this.ctx.createGain();
+      voice.buffer = buffer;
+      voice.playbackRate.value = 1 - .055 * power;
+      voiceGain.gain.value = .98 + .12 * power;
+      voice.connect(voiceGain); voiceGain.connect(this.master);
+      this._register(voice, [voiceGain], () => {
+        if (this._scream?.voice === voice) this._scream.voice = null;
+      });
+      this._voices.add(voice);
+      voice.start(t);
+    }
+    const air = this.ctx.createBufferSource(), filter = this.ctx.createBiquadFilter(), gain = this.ctx.createGain();
+    air.buffer = this._noiseBuffer; air.loop = true;
+    filter.type = 'lowpass'; filter.Q.value = .72;
+    gain.gain.value = .0001;
+    air.connect(filter); filter.connect(gain); gain.connect(this.master);
+    const active = {air, filter, gain, voice, voiceGain, started: t};
+    this._scream = active;
+    this._register(air, [filter, gain], () => { if (this._scream === active) this._scream = null; });
+    air.start(t);
+    this.pulseScream(power, .065);
+    // Short chest hit behind the syllable, below the speaking register.
+    this._tone('sine', 103 + 16 * power, 45, .15 + .21 * power, .24, .08, .021);
+    return true;
+  }
+
+  pulseScream(power, delay = 0) {
+    if (!this._scream || this.state !== 'ready') return;
+    const {filter, gain} = this._scream, t = this.ctx.currentTime + delay, p = clamp(power);
+    filter.frequency.setValueAtTime(1050 + 600 * p, t);
+    filter.frequency.exponentialRampToValueAtTime(105 + 145 * p, t + .36);
+    gain.gain.setValueAtTime(.015, t);
+    gain.gain.exponentialRampToValueAtTime(.21 + .23 * p, t + .035);
+    gain.gain.exponentialRampToValueAtTime(.016 + .026 * p, t + .38);
+  }
+
+  stopScream() {
+    if (!this._scream) return;
+    const {air, gain, voice, voiceGain, started} = this._scream, t = this.ctx.currentTime;
+    this._scream = null;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setTargetAtTime(.0001, t, .025);
+    air.stop(t + .15);
+    if (voice) {
+      // Even the shortest tap gets a syllable rather than a chopped breath.
+      const release = Math.max(t, started + .36);
+      voiceGain.gain.setTargetAtTime(.0001, release, .035);
+      voice.stop(release + .17);
+    }
   }
 
   _impact(material, power, weapon = 'metal') {
