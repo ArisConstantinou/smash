@@ -4,6 +4,7 @@ import {createArmory,blueprint} from './armory-rules.js?v=20261109-trophies1';
 import {createArmoryMaterials,disposeArmoryMaterials} from './armory-materials.js';
 const circle=(r,n=24,cx=0,cy=0)=>Array.from({length:n},(_,i)=>[cx+Math.cos(i/n*Math.PI*2)*r,cy+Math.sin(i/n*Math.PI*2)*r]);
 function partConfig(a,id){return a.items[id].parts;}
+const partPaint=(parts,slot)=>parts[slot].colors?.[parts[slot].selected];
 function rank(parts,id){const e=parts[id];return e.owned[e.selected]||1;}
 function endFace(b,P,x,r,segments=12){b.cylinder(P.steel,x,0,0,r,.065,'x',segments);b.ring(P.gold,x+Math.sign(x)*.036,0,0,r*.86,.012,'x',segments);for(let i=0;i<6;i++){const angle=i*Math.PI/3;b.bolt(P.gold,x+Math.sign(x)*.05,Math.cos(angle)*r*.68,Math.sin(angle)*r*.68,.018,'x');}}
 function radialStud(b,P,angle,y,r,length=.032){const normal=[Math.sin(angle),0,Math.cos(angle)];b.rod(P.steel,[normal[0]*r,y,normal[2]*r],[normal[0]*(r+length),y,normal[2]*(r+length)],.025);}
@@ -71,7 +72,10 @@ function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}})
   else{const x=id==='w07'?-.56:id==='w08'?.30:id==='w11'?-.66:id==='w19'?-.74:(id==='w09'?.64:id==='w10'?.59:.49);for(const y of [-.13,.13])for(const z of [-.13,.13]){if(strike==='spiked')b.cone(P.steel,x+Math.sign(x)*.07,y,z,.044,.12,[Math.sign(x),0,0]);else b.bolt(P.gold,x+Math.sign(x)*.025,y,z,.035,'x');}if(strike==='flanged')for(const y of [-.16,.16])b.bevel(P.gold,0,y,.34,.75,.06,.06,.012);}
  }
  const coreY=id==='w12'||id==='w20'?-.27:number<5?-.19:0,coreZ=id==='w12'?.23:id==='w20'?.18:number<5?.20:id==='w09'||id==='w10'||id==='w11'||id==='w19'?.36:.28;
+ b.tint(partPaint(parts,'strike'));
+ const coreMark=b.mark();
  if(parts.core.selected!=='none')cartridge(b,P,parts.core.selected,0,coreY,coreZ,rank(parts,'core'));
+ b.tint(partPaint(parts,'core'),coreMark);
  const mesh=b.finish(mat);mesh.name='Armory head '+id;mesh.userData.part='head';mesh.userData.corePosition={x:0,y:coreY,z:coreZ};mesh.userData.compoundRing=id==='w12'?{x:0,y:.25,z:0,inner:.30,outer:.53,depth:.38}:null;return mesh;
 }
 export function createWeaponModel(id='w01',armory=createArmory(),{material:sharedMaterial,kit}={}){
@@ -85,17 +89,19 @@ export function createWeaponModel(id='w01',armory=createArmory(),{material:share
  if(grip==='counterweight'){handleBuilder.cylinder(P.steel,0,-.18,0,.125,.15,'y',10);handleBuilder.ring(P.gold,0,-.24,0,.117,.014,'y',12);}if(grip==='coil')for(let i=0;i<5;i++)handleBuilder.ring(P.cyan,0,.03+i*.09,0,.089,.012,'y',16);
  collarBuilder.cylinder(P.steel,0,0,0,.112,.14,'y',10);collarBuilder.ring(P.gold,0,.063,0,.11,.014,'y',12);
  guardBuilder.cylinder(P.gold,0,0,0,.115,.05,'y',10);guardBuilder.bevel(P.steel,0,0,0,.30,.045,.19,.012);
+ shaftBuilder.tint(partPaint(parts,'haft'));handleBuilder.tint(partPaint(parts,'grip'));
  const handle=handleBuilder.finish(mat),shaft=shaftBuilder.finish(mat),collar=collarBuilder.finish(mat),guard=guardBuilder.finish(mat);handle.name='Armory grip';shaft.name='Armory shaft';collar.name='Armory collar';guard.name='Armory hand guard';for(const [m,part]of [[head,'head'],[handle,'grip'],[shaft,'haft'],[collar,'collar'],[guard,'guard']]){m.userData.part=part;root.add(m);}const headY=blueprint(id).family==='hammer'?1.05:blueprint(id).family==='heavy'?1.70:1.43,length=Math.max(.1,headY-.21-.5);head.position.y=headY;shaft.position.y=.5+length/2;shaft.scale.y=length;collar.position.y=headY-.31;guard.position.y=.64;
  root.userData={id,parts:{head,handle,shaft,collar,guard},material:mat,dispose(){for(const m of [head,handle,shaft,collar,guard]){m.geometry.dispose();m.removeFromParent();}if(!sharedMaterial)disposeArmoryMaterials(mat);root.removeFromParent();root.clear();}};return root;
 }
 const shieldOutline=id=>id==='s13'?circle(.48,32):id==='s14'?[[-.47,.48],[0,.66],[.47,.48],[.36,-.30],[0,-.71],[-.36,-.30]]:id==='s15'?[[-.49,.70],[.49,.70],[.52,.56],[.52,-.65],[.40,-.76],[-.40,-.76],[-.52,-.65],[-.52,.56]]:id==='s16'?circle(.58,6,0,0):id==='s18'?[[0,.75],[.22,.68],[.40,.51],[.50,.27],[.49,.02],[.40,-.28],[.23,-.56],[0,-.79],[-.23,-.56],[-.40,-.28],[-.49,.02],[-.50,.27],[-.40,.51],[-.22,.68]]:[[-.64,.56],[.64,.56],[.64,-.58],[-.64,-.58]];
-function shieldFace(b,P,id,parts,points,kit){
+function shieldFace(b,P,id,parts,points,kit,center=true){
+ const nativePaint=parts.boss.selected==='native'?partPaint(parts,'boss'):undefined;
  const rim=parts.rim.selected,inner=points.map(([x,y])=>[x*.86,y*.86]),viewport=id==='s15'?[[[-.20,.38],[.20,.38],[.20,.51],[-.20,.51]]]:[];
- b.poly(P.dark,points,.12,-.015,viewport,.016);b.poly(id==='s13'?P.wood:P.paint,points.map(([x,y])=>[x*.96,y*.96]),.065,.065,viewport,.012);b.poly(P.steel,points,.065,.09,[inner],.01);
+ b.poly(P.dark,points,.12,-.015,viewport,.016);const face=b.poly(id==='s13'?P.wood:P.paint,points.map(([x,y])=>[x*.96,y*.96]),.065,.065,viewport,.012);if(id==='s17'&&center)face.userData.paint=nativePaint;const band=b.poly(P.steel,points,.065,.09,[inner],.01);band.userData.paint=partPaint(parts,'rim');
  if(id==='s13'){for(const x of [-.24,0,.24]){const extent=Math.sqrt(.41*.41-x*x);b.bevel(P.woodLight,x,0,.106,.013,extent*2,.015,.003);}for(const y of [-.19,.19])b.bevel(P.dark,0,y,.12,.70,.055,.025,.006);}
- if(id==='s14'||id==='s18'){b.poly(P.gold,[[-.035,.59],[.035,.59],[.035,-.54],[0,-.64],[-.035,-.54]],.025,.14,[],.006);for(const side of [-1,1]){const m=b.bevel(P.light,side*.19,.10,.122,.05,.50,.02,.006);m.rotation.z=side*-.18;}}
+ if(id==='s14'||id==='s18'){const rib=b.poly(P.gold,[[-.035,.59],[.035,.59],[.035,-.54],[0,-.64],[-.035,-.54]],.025,.14,[],.006);rib.userData.paint=nativePaint;for(const side of [-1,1]){const m=b.bevel(P.light,side*.19,.10,.122,.05,.50,.02,.006);m.rotation.z=side*-.18;}}
  if(id==='s15')for(const y of [.13,-.20,-.53])b.bevel(P.paint,0,y,.115,.79,.29,.035,.012);
- if(id==='s15'){const outer=[[-.26,.33],[.26,.33],[.26,.56],[-.26,.56]];b.poly(P.gold,outer,.055,.14,viewport,.006);for(const side of [-1,1])for(const y of [-.62,.61]){const m=b.bevel(P.gold,side*.38,y,.14,.20,.13,.055,.012);m.rotation.z=side*Math.sign(y)*.15;}}
+ if(id==='s15'){const outer=[[-.26,.33],[.26,.33],[.26,.56],[-.26,.56]];const frame=b.poly(P.gold,outer,.055,.14,viewport,.006);frame.userData.paint=nativePaint;for(const side of [-1,1])for(const y of [-.62,.61]){const m=b.bevel(P.gold,side*.38,y,.14,.20,.13,.055,.012);m.rotation.z=side*Math.sign(y)*.15;}}
  if(id==='s16'){b.poly(P.gold,circle(.19,6),.065,.16,[],.008);for(let i=0;i<6;i++){const a=i*Math.PI/3;b.bolt(P.gold,Math.cos(a)*.49,Math.sin(a)*.49,.15,.032);}}
  if(id==='s18')for(const side of [-1,1]){for(const [a,c]of [[ [0,.65,.15],[side*.12,.40,.16] ],[ [side*.12,.40,.16],[side*.25,.15,.15] ],[ [side*.25,.15,.15],[side*.16,-.28,.15] ],[ [side*.16,-.28,.15],[0,-.64,.15] ]])b.rod(P.gold,a,c,.025);const p=[[side*.02,.67],[side*.31,.52],[side*.43,.25],[side*.31,.31],[side*.16,.48],[side*.045,.51]];b.poly(P.gold,p,.06,.14,[],.01);}
  for(let i=0;i<points.length;i++){if(points.length>12&&i%3)continue;const [x,y]=points[i];b.bolt(P.gold,x*.93,y*.93,.14,.025);}
@@ -106,11 +112,15 @@ function shieldFace(b,P,id,parts,points,kit){
 export function createShieldModel(id='s14',armory=createArmory(),{material:sharedMaterial,kit}={}){
  const parts=partConfig(armory,id),mat=sharedMaterial||createArmoryMaterials(parts.core.selected),P=armoryPalette(parts.finish.selected,parts.finish.color),root=new THREE.Group(),panels=[];root.name='Armory '+id;const b=armoryBuilder();
  if(id==='s17'){
-  for(const side of [-1,0,1]){const pb=armoryBuilder(),points=[[-.205,.55],[.205,.55],[.205,-.56],[-.205,-.56]];shieldFace(pb,P,id,parts,points,kit);for(const x of [-.16,.16])for(const y of [-.44,0,.44])pb.bolt(P.gold,x,y,.14,.021);const m=pb.finish(mat),pivot=new THREE.Group();pivot.position.set(side*.20,0,.14);m.position.set(side*.20,0,-.14);pivot.rotation.y=side*-.17;pivot.add(m);root.add(pivot);panels.push({pivot,side});}
+  for(const side of [-1,0,1]){const pb=armoryBuilder(),points=[[-.205,.55],[.205,.55],[.205,-.56],[-.205,-.56]];shieldFace(pb,P,id,parts,points,kit,side===0);for(const x of [-.16,.16])for(const y of [-.44,0,.44])pb.bolt(P.gold,x,y,.14,.021);const m=pb.finish(mat),pivot=new THREE.Group();pivot.position.set(side*.20,0,.14);m.position.set(side*.20,0,-.14);pivot.rotation.y=side*-.17;pivot.add(m);root.add(pivot);panels.push({pivot,side});}
   for(const side of [-1,1])for(const y of [-.38,0,.38]){b.cylinder(P.gold,side*.20,y,.14,.035,.18,'y',10);b.ring(P.dark,side*.20,y,.14,.038,.007,'y',10);}
  }else shieldFace(b,P,id,parts,shieldOutline(id),kit);
- const boss=parts.boss.selected;if(boss==='spiked'){b.cylinder(P.gold,0,.025,.17,.16,.07,'z',12);b.cone(P.steel,0,.025,.32,.13,.27,[0,0,1]);}else if(boss==='reflector'){b.poly(P.steel,circle(.19,8,0,.025),.075,.19,[],.018);b.ring(P.gold,0,.025,.24,.145,.015);for(const x of [-.08,.08])b.bevel(P.light,x,.025,.245,.025,.18,.015,.004);}else if(boss==='reactor'||id==='s16'){b.poly(P.gold,circle(.20,6,0,.025),.07,.17,[],.009);b.bevel(P.dark,0,.025,.23,.26,.25,.075,.022);for(const side of [-1,1])b.bevel(P.steel,side*.115,.025,.255,.045,.25,.045,.009);}else if(id==='s13'){b.cylinder(P.gold,0,.025,.17,.19,.055,'z',14);b.cylinder(P.steel,0,.025,.215,.13,.09,'z',12);}
+ const bossMark=b.mark(),boss=parts.boss.selected;if(boss==='spiked'){b.cylinder(P.gold,0,.025,.17,.16,.07,'z',12);b.cone(P.steel,0,.025,.32,.13,.27,[0,0,1]);}else if(boss==='reflector'){b.poly(P.steel,circle(.19,8,0,.025),.075,.19,[],.018);b.ring(P.gold,0,.025,.24,.145,.015);for(const x of [-.08,.08])b.bevel(P.light,x,.025,.245,.025,.18,.015,.004);}else if(boss==='reactor'||id==='s16'){b.poly(P.gold,circle(.20,6,0,.025),.07,.17,[],.009);b.bevel(P.dark,0,.025,.23,.26,.25,.075,.022);for(const side of [-1,1])b.bevel(P.steel,side*.115,.025,.255,.045,.25,.045,.009);}else if(id==='s13'){b.cylinder(P.gold,0,.025,.17,.19,.055,'z',14);b.cylinder(P.steel,0,.025,.215,.13,.09,'z',12);}
+ const bossPaint=partPaint(parts,'boss');
+ b.tint(bossPaint,bossMark);
+ const coreMark=b.mark();
  if(parts.core.selected!=='none')cartridge(b,P,parts.core.selected,0,.025,boss==='reactor'||id==='s16'?.30:.28,rank(parts,'core'));
+ b.tint(partPaint(parts,'core'),coreMark);
  // Back straps and the exact original shield-grip contact at (0,.065,-.197).
  for(const side of [-1,1])b.bevel(P.leather,side*.22,.03,-.106,.10,.61,.07,.012);for(const y of [-.10,.23])b.bevel(P.steel,0,y,-.135,.31,.06,.10,.009);b.cylinder(P.leather,0,.065,-.197,.056,.32,'y',12);
  const body=b.finish(mat);root.add(body);root.userData={id,material:mat,panels,corePosition:{x:0,y:.025,z:.30},setGuard(t){for(const {pivot,side}of panels)pivot.rotation.y=side*-.17*(1-Math.max(0,Math.min(1,t))*.75);},dispose(){root.traverse(n=>{if(n.isMesh)n.geometry.dispose();});if(!sharedMaterial)disposeArmoryMaterials(mat);root.removeFromParent();root.clear();}};return root;

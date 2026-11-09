@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {armoryParts,WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,createArmory,restoreArmory,resolveArmory,equipBlueprint,purchaseArmoryPart,equipArmoryPart,paintArmoryItem,armoryQuote,armoryStats,awardBossWeapon} from '../armory-rules.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {armoryParts,WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,createArmory,restoreArmory,resolveArmory,equipBlueprint,purchaseArmoryPart,equipArmoryPart,paintArmoryPart,armoryQuote,armoryStats,awardBossWeapon} from '../armory-rules.js';
 test('eighteen actual blueprint identities unlock with the existing forge progression',()=>{assert.equal(WEAPON_BLUEPRINTS.filter(b=>!b.bossReward).length,12);assert.equal(SHIELD_BLUEPRINTS.length,6);const a=createArmory();assert.equal(resolveArmory(a,0).weapon,'w01');assert.equal(equipBlueprint(a,'w12',{tier:0}),false);assert.ok(equipBlueprint(a,'w12',{tier:4}));assert.equal(resolveArmory(a,4).weapon,'w12');assert.equal(resolveArmory(a,0).weapon,'w01');for(const b of [...WEAPON_BLUEPRINTS.filter(b=>!b.bossReward),...SHIELD_BLUEPRINTS])assert.ok(equipBlueprint(a,b.id,{tier:4}));});
 test('each item retains independent functional upgrades and finishes across save restoration',()=>{const a=createArmory(),m={wood:500,scrap:500,crystal:500};assert.ok(purchaseArmoryPart(a,m,'w05','core','fire',{tier:4}).ok);assert.ok(equipArmoryPart(a,'w05','finish','oxide',{tier:4}));assert.equal(a.items.w06.parts.core.selected,'none');const restored=restoreArmory(JSON.parse(JSON.stringify(a)));assert.equal(restored.items.w05.parts.core.selected,'fire');assert.equal(restored.items.w05.parts.finish.selected,'oxide');assert.equal(restored.items.w06.parts.core.selected,'none');assert.ok(m.crystal<500);});
 test('real numerical changes, rank caps, free cosmetic choice and test spending isolation',()=>{const a=createArmory(),m={wood:0,scrap:0,crystal:0},before=armoryStats(a,'w03');for(let i=0;i<5;i++)assert.ok(purchaseArmoryPart(a,m,'w03','haft','extended',{test:true}).ok);assert.ok(armoryStats(a,'w03').reach>before.reach);assert.equal(purchaseArmoryPart(a,m,'w03','haft','extended',{test:true}).ok,false);assert.deepEqual(m,{wood:0,scrap:0,crystal:0});assert.equal(armoryQuote(a,'w03','finish','oxide').ok,false);assert.ok(equipArmoryPart(a,'w03','finish','oxide',{tier:4}));assert.equal(purchaseArmoryPart(a,m,'s15','rim','armored',{tier:0}).ok,false);});
@@ -19,17 +19,20 @@ test('boss trophies require their own defeat and survive restoration independent
  assert.equal(awardBossWeapon(saved,'hollowMarshal').id,'w20');assert.ok(equipBlueprint(saved,'w20'));
 });
 
-test('custom paint survives restoration without changing gameplay stats or legacy finishes',()=>{
- const armory=createArmory(),before=armoryStats(armory,'w12');
- assert.equal(paintArmoryItem(armory,'w12','#AC31F8',{tier:0}),false);
- assert.equal(paintArmoryItem(armory,'w12','invalid',{tier:4}),false);
- assert.ok(equipArmoryPart(armory,'w05','finish','oxide',{tier:4}));
- assert.ok(paintArmoryItem(armory,'w12','#AC31F8',{tier:4}));
- const restored=restoreArmory(JSON.parse(JSON.stringify(armory)));
- assert.equal(restored.items.w12.parts.finish.color,'#ac31f8');
- assert.equal(restored.items.w05.parts.finish.selected,'oxide');
+test('part paint survives restoration independently for each slot and variant',()=>{
+ const armory=createArmory(),before=armoryStats(armory,'w12'),options={tier:4};
+ assert.equal(paintArmoryPart(armory,'w12','haft','wood','#AC31F8',{tier:0}),false);
+ assert.equal(paintArmoryPart(armory,'w12','haft','wood','invalid',options),false);
+ assert.equal(paintArmoryPart(armory,'w12','core','none','#AC31F8',options),false);
+ armory.items.w12.parts.finish.color='#346273';
+ assert.ok(paintArmoryPart(armory,'w12','haft','wood','#AC31F8',options));
+ assert.ok(paintArmoryPart(armory,'w12','haft','extended','#AA2233',options));
+ assert.ok(paintArmoryPart(armory,'w12','grip','leather','#5ea833',options));
+ const restored=restoreArmory(JSON.parse(JSON.stringify(armory))),parts=restored.items.w12.parts;
+ assert.deepEqual(parts.haft.colors,{wood:'#ac31f8',extended:'#aa2233'});
+ assert.equal(parts.grip.colors.leather,'#5ea833');
+ assert.equal(parts.finish.color,'#346273');
  assert.deepEqual(armoryStats(restored,'w12'),before);
- assert.ok(paintArmoryItem(restored,'w12',null,{tier:4}));
- assert.equal(restored.items.w12.parts.finish.color,undefined);
- assert.equal(restored.items.w12.parts.finish.selected,'navy');
+ assert.ok(paintArmoryPart(restored,'w12','haft','wood',null,options));
+ assert.deepEqual(parts.haft.colors,{extended:'#aa2233'});
 });

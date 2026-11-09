@@ -103,7 +103,8 @@ try{
   });
   assert.ok(!layout.overflow&&layout.save.right<=layout.close.x,`Workshop fits ${width}×${height}`);
   assert.ok(!layout.bars,'Workshop scrollbars are hidden');
-  assert.ok(Math.abs(layout.tools.top-layout.preset.top)<2,'Armory tools and preset share one row');
+  assert.equal(layout.tools.width,0,'Touch layout hides rotate and zoom buttons');
+  assert.equal(layout.preset.width,0,'Stock equipment lives in the catalogue');
   if(width<height)assert.ok(layout.visuals.bottom<=layout.preview.top&&layout.preview.width>=width-34);
   else assert.ok(layout.visuals.right<=layout.preview.left);
   await armoryPane('stats');assert.ok(await page.locator('#workshopStats').isVisible());

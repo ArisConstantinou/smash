@@ -288,3 +288,9 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 - Mobile Workshop sections show the selected item, current attachment and power artwork. The single native color picker saves an optional per-blueprint paint color and preserves existing preset saves and gameplay stats. Re-rendered all 18 atlases and verified identical images.
 - Fixed the page root and contained touch movement within scrollable panels, cancelling gestures at their bounds and blocking long-press callouts within the game. Chromium touch automation passed the catalogue swipe, hold-and-drag without reload and ordinary gameplay controls in portrait and landscape. Desktop WebKit passed the synthetic touch checks and paint selection. Physical iPhone gesture behavior remains unverified.
 - Passed 603 automated tests, the seven-view Workshop browser flow and the gameplay smoke run.
+
+## Workshop paint by attachment — 2026-11-09
+
+- Paint is stored per weapon or shield attachment variant. The picker sits in the attachment header and resets only that variant. Older whole-blueprint colors still render and part paint leaves combat stats intact.
+- Touch layouts omit the preview toolbar and put stock equipment in the catalogue. Tablet portrait allocates the remaining height to the turntable, and tall phones show the model below the attachment controls. Drag rotation remains available.
+- Passed 604 automated tests, seven Workshop layouts, the mount Workshop suite and the game browser smoke. All 18 model-card images retained their exact hashes.

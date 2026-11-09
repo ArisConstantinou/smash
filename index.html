@@ -32,7 +32,7 @@
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
   <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
-  <link rel="stylesheet" href="./mount-workshop.css?v=20261109.8">
+  <link rel="stylesheet" href="./mount-workshop.css?v=20261109.9">
 </head>
 <body>
   <div id="gameViewport">
@@ -514,12 +514,6 @@
         <section id="workshopVisuals" class="workshop-visuals" aria-labelledby="workshopVisualTitle" hidden>
           <h3 id="workshopVisualTitle">ΕΜΦΑΝΙΣΗ</h3>
           <div id="workshopCatalog" class="workshop-catalog" role="group" aria-label="Κατάλογος σχεδίων"></div>
-          <h4>ΥΛΙΚΑ / ΒΑΦΗ</h4>
-          <div class="workshop-paint">
-            <label for="workshopPaint">Επίλεξε χρώμα</label>
-            <input id="workshopPaint" type="color" value="#315d70">
-            <button id="workshopPaintReset" type="button" title="Αρχική βαφή" aria-label="Αρχική βαφή"></button>
-          </div>
         </section>
         <section class="workshop-turntable" aria-label="Περιστρεφόμενη προεπισκόπηση 3D">
           <canvas id="mountPreview" tabindex="0" aria-label="Σύρε για περιστροφή του παίκτη και οχήματος"></canvas>
@@ -527,7 +521,7 @@
           <nav id="workshopFamilies" class="workshop-families" aria-label="Σασί"></nav>
           <button id="workshopAuto" type="button">ΑΥΤΟΜΑΤΟ ΣΑΣΙ ΑΝΑ LEVEL · 1 / 11 / 21</button>
         </section>
-        <section class="workshop-details"><h3 id="workshopPerformanceTitle" hidden>ΕΠΙΔΟΣΕΙΣ / ΕΞΑΡΤΗΜΑΤΑ</h3><h3 id="workshopPartName"></h3><div id="workshopOptions" class="workshop-options"></div><button id="workshopUpgradeInfo" class="workshop-upgrade-info" type="button" aria-expanded="false" aria-controls="workshopDescription workshopUpgradePreview">ΛΕΠΤΟΜΕΡΕΙΕΣ</button><p id="workshopDescription"></p><div id="workshopUpgradePreview" class="workshop-upgrade-preview" aria-live="polite" hidden></div><p id="workshopCost" class="workshop-cost"></p><div class="workshop-purchase"><button id="workshopEquip" type="button"><span>ΕΞΟΠΛΙΣΜΟΣ</span></button><button id="workshopUpgrade" type="button" aria-describedby="workshopUpgradePreview workshopCost"><span id="workshopUpgradeLabel">ΑΝΑΒΑΘΜΙΣΗ</span></button></div><div id="workshopStats" class="workshop-stats"></div><button id="workshopUse" type="button"><span id="workshopUseLabel">ΧΡΗΣΗ ΟΧΗΜΑΤΟΣ</span></button><button id="workshopRepair" type="button"><span id="workshopRepairLabel">ΕΠΙΣΚΕΥΗ ΜΕ ΜΕΤΑΛΛΟ</span></button></section>
+        <section class="workshop-details"><h3 id="workshopPerformanceTitle" hidden>ΕΠΙΔΟΣΕΙΣ / ΕΞΑΡΤΗΜΑΤΑ</h3><div id="workshopPartHeader" class="workshop-part-header"><h3 id="workshopPartName"></h3><div id="workshopPartPaint" class="workshop-paint" hidden><input id="workshopPaint" type="color" value="#315d70" aria-label="Χρώμα επιλεγμένου εξαρτήματος"><button id="workshopPaintReset" type="button" title="Επαναφορά αρχικής βαφής">ΑΡΧΙΚΟ</button></div><button id="workshopUpgradeInfo" class="workshop-upgrade-info" type="button" aria-expanded="false" aria-controls="workshopDescription workshopUpgradePreview">ΛΕΠΤΟΜΕΡΕΙΕΣ</button></div><div id="workshopOptions" class="workshop-options"></div><p id="workshopDescription"></p><div id="workshopUpgradePreview" class="workshop-upgrade-preview" aria-live="polite" hidden></div><p id="workshopCost" class="workshop-cost"></p><div class="workshop-purchase"><button id="workshopEquip" type="button"><span>ΕΞΟΠΛΙΣΜΟΣ</span></button><button id="workshopUpgrade" type="button" aria-describedby="workshopUpgradePreview workshopCost"><span id="workshopUpgradeLabel">ΑΝΑΒΑΘΜΙΣΗ</span></button></div><div id="workshopStats" class="workshop-stats"></div><button id="workshopUse" type="button"><span id="workshopUseLabel">ΧΡΗΣΗ ΟΧΗΜΑΤΟΣ</span></button><button id="workshopRepair" type="button"><span id="workshopRepairLabel">ΕΠΙΣΚΕΥΗ ΜΕ ΜΕΤΑΛΛΟ</span></button></section>
       </div>
       <footer class="workshop-footer"><p id="workshopFeedback" role="status" aria-live="polite"></p><div id="workshopTestControls"><label for="workshopTestLevel">ΔΟΚΙΜΗ ΗΡΩΑ</label><select id="workshopTestLevel" aria-label="Επίπεδο ήρωα για δοκιμή"></select><button id="workshopTestStart" type="button">ΠΑΙΞΕ ΔΟΚΙΜΗ</button></div></footer>
     </div>
@@ -544,11 +538,11 @@
   <script type="importmap">
     {"imports":{
       "./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3",
-      "./armory-rules.js?v=20261109-trophies1":"./armory-rules.js?v=20261109.8",
-      "./armory-models.js?v=20261109-trophies1":"./armory-models.js?v=20261109.8",
-      "./armory-geometry.js":"./armory-geometry.js?v=20261109.8"
+      "./armory-rules.js?v=20261109-trophies1":"./armory-rules.js?v=20261109.9",
+      "./armory-models.js?v=20261109-trophies1":"./armory-models.js?v=20261109.9",
+      "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261109.8"></script>
+  <script type="module" src="./game.js?v=20261109.9"></script>
 </body>
 </html>

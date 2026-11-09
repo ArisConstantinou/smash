@@ -3,7 +3,7 @@ import {makeWarrior} from './models.js?v=20261108-workshop1';
 import {createMountModel} from './mount-models.js?v=20261108-workshop1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
 import {armoryArt} from './armory-art.js?v=20261109-trophies1';
-import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,paintArmoryItem,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-trophies1';
+import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,paintArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-trophies1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {partArt,toolArt} from './workshop-art.js?v=20261108-workshop1';
 import {equipmentBuilder} from './equipment-shapes.js?v=20261108-workshop1';
@@ -105,7 +105,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   const control=$('workshopUpgradeInfo');
   control.setAttribute('aria-expanded',String(open));
   control.textContent=open?'ΚΛΕΙΣΙΜΟ ΛΕΠΤΟΜΕΡΕΙΩΝ':'ΛΕΠΤΟΜΕΡΕΙΕΣ';
-  $('workshopPartName').parentElement.scrollTop=0;
+  $('workshopPartHeader').parentElement.scrollTop=0;
  }
  $('workshopUpgradeInfo').onclick=()=>showUpgradeInfo(!root.hasAttribute('data-armory-info'));
  $('workshopSections').onclick=event=>{
@@ -137,7 +137,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   }
  }
  function render(){
-  if(!open)return;context=getContext();renderTabs();placeArmoryPanels(inArmory());if(inArmory()){renderArmory();return;}$('workshopEquip').parentElement.hidden=false;const target=currentKind(),defs=partDefinitions(target).filter(p=>target!=='player'||!['hammer','shield'].includes(p.id));
+  if(!open)return;context=getContext();renderTabs();placeArmoryPanels(inArmory());if(inArmory()){renderArmory();return;}$('workshopPartPaint').hidden=true;$('workshopEquip').parentElement.hidden=false;const target=currentKind(),defs=partDefinitions(target).filter(p=>target!=='player'||!['hammer','shield'].includes(p.id));
   if(!defs.some(p=>p.id===slot))slot=defs[0].id;
   const part=defs.find(p=>p.id===slot);if(!part.options.some(o=>o.id===option))option=garageParts(context.garage,target)[slot].selected;
   $('workshopFamilies').replaceChildren(...MOUNT_FAMILIES.map(f=>button(f.name+' · LV '+f.level+(familyUnlocked(f.id,context.level)?'':' 🔒'),()=>{kind=f.id;option=garageParts(context.garage,currentKind())[slot]?.selected||'standard';render();},kind===f.id,art(f.id,'chassis'))));
@@ -181,8 +181,13 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   option=(id===kitSlot()?context.garage.player[id]:context.garage.armory.items[armoryItem].parts[id]).selected;
   render();
  }
- function renderArmoryVisuals(a,list,field,locked){
-  $('workshopCatalog').replaceChildren(...list.map(item=>{
+ function renderArmoryVisuals(a,list,field){
+  const original=button('Αρχικός εξοπλισμός',()=>{
+   const reason=canModify({kind:'player',slot:field});
+   if(reason){$('workshopFeedback').textContent=reason;return;}
+   a[field]='auto';armoryCommit();render();
+  },a[field]==='auto',toolArt(doc,'equip'));
+  $('workshopCatalog').replaceChildren(original,...list.map(item=>{
    const available=armoryAvailable(item.id,context.weaponTier,a),boss=BOSS_WEAPON_INFO[item.bossReward];
    const card=button(item.name,()=>{
     armoryItem=item.id;
@@ -196,17 +201,27 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
    card.title=item.name+' · '+status;card.setAttribute('aria-label',card.title);
    return card;
   }));
-  const finish=a.items[armoryItem].parts.finish,picker=$('workshopPaint'),reset=$('workshopPaintReset');
-  const paint=armoryPalette(finish.selected,finish.color).paint;
-  picker.value='#'+paint.toString(16).padStart(6,'0');
+
+ }
+ function renderPartPaint(a,part,field,locked){
+  const picker=$('workshopPaint'),reset=$('workshopPaintReset'),row=$('workshopPartPaint');
+  row.hidden=!part||option==='none';
+  if(row.hidden)return;
+  const entry=a.items[armoryItem].parts[part.id],finish=a.items[armoryItem].parts.finish;
+  const palette=armoryPalette(finish.selected,finish.color);
+  const base={haft:['wood','extended'].includes(option)?palette.wood:palette.steel,grip:palette.leather,
+   strike:palette.paint,rim:palette.steel,boss:palette.gold,core:palette.steel}[part.id];
+  const value=entry.colors?.[option]||'#'+base.toString(16).padStart(6,'0');
+  picker.value=value;
   picker.disabled=locked;
-  reset.disabled=locked||!finish.color&&finish.selected==='navy';
+  picker.setAttribute('aria-label','Χρώμα · '+part.options.find(o=>o.id===option).name);
+  reset.disabled=locked||!entry.colors?.[option];
   function applyPaint(color){
    const reason=canModify({kind:'player',slot:field});
-   if(reason){$('workshopFeedback').textContent=reason;picker.value='#'+paint.toString(16).padStart(6,'0');return;}
-   if(!paintArmoryItem(a,armoryItem,color,{tier:context.weaponTier,test:context.test}))return;
+   if(reason){$('workshopFeedback').textContent=reason;picker.value=value;return;}
+   if(!paintArmoryPart(a,armoryItem,part.id,option,color,{tier:context.weaponTier,test:context.test}))return;
    const saved=armoryCommit();
-   $('workshopFeedback').textContent=context.test?'Η βαφή εφαρμόστηκε στη δοκιμή.':saved?'Η βαφή αποθηκεύτηκε για αυτό το σχέδιο.':'Η βαφή εφαρμόστηκε. Εκκρεμεί αποθήκευση.';
+   $('workshopFeedback').textContent=context.test?'Η βαφή εφαρμόστηκε στη δοκιμή.':saved?'Η βαφή του εξαρτήματος αποθηκεύτηκε.':'Η βαφή εφαρμόστηκε. Εκκρεμεί αποθήκευση.';
    render();
   }
   picker.onchange=()=>applyPaint(picker.value);
@@ -240,12 +255,13 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   slot=part.id;
   const savedPart=part===kit?context.garage.player[slot]:a.items[armoryItem].parts[slot];
   if(!part.options.some(o=>o.id===option))option=savedPart.selected;
-  renderArmoryVisuals(a,list,field,locked);
+  renderArmoryVisuals(a,list,field);
+  renderPartPaint(a,part===kit?null:part,field,locked);
   $('workshopVisualArt').replaceChildren(armoryArt(doc,armoryItem));
   $('workshopPartsArt').replaceChildren(part===kit?art('player',kit.id,savedPart.selected):armoryArt(doc,armoryItem,slot,savedPart.selected));
   $('workshopParts').replaceChildren(...defs.map(p=>button(p.name,()=>selectArmoryPart(p.id),slot===p.id,armoryArt(doc,armoryItem,p.id,a.items[armoryItem].parts[p.id].selected))),
    button('ΚΟΙΝΟ ΣΕΤ',()=>selectArmoryPart(kit.id),slot===kit.id,art('player',kit.id,context.garage.player[kit.id].selected)));
-  $('workshopFamilies').replaceChildren(button('ΑΡΧΙΚΟΣ ΕΞΟΠΛΙΣΜΟΣ',()=>{const reason=canModify({kind:'player',slot:field});if(reason){$('workshopFeedback').textContent=reason;return;}a[field]='auto';armoryCommit();render();},a[field]==='auto',toolArt(doc,'rotate')));
+  $('workshopFamilies').replaceChildren();
   $('workshopUse').hidden=$('workshopAuto').hidden=$('workshopRepair').hidden=true;
   $('workshopTestControls').hidden=!context.menu;$('workshopSave').disabled=context.test;root.dataset.view=view;
   $('workshopMode').textContent=(context.preview?'PREVIEW · ':'')+'LV '+context.level+' · '+b.name;
@@ -288,7 +304,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
  $('workshopTestStart').onclick=()=>{const level=Number($('workshopTestLevel').value);close();onTestStart(level);};
  $('workshopClose').onclick=close;$('workshopEquip').onclick=()=>transact(false);$('workshopUpgrade').onclick=()=>transact(true);
  $('workshopSave').onclick=()=>{if(context.test)return;const ok=onSave(context);$('workshopSaveState').textContent=ok?'ΑΠΟΘΗΚΕΥΤΗΚΕ\u00a0✓':'ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ';$('workshopFeedback').textContent=ok?'Ο εξοπλισμός και τα υλικά αποθηκεύτηκαν σε αυτή τη συσκευή.':'Δεν ήταν δυνατή η αποθήκευση. Έλεγξε τον διαθέσιμο χώρο του browser.';};
- for(const [id,icon]of [['workshopSave','save'],['workshopPaintReset','rotate'],['workshopClose','close'],['workshopReset','rotate'],['workshopZoomOut','zoom-out'],['workshopZoomIn','zoom-in'],['workshopEquip','equip'],['workshopUpgrade','upgrade'],['workshopTestStart','play'],['workshopAuto','rotate'],['workshopUse','equip'],['workshopRepair','repair']])$(id).prepend(toolArt(doc,icon));
+ for(const [id,icon]of [['workshopSave','save'],['workshopClose','close'],['workshopReset','rotate'],['workshopZoomOut','zoom-out'],['workshopZoomIn','zoom-in'],['workshopEquip','equip'],['workshopUpgrade','upgrade'],['workshopTestStart','play'],['workshopAuto','rotate'],['workshopUse','equip'],['workshopRepair','repair']])$(id).prepend(toolArt(doc,icon));
  $('workshopUse').onclick=()=>{const reason=canModify({kind,slot:'chassis'});if(reason){$('workshopFeedback').textContent=reason;return;}context.garage.selectedMount=kind;dirty(onChange(context));render();};
  $('workshopAuto').onclick=()=>{const reason=canModify({kind,slot:'chassis'});if(reason){$('workshopFeedback').textContent=reason;return;}context.garage.selectedMount='auto';dirty(onChange(context));kind=resolveMount(context.garage,context.level);render();};
  $('workshopRepair').onclick=()=>{const result=onRepair({...context,repairKind:kind});$('workshopFeedback').textContent=result.ok?'Η επισκευή ολοκληρώθηκε.':result.reason;render();};

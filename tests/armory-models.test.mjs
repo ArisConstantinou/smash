@@ -1,5 +1,21 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';import * as THREE from '../vendor/three.module.js';import {makeWarrior} from '../models.js';import {createGarage} from '../mount-rules.js';import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryStats} from '../armory-rules.js';import {createWeaponModel,createShieldModel} from '../armory-models.js';import {applyArmoryCustomization} from '../armory-customization.js';import {armoryHeadVolumes,sweepArmoryHead} from '../armory-contacts.js';
 import {createGeometryCollision} from '../geometry-collision.js';
+import {paintArmoryPart} from '../armory-rules.js';
+
+test('weapon part paint changes only the chosen mesh colors and keeps its shape',()=>{
+ const {armory}=createGarage(),stock=createWeaponModel('w11',armory);
+ paintArmoryPart(armory,'w11','haft','wood','#b93476',{tier:4});
+ const painted=createWeaponModel('w11',armory);
+ try{
+  for(const [name,mesh] of Object.entries(painted.userData.parts)){
+   const original=stock.userData.parts[name].geometry.attributes;
+   const attributes=mesh.geometry.attributes;
+   assert.deepEqual(attributes.position.array,original.position.array);
+   if(name==='shaft')assert.notDeepEqual(attributes.color.array,original.color.array);
+   else assert.deepEqual(attributes.color.array,original.color.array);
+  }
+ }finally{stock.userData.dispose();painted.userData.dispose();}
+});
 test('all catalog entries have distinct finite real geometry and bounded surface groups',()=>{const hashes=[];for(const b of [...WEAPON_BLUEPRINTS,...SHIELD_BLUEPRINTS]){const root=b.id[0]==='w'?createWeaponModel(b.id):createShieldModel(b.id),hash=createHash('sha256');let vertices=0;root.traverse(m=>{if(!m.isMesh)return;assert.ok(m.geometry.groups.length<=4);const p=m.geometry.attributes.position;vertices+=p.count;assert.ok(Array.from(p.array).every(Number.isFinite));hash.update(Buffer.from(p.array.buffer));});const size=new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());assert.ok(vertices>0&&vertices<35000&&size.x>.5&&size.y>.8&&size.z>.08,b.id);hashes.push(hash.digest('hex'));root.userData.dispose();}assert.equal(new Set(hashes).size,WEAPON_BLUEPRINTS.length+SHIELD_BLUEPRINTS.length);});
 test('every blueprint installs on the existing hero, retains hand anchors and restores classic equipment',()=>{const hero=makeWarrior(),g=createGarage(),u=hero.userData,anchors=[u.leftGripAnchor,u.rightGripAnchor,u.shieldGripAnchor],base=u.getHeadContactRadius();for(const b of WEAPON_BLUEPRINTS){if(b.bossReward)g.armory.trophies[b.bossReward]=true;g.armory.weapon=b.id;applyArmoryCustomization(hero,g);u.setStance(1);u.updateGrip();assert.equal(u.armoryWeaponId,b.id);assert.ok(u.getHeadContactRadius()>.1);assert.deepEqual([u.leftGripAnchor,u.rightGripAnchor,u.shieldGripAnchor],anchors);const thrown=u.createThrownHammer();assert.ok(thrown.userData.radius>0);thrown.traverse(m=>{if(m.isMesh){m.geometry.dispose();for(const mat of Array.isArray(m.material)?m.material:[m.material])mat.dispose();}});}for(const b of SHIELD_BLUEPRINTS){g.armory.shield=b.id;applyArmoryCustomization(hero,g);assert.equal(u.armoryShieldId,b.id);}g.armory.weapon=g.armory.shield='auto';applyArmoryCustomization(hero,g);assert.equal(u.armoryWeaponId,null);assert.equal(u.armoryShieldId,null);assert.ok(Math.abs(u.getHeadContactRadius()-base)<1e-8);});
 test('ring material volumes leave the centre open and both piston contacts have real separate identities',()=>{const ring=armoryHeadVolumes('w12');assert.ok(ring.every(s=>Math.hypot(s.x,s.y-.25)>s.r+.20));const matrix=new THREE.Matrix4(),target={},cast=(from,to,objects,r)=>{const distance=Math.hypot(from.x,from.y-.25);return distance<=r+.035?{t:.5,target}:null;};assert.equal(sweepArmoryHead(ring,matrix,{x:0,y:0,z:-1},{x:0,y:0,z:1},[target],cast).length,0);const pistons=armoryHeadVolumes('w08');assert.ok(pistons.some(s=>s.key==='piston-0')&&pistons.some(s=>s.key==='piston-1'));const a=createGarage().armory;assert.equal(armoryStats(a,'w08').maxContacts,2);assert.ok(armoryStats(a,'w12').power<armoryStats(a,'w09').power);assert.equal(armoryStats(a,'w12').arcBonusTargets,1);});

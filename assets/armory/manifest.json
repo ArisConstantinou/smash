@@ -6,10 +6,10 @@
   "rank": 1,
   "shapeCell": 63,
   "inputs": {
-    "armory-models.js": "6f10c96ee23608b1e2f604211717f292e031eb6669857d71244fbbf9190bfd70",
-    "armory-geometry.js": "ddffad3028140c3c154530d07594e4e94bcb46f64b41e4f00818bd3bd17463ba",
+    "armory-models.js": "6ee6dac8555ef84dbd9deaa48e56748b3505db00f2f1cc11ee48ba61914efcfc",
+    "armory-geometry.js": "58be1689574a6d9d69630ad26c5d66a7241f1eb86b655c19e97a304a3bb4195d",
     "armory-materials.js": "1f3e5d2089de4961bc3fa8fb4345885606f82316f168bddedaef6aac91888a1c",
-    "armory-rules.js": "db59040fccda17d37d74e757c71d95dc19be6e4520f985ea2afb5f5de52d9e02",
+    "armory-rules.js": "d1650a984f2f181bcbbd02919557514490ba12f3b103d70da1135c7d868eac81",
     "tools/armory-atlas.js": "e1ceff752eff9a6925537535d332c8aeedd0c93d222639e859d2904cbb96ef03",
     "tools/render-armory-atlas.mjs": "c2309ac232dd3b833008f0f5be00833d8543aa3aef5ffb5e8def4fd32cb42c3f"
   },
