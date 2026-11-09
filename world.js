@@ -4,6 +4,7 @@ import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-d
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
 import { createGeometryCollision } from './geometry-collision.js?v=20261109-readability1';
+import { createCityCivilians } from './city-civilians.js?v=civilians1';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
@@ -510,7 +511,8 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   group.traverse(node=>{if(!movingTransforms.has(node)){node.updateMatrix();node.matrixAutoUpdate=false;}});
   updateVisibility({x:0,z:0});
   update(0,0,{x:0,z:0},'rain');
-  return {
+  let civilians=null;
+  const world={
     city,group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
     warmCollision:(x,z,radius=12)=>collision.warm(nearObjects(x,z,radius)),prepareNearbyCollision,
     supportHeight:collision.supportHeight,supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,
@@ -520,9 +522,13 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
     getChaseDirection:navigation.getChaseDirection,
     hasLineOfSight:navigation.hasLineOfSight,
     invalidateNavigation:navigation.invalidateNavigation,
+    get civilians(){return civilians;},
+    startCivilians(){civilians??=createCityCivilians(world);},
+    stopCivilians(){civilians?.dispose();civilians=null;},
     get district(){return currentZone.name;},
     dispose(){
       if(disposed)return;disposed=true;scene.remove(group);
+      world.stopCivilians();
       // Models share immutable prototype materials. Gameplay replaces them with
       // per-instance hit-flash materials; dispose those current render resources.
       const resources=new Set(owned);
@@ -534,4 +540,5 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
       group.clear();spatial.clear();sharedModelMaterials.clear();navigation.invalidateNavigation();collision.clear();
     },
   };
+  return world;
 }

@@ -9,7 +9,7 @@
     "armory-models.js": "6ee6dac8555ef84dbd9deaa48e56748b3505db00f2f1cc11ee48ba61914efcfc",
     "armory-geometry.js": "58be1689574a6d9d69630ad26c5d66a7241f1eb86b655c19e97a304a3bb4195d",
     "armory-materials.js": "1f3e5d2089de4961bc3fa8fb4345885606f82316f168bddedaef6aac91888a1c",
-    "armory-rules.js": "d1650a984f2f181bcbbd02919557514490ba12f3b103d70da1135c7d868eac81",
+    "armory-rules.js": "9ae297f0a18efc0cef83b7acd3818112ce2165ec4a5784ec33b63366225695de",
     "tools/armory-atlas.js": "e1ceff752eff9a6925537535d332c8aeedd0c93d222639e859d2904cbb96ef03",
     "tools/render-armory-atlas.mjs": "c2309ac232dd3b833008f0f5be00833d8543aa3aef5ffb5e8def4fd32cb42c3f"
   },

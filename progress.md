@@ -1,5 +1,31 @@
 Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\Smash; find failed ChatGPT/GitHub WebGPU/WASM work and fix hammer/whirlwind destruction FPS collapse plus the recorded pending updates. Keep this source folder and project structure for future work.
 
+## City civilians — 2026-11-09
+
+- Residents occupy city streets at the start and use three articulated models. They walk when safe, turn and run when threatened by nearby enemies, a weapon swing or demolition, and choose a clear route around street obstacles before settling.
+- Chromium WebGPU verified a resident running 13.2 m around a parked car without intersecting it, a real player swing and demolition in a 430 × 932 viewport. Matched warm desktop samples measured 12.6 ms p95 without civilians and 12.7 ms with them. This was not a physical mobile test.
+- All 605 Node tests, the gameplay input client and the City Colossus transition to the jungle passed. Normal and slow playback plus walk, alert, run and safe-state frames are in `E:/CodexGenerated/smash/staging/tests/city-civilians`.
+
+## Expanded jungle and wildlife — 2026-11-09
+
+- Approved overview and species concepts are in `E:/CodexGenerated/smash/staging/work`. The jungle bounds grew from 52 × 52 m to 144 × 144 m with an approach trail, central ravine, upstream falls, wildlife clearing and a downstream stone arch. The arch is a map landmark. Nearby terrain chunks render independently. The real campaign route and checkpoint remain in the candidate preview.
+- Eight residents use three editable articulated models. Tapirs flee along dry ground. Macaws lift from branches and return to their perch. Boars warn, charge using swept contact, and recover within their territory. They can injure the player and horde, receive melee retaliation, and take player weapon damage. Neutral kills do not credit player XP.
+- 605 Node tests, the installed input client and the WebGPU journey passed. Input-driven routes measured 96.7 m from arrival to the falls and 69.4 m from the far bridge landing to the arch. Browser evidence includes the three original crossings, checkpoint, flight and run phases, damage in both directions against a zombie, and 1440×900 motion capture under `tests/jungle-ravine`.
+
+## Jungle Ravine campaign sample — 2026-11-09
+
+- Approved concept at `E:/CodexGenerated/smash/staging/work/jungle-ravine-concept.png`. The new editable environment uses the existing camera, weapon damage and geometry collision. It has two banks, three traversable crossings and a far-bank patrol camp.
+- Normal City Colossus victory saves the next map alongside character, gear and upgrades and credits four crystals. Continue opens the ravine. Legacy saves start in the city; test-city rounds retain their prior flow. The ravine checkpoint restores the destination and character, then starts a fresh instance of the ravine.
+- The deck can be destroyed with a player aerial smash. The river then has no solid support at that crossing and the current returns the player to their last safe bank. The log remains walkable and starter-kit jumps land on the stone tops. Initial WebGPU checks covered the victory button, exact gear/progression at the transition, all three routes, and a reload.
+
+## Local patrols and walk-over weapon loot — 2026-11-09
+
+- Candidate worktree `codex/close-weapon-contact` starts from clean published `4e344cf`; `E:/Smash` remains the baseline. Port 8000 serves `/` and `/candidate/` from the existing two-root preview. The source is served directly.
+- Three randomly located two-enemy patrols are present before wave one. They protect their post, chase when alerted and return when the player leaves. Patrols count toward battle progress but do not block wave completion. A camp can have a rare carrier; an eligible wave enemy can rarely carry the same kind of loot. Existing Forge and boss rewards remain available.
+- Rare carriers can provide `w04`, `w07`, or `w10` one Forge tier early. The visible weapon pickup unlocks its Workshop entry on contact with the player on the ground. Siege Transformer `w19` and Hollow Marshal `w20` use the same pickup flow. No inventory, equipment swap, or save write from a test run is required for collection.
+- Verified the WebGPU portrait model and label, walk-over pickup, Workshop persistence and both mini-boss rewards. Re-rendered the 18 armory and 11 Workshop thumbnails; all image hashes match the shipped artwork. Bounded browser evidence: `E:/CodexGenerated/smash/staging/tests/rare-enemies` and `tests/boss-trophies`.
+- Passed all 605 Node tests and the installed gameplay input client. Matched desktop WebGPU opening samples ran at 16.8 ms p95 with and without the six guards. The full smoke attempt first failed browser teardown; its retry passed all three phone layouts but timed out waiting for desktop WebGL boot. A separate desktop WebGL boot and entry passed on both baseline and candidate with no browser or request errors. No physical phone tested.
+
 ## Rubble visibility and first contact with new buildings — 2026-11-09
 
 - Candidate `codex/combat-readability` uses published `29c2ccd` as the baseline. In a phone-sized WebGPU fixture, a collapsed office still left the player and enemy active, but its foreground fragments covered them. The player silhouette and a cyan marker now show through rubble, with a coral marker for covered nearby enemies.

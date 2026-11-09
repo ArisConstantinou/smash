@@ -3,12 +3,12 @@ import {makeWarrior} from './models.js?v=20261108-workshop1';
 import {createMountModel} from './mount-models.js?v=20261108-workshop1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
 import {armoryArt} from './armory-art.js?v=20261109-trophies1';
-import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,paintArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-trophies1';
+import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,paintArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-loot1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {partArt,toolArt} from './workshop-art.js?v=20261108-workshop1';
 import {equipmentBuilder} from './equipment-shapes.js?v=20261108-workshop1';
 import {armoryPalette} from './armory-geometry.js';
-import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261109-trophies1';
+import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261109-loot1';
 
 const names={hp:'ΖΩΗ',speed:'ΤΑΧΥΤΗΤΑ',acceleration:'ΕΠΙΤΑΧΥΝΣΗ',grip:'ΠΡΟΣΦΥΣΗ',power:'ΙΣΧΥΣ',defence:'ΑΜΥΝΑ',energy:'ΕΝΕΡΓΕΙΑ',regen:'ΑΝΑΠΛΗΡΩΣΗ',contact:'ΖΗΜΙΑ ΤΡΟΧΩΝ',frontContact:'ΕΜΒΟΛΙΣΜΟΣ',handling:'ΣΤΡΟΦΗ',riderProtection:'ΠΡΟΣΤΑΣΙΑ ΑΝΑΒΑΤΗ',mass:'ΒΑΡΟΣ'};
 const format=(key,v)=>['defence','riderProtection'].includes(key)?Math.round(v*100)+'%':Number.isInteger(v)?String(v):v.toFixed(2);
@@ -193,7 +193,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
     armoryItem=item.id;
     const reason=canModify({kind:'player',slot:field});
     if(available&&!reason){equipBlueprint(a,item.id,{tier:context.weaponTier});armoryCommit();$('workshopFeedback').textContent='ΕΞΟΠΛΙΣΤΗΚΕ · '+item.name;}
-    else $('workshopFeedback').textContent=reason||(boss?'ΝΙΚΗΣΕ: '+boss.boss:'ΚΛΕΙΔΩΜΕΝΟ · ΚΑΤΑΣΚΕΥΗ '+item.tier);
+    else $('workshopFeedback').textContent=reason||(boss?'ΠΑΡΑΛΑΒΗ ΑΠΟ ΤΟ ΕΔΑΦΟΣ · '+boss.boss:'ΚΛΕΙΔΩΜΕΝΟ · ΚΑΤΑΣΚΕΥΗ '+item.tier);
     selectArmoryPart(slot);
    },armoryItem===item.id,armoryArt(doc,item.id));
    card.dataset.blueprint=item.id;card.dataset.equipped=a[field]===item.id;card.dataset.locked=!available;

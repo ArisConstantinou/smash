@@ -11,7 +11,7 @@ const hook=`
 window.__trophyQA={
  get ready(){return gameReady},
  state(){return JSON.parse(render_game_to_text()).armory},
- start(){startGame(1);window.__trophyFreeze=true;$('announcement').hidden=true;},
+ start(){startGame(1,{camps:false});window.__trophyFreeze=true;$('announcement').hidden=true;},
  defeat(which){
    if(encounter){
      const first=encounter;
@@ -20,7 +20,17 @@ window.__trophyQA={
    }
    battleKills=which===1?45:70;checkGoal();updateEncounter(5);
    const e=encounter.leader;hitEnemy(e,e.hp+10,{x:0,z:1},0,0);
-   return read('ironfall.character',null).garage.armory.trophies;
+   const drop=drops.find(d=>d.weapon===(which===1?'w19':'w20'));
+   player.x=drop.x;player.z=drop.z+3;player.y=0;hero.position.set(player.x,0,player.z);
+   updateDrops(.55);poseHero(0);cameraTarget.set(player.x,.6,player.z);updateBattleCamera(1,cameraTarget);camera.lookAt(cameraTarget);camera.updateMatrixWorld(true);
+   world.updateVisibility(player,camera);renderer.render(scene,camera);drawFX();
+   return {trophies:read('ironfall.character',null).garage.armory.trophies,weapon:drop.weapon,onGround:drops.includes(drop)&&drop.mesh.parent===scene};
+ },
+ collect(which){
+   const drop=drops.find(d=>d.weapon===(which===1?'w19':'w20'));
+   player.x=drop.x;player.z=drop.z;player.y=0;updateDrops(.05);
+   player.x=player.z=0;hero.position.set(0,0,0);
+   return {trophies:read('ironfall.character',null).garage.armory.trophies,removed:!drops.includes(drop)&&!drop.mesh.parent};
  },
  use(){
    for(const ring of rings)removeEffect(ring.mesh);rings=[];numbers=[];hpEchoes=[];
@@ -59,12 +69,15 @@ try{
  await page.evaluate(()=>__trophyQA.start());await open();
  for(const id of ['w19','w20']){await card(id).click();assert.equal(await card(id).getAttribute('data-locked'),'true');assert.equal(await card(id).getAttribute('data-equipped'),'false');}
  await close();
- assert.deepEqual(await page.evaluate(()=>__trophyQA.defeat(1)),{siegeTransformer:true});
+ assert.deepEqual(await page.evaluate(()=>__trophyQA.defeat(1)),{trophies:{},weapon:'w19',onGround:true});
+ await page.screenshot({path:resolve(out,'siege-ground-pickup.png')});
+ assert.deepEqual(await page.evaluate(()=>__trophyQA.collect(1)),{trophies:{siegeTransformer:true},removed:true});
  await open();await card('w19').click();assert.equal(await card('w19').getAttribute('data-equipped'),'true');assert.equal(await card('w20').getAttribute('data-locked'),'true');
  await page.screenshot({path:resolve(out,'siege-workshop.png')});await close();
  const siege=await page.evaluate(()=>__trophyQA.use());assert.ok(siege.primary<400&&siege.secondary<400&&siege.heal===0,JSON.stringify(siege));
  await page.screenshot({path:resolve(out,'siege-impact.png')});
- assert.deepEqual(await page.evaluate(()=>__trophyQA.defeat(2)),{siegeTransformer:true,hollowMarshal:true});
+ assert.deepEqual(await page.evaluate(()=>__trophyQA.defeat(2)),{trophies:{siegeTransformer:true},weapon:'w20',onGround:true});
+ assert.deepEqual(await page.evaluate(()=>__trophyQA.collect(2)),{trophies:{siegeTransformer:true,hollowMarshal:true},removed:true});
  await page.setViewportSize({width:430,height:932});await open();await card('w20').click();assert.equal(await card('w20').getAttribute('data-equipped'),'true');
  await page.screenshot({path:resolve(out,'marshal-workshop-mobile.png')});await close();
  const marshal=await page.evaluate(()=>__trophyQA.use());assert.ok(marshal.branded&&marshal.heal>0&&marshal.heal<=20&&marshal.secondary===400,JSON.stringify(marshal));

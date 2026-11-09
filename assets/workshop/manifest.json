@@ -10,7 +10,7 @@
     "mount-models.js": "6c6d90d7de33116979f3129b1c123703fe3d9117efcc2518fc662e7b2bc2c674",
     "player-customization.js": "b7bdb8fc62ff1afc59b4f5ccf1ad6e54993aa7ecd0254684e5157a5493df5170",
     "equipment-shapes.js": "651f26789f7beb1d34439facdab33db3d6a99762fc2cd8a4523050c88d5a532b",
-    "mount-rules.js": "eb37abe5effa4c95163d8a95d9867bbe57834ae6bb1540175a0d11236f69923b",
+    "mount-rules.js": "21ea9f1f41f6983a5c48a143ae725118d28e6a6108e3bdd4dbdfb7064728acc5",
     "tools/workshop-atlas.js": "71b23a6be2bf9aeb80fd00f376341c068f30755521d57a7b134076a53d15fcd5",
     "tools/render-workshop-art.mjs": "98b6a3c1b65ca75a848dbba3d1df6d30fabefbe52d54d4bd6037bb90e90e4a1c"
   },

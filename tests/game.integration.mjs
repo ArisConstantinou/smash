@@ -17,10 +17,12 @@ import * as beastPortalModule from '../beast-portal.js';
 import * as beastReveal from '../beast-reveal.js';
 import * as geometryCollision from '../geometry-collision.js';
 import * as world from '../world.js';
+import * as jungleRavine from '../jungle-ravine.js';
 import * as core from '../core.js';
 import * as combat from '../combat.js';
 import * as progression from '../progression.js';
 import * as waves from '../waves.js';
+import * as expeditionEnemies from '../expedition-enemies.js';
 import * as enemyModels from '../enemy-models.js';
 import * as hammerMotion from '../hammer-motion.js';
 import * as characterProgression from '../character-progression.js';
@@ -236,10 +238,12 @@ const imports = new Map([
   ['./beast-reveal.js', synthetic(beastReveal, 'real-beast-reveal')],
   ['./geometry-collision.js', synthetic(geometryCollision, 'real-beast-collision')],
   ['./world.js', synthetic(world, 'real-world')],
+  ['./jungle-ravine.js', synthetic(jungleRavine, 'real-jungle-ravine')],
   ['./core.js', synthetic(core, 'real-core')],
   ['./combat.js', synthetic(combat, 'real-combat')],
   ['./progression.js', synthetic(progression, 'real-progression')],
   ['./waves.js', synthetic(waves, 'real-waves')],
+  ['./expedition-enemies.js', synthetic(expeditionEnemies, 'real-expedition-enemies')],
   ['./enemy-models.js', synthetic(enemyModels, 'real-city-enemies')],
   ['./hammer-motion.js', synthetic(hammerMotion, 'real-hammer-motion')],
   ['./character-progression.js', synthetic(characterProgression, 'real-character-progression')],
@@ -291,7 +295,7 @@ export const __integration = {
   moveBeast, beastBlast, beastBeamHit, get beastCollision(){return beastCollision;}, get beastPortal(){return beastPortal;}, get beastCombat(){return beastCombat;}, updateBoss, updateDrops, updateHUD, poseHero, spawnEnemy, spawnBoss, spawnDrop, hitEnemy,
   hurtObject, hurtPlayer, impact, beginSwing, defeatBoss, applyStats, openUpgrade,
   clearInput, hitBoss, checkGoal, updateAim, updateThrownHammer, shoot, drawFX,
-  updateEncounter,killEnemy,get encounter(){return encounter;},get bossGate(){return bossGate;},
+  updateEncounter,killEnemy,spawnCamps,get encounter(){return encounter;},get bossGate(){return bossGate;},
   drawHP, screenPoint, updateEffects, beginWave, updateWaves, toggleUpgradePanel, resize,
   gainXP, forgeWeapon, renderCharacterProgress, persistCharacter, startLeap, armAirSmash, guardDimensions, guardContact,
   setFacing(x,z){facing=normalize(x,z);pointer.active=false;},
@@ -381,7 +385,7 @@ function reset(startLevel = 15, options = {test: true}) {
   // Legacy combat fixtures opt into hold/release; confirm-mode input is tested explicitly below.
   // Existing combat regressions exercise the complete hammer kit. Ordinary
   // character progression is covered explicitly with reset(1, {test:false}).
-  api.clearInput(); api.startGame(startLevel, options); advance(.1);
+  api.clearInput(); api.startGame(startLevel, {camps:false,...options}); advance(.1);
   elements.get('fxCanvas').context.textCalls.length = 0;
 }
 const close = (actual, expected, tolerance = 1e-6) => assert.ok(Math.abs(actual - expected) <= tolerance,
@@ -2592,6 +2596,40 @@ test('a failed wave spawn preserves its slot and cannot duplicate the final mini
   assert.equal(api.enemies.filter(e=>e.type==='titan').length,1);
 });
 
+test('optional patrols start before waves, pursue locally and drop early equipment only on a successful roll', () => {
+  const key='ironfall.character', saved=storage.get(key);
+  storage.delete(key);
+  try{
+    arena(1,{test:false});api.spawnCamps(()=>.99);
+    assert.equal(api.wave.spawned,0);
+    assert.ok(api.enemies.length>=4&&api.enemies.every(e=>e.patrol&&!e.rareWeapon));
+    arena(1,{test:false});api.spawnCamps(()=>0);
+    const rare=api.enemies.find(e=>e.rareWeapon==='w04');
+    assert.ok(rare);assert.equal(api.enemies.filter(e=>e.rareWeapon).length,1);
+    const initialZ=rare.z,initialX=rare.x;
+    for(let n=0;n<50;n++)api.updateEnemies(1/60);
+    assert.ok(Math.hypot(rare.x-initialX,rare.z-initialZ)>.3);
+    assert.equal(rare.patrol.alert,false);
+    Object.assign(api.player,{x:rare.x+3,z:rare.z,y:0});api.updateEnemies(.016);
+    assert.equal(rare.patrol.alert,true);
+    Object.assign(api.player,{x:0,z:0});api.updateEnemies(.016);
+    assert.equal(rare.patrol.alert,false);
+
+    api.killEnemy(rare);assert.equal(api.wave.defeated,0);
+    const drop=api.drops.find(d=>d.weapon==='w04');
+    assert.ok(drop?.mesh.parent);assert.equal(armoryRulesModule.armoryAvailable('w04',0,api.garage.armory),false);
+    Object.assign(api.player,{x:drop.x,z:drop.z,y:4});api.updateDrops(.6);
+    assert.ok(api.drops.includes(drop),'Flying above the item cannot collect it');
+    api.player.y=0;api.updateDrops(.02);
+    assert.ok(!api.drops.includes(drop)&&!drop.mesh.parent);
+    const restored=armoryRulesModule.restoreArmory(JSON.parse(storage.get(key)).garage.armory);
+    assert.equal(armoryRulesModule.armoryAvailable('w04',0,restored),true);
+    assert.equal(restored.weapon,'auto','A pickup must not replace what is in the player’s hands');
+    api.wave.spawned=api.wave.defeated=api.wave.total;api.updateWaves(.01);
+    assert.equal(api.wave.state,'break');assert.ok(api.enemies.some(e=>e.patrol));
+  }finally{if(saved===undefined)storage.delete(key);else storage.set(key,saved);}
+});
+
 test('zombies telegraph then leap, while a hammer hit interrupts their windup', () => {
   reset();
   api.spawnEnemy('zombie', { x: 0, z: 2.5 });
@@ -2776,7 +2814,7 @@ test('a new run cleans an unfinished enemy fall and cannot revive its old combat
   for (const geometry of geometries) geometry.addEventListener('dispose', () => disposals++);
   api.hitEnemy(enemy, 9999, { x: 1, z: 0 }, 5, 2);
   api.updateEnemies(.05); assert.equal(enemy.mesh.parent, api.scene);
-  api.startGame(15, {test: true});
+  api.startGame(15, {test: true,camps:false});
   assert.equal(enemy.mesh.parent, null); assert.equal(api.enemyFalls.length, 0); assert.equal(api.enemies.length, 0);
   assert.equal(disposals, geometries.size); assert.equal(api.kills, 0);
   advance(.5); assert.equal(disposals, geometries.size); assert.equal(api.enemies.includes(enemy), false);

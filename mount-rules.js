@@ -1,5 +1,5 @@
 // Deterministic garage rules shared by gameplay and the two workshop entry points.
-import {createArmory,restoreArmory} from './armory-rules.js?v=20261109-trophies1';
+import {createArmory,restoreArmory} from './armory-rules.js?v=20261109-loot1';
 export const MAX_PART_RANK=5;
 export const MOUNT_FAMILIES=Object.freeze([
  {id:'bicycle',name:'ΠΟΔΗΛΑΤΟ',level:1,speed:8.4,hp:130,energy:32,regen:6,mass:1},

@@ -1,14 +1,15 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261109.9';
+import {createMountWorkshop} from './mount-workshop.js?v=20261109-loot1';
 import {createSaveStore} from './save-store.js?v=20261108-armory1';
-import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
+import {applyArmoryCustomization} from './armory-customization.js?v=20261109-loot1';
 import {createWeaponModel} from './armory-models.js?v=20261109-trophies1';
 import {ArmoryEffects} from './armory-effects.js?v=20261109-trophies1';
 import {armoryHeadVolumes,sweepArmoryHead} from './armory-contacts.js?v=20261109-trophies1';
-import {resolveArmory,armoryAvailable,armoryStats,blueprint,awardBossWeapon} from './armory-rules.js?v=20261109-trophies1';
+import {resolveArmory,armoryAvailable,armoryStats,blueprint,awardBossWeapon,awardFoundWeapon} from './armory-rules.js?v=20261109-loot1';
+import {CAMP_RARE_CHANCE,WAVE_RARE_CHANCE,nextRareWeapon,patrolIntent} from './expedition-enemies.js?v=1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {MountWeapons} from './mount-weapons.js?v=20261108-workshop1';
 import {MountRide} from './mount-ride.js?v=20261108-workshop1';
-import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261109-trophies1';
+import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261109-loot1';
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
 import {LevelStorm,stormStats} from './level-storm.js?v=20261108-mount1';
@@ -27,7 +28,8 @@ import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,tr
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261109-armory-wire';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261109-gauntlet1';
-import {createWorld} from './world.js?v=20261109-readability1';
+import {createWorld} from './world.js?v=20261109-civilians1';
+import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=fauna1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -95,7 +97,7 @@ let bossGate=0,encounter=null,encounterRetry=0;
 let battleKills=0,beastRig=null,beastCombat=null,beastPortal=null;
 const beastCollision=createGeometryCollision({nearObjects:(x,z)=>boss&&!boss.dead&&(boss.state!=='enter'||boss.entryPlane.distanceToPoint({x,y:0,z})>=0)?[boss]:[]});
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeTab='powers',upgradeFeedback='';
-let activeCity=null;
+let activeCity=null, campaignMap=null, safeBank=null;
 let character=createCharacterProgression(),characterStats=getCharacterStats(character),testRun=false,checkpointTimer=0,forgeReadyAnnounced=false;
 const MATERIAL_LABELS={wood:'Ξύλο',scrap:'Μέταλλο',crystal:'Κρύσταλλοι'};
 let shake=0,hitStop=0,redFlash=0,best=read('ironfall.best',0),visualTime=0,hudTimer=0,minimapTimer=0;
@@ -354,6 +356,7 @@ function flashMaterials(entity,amount,tint=0xffdf9f){
 }
 function randomBetween(a,b){return a+Math.random()*(b-a);}
 function nearbyObjects(x,z,r,options){return world.nearObjects?.(x,z,r,options)||world.objects.filter(o=>options?.includeDead||!o.dead);}
+function combatEnemies(){return world?.wildlife?[...enemies,...world.wildlife.boars.filter(a=>!a.dead)]:enemies;}
 // Street props include heads, signs and eaves outside their navigation box.
 // Use the same conservative margin as surface queries, then cast real pieces.
 function segmentObjects(from,to,radius=0){return nearbyObjects((from.x+to.x)/2,(from.z+to.z)/2,Math.hypot(to.x-from.x,to.z-from.z)/2+radius+2);}
@@ -481,6 +484,7 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   levelStorm?.reset();
   groundScars?.reset();
   if(!keepUpgrades){round=1;sector=1;upgradeQueue=[];upgradeFeedback='';}
+  if(campaignMap===RAVINE_ID)sector=2;
   kick=null;kickCooldown=0;movingVehicles.clear();vehicleNavTimer=0;
   punch=null;punchSequence=0;throwLock=null;throwPreviewTargets=[];dashFollowup=0;spinCharge=null;aimPreviewTimer=0;meleeHint=null;meleeHintTargets=[];hero.userData.setUnarmedPose?.(null);
   swingSequences[0]=createSwingSequence();swingSequences[1]=createSwingSequence();landingPose=null;
@@ -489,7 +493,7 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   if(encounter?.entry){finishMiniReveal(encounter);disposeInstance(encounter.leader);beastPortal.reset();}
   for(const e of enemies){clearEncounterShell(e);if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);}enemies=[];if(boss)releaseBeast();boss=null;
   for(const e of enemyFalls)disposeInstance(e);enemyFalls=[];
-  for(const d of drops){scene.remove(d.mesh);disposeModelGeometry(d.mesh);}drops=[];
+  for(const d of drops)disposeDrop(d);drops=[];
   for(const b of bolts){scene.remove(b.mesh);b.mesh.geometry.dispose();b.mesh.material.dispose();}bolts=[];
   for(const e of [...rings,...arcs])removeEffect(e.mesh);rings=[];arcs=[];
   if(throwFlight){disposeInstance(throwFlight);throwFlight=null;}
@@ -497,9 +501,10 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   stance=0;stanceTarget=0;guardHeld=false;guarding=false;guardHits.clear();leap=null;leapCooldown=0;throwWindup=null;throwCooldown=0;landingRecovery=0;hpEchoes=[];aimPreview=null;pointer.active=false;touchThrowAim=null;touchThrowQueued=null;
   hero.userData.setWeaponVisible?.(true);hero.userData.setStance?.(0);if(guardRing)guardRing.visible=false;if(landingMarker)landingMarker.visible=false;
   vehicleEffects?.reset();
+  if(reusePreparedWorld)world.stopCivilians?.();
   if(!reusePreparedWorld){
     hydrantEffects?.dispose();destruction?.reset();occlusionDepth?.reset();world?.dispose();
-    world=createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
+    world=campaignMap===RAVINE_ID?createJungleRavine(scene):createWorld(scene,{seed:activeCity?activeCity.seed+(sector-1)*173:1527+sector*173,round:sector,city:activeCity});
     groundScars?.bind(world);
     for(const o of world.objects){o.materials=prepareMaterials(o.mesh);o.flash=0;o.shudder=0;o.hurtTimer=0;o.baseY=o.mesh.position.y;o.baseRotation=o.mesh.rotation.clone();}
     hydrantEffects=new HydrantEffects(scene);
@@ -508,35 +513,41 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   if(destruction&&destruction.limit!==rubbleLimit){destruction.dispose();destruction=null;}
   destruction??=new DestructionSystem(scene,{audio,quality:settings.quality,nearObjects:(x,z,r)=>world.nearObjects(x,z,r),onDust:(point,size)=>impactClouds?.emit(point.x,point.y??1,point.z,{x:0,z:1},size,false)});
   pristineMenuWorld=!gameReady;
-  scene.background.setHex(activeCity?.sky??0x223c40);scene.fog.color.setHex(activeCity?.sky??0x344c4c);
+  scene.background.setHex(world.sky??activeCity?.sky??0x223c40);scene.fog.color.setHex(world.sky??activeCity?.sky??0x344c4c);
   if(!vehicleEffects||vehicleEffects.disposed)vehicleEffects=new VehicleEffects(scene,document,{onExplode:explodeVehicle,onBlink:(car,amount)=>flashMaterials(car,amount)});
-  player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
+  player.x=world.spawn?.x??0;player.z=world.spawn?.z??0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
+  safeBank=world.spawn?{...world.spawn}:null;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
   roundTime=0;currentDistrict='';bossSpawned=false;bossGate=0;encounter=null;encounterRetry=0;battleKills=0;beginWave(round);spawnCounter=0;lootCounter=0;chargeHeld=false;chargeStarted=false;charge=0;swing=null;attackBuffer=null;spin=null;spinRecovery=null;holdElapsed=0;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
-  $('bossHud').hidden=true;fragments?.clear();impactClouds?.clear();numbers=[];cameraTarget.set(0,.6,0);
-  hero.position.set(0,0,0);facing={x:-.585491,z:-.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);
+  $('bossHud').hidden=true;fragments?.clear();impactClouds?.clear();numbers=[];cameraTarget.set(player.x,.6,player.z);
+  hero.position.set(player.x,0,player.z);facing=world.spawn?{x:1,z:0}:{x:-.585491,z:-.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);
   applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();updateHUD(true);
 }
 function startGame(startLevel=1,options={}){
-  garage=restoreGarage(read('ironfall.character',null)?.garage);activeStartingLevel=Number.isFinite(startLevel)?clamp(Math.floor(startLevel),1,MAX_CHARACTER_LEVEL):1;
+  const stored=read('ironfall.character',null);
+  garage=restoreGarage(stored?.garage);activeStartingLevel=Number.isFinite(startLevel)?clamp(Math.floor(startLevel),1,MAX_CHARACTER_LEVEL):1;
   const requested=typeof startLevel==='number'?startLevel:1;
   activeCity=options.city??null;testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));
+  campaignMap=!testRun&&options.resume&&stored?.map===RAVINE_ID?RAVINE_ID:null;
   // The menu already rendered this untouched arena and its GPU resources.
   // Rebuilding it on the first click discards that warmup and stalls play.
-  const reusePreparedWorld=pristineMenuWorld&&phase==='menu'&&world?.city===activeCity&&sector===1;
+  const reusePreparedWorld=!campaignMap&&pristineMenuWorld&&phase==='menu'&&world?.city===activeCity&&sector===1;
   resetWorld(false,requested,reusePreparedWorld);
   if(options.resume){
-    const stored=read('ironfall.character',null),restored=restoreCharacterProgression(stored?.character);
+    const restored=restoreCharacterProgression(stored?.character);
     if(restored){character=restored;for(const key of Object.keys(levels))levels[key]=clamp(Math.floor(Number(stored.levels?.[key])||0),0,30);applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();}
   }
+  if(options.camps!==false)spawnCamps();
+  if(options.civilians!==false)world.startCivilians?.();
   setPhase('playing');persistCharacter();
+  if(world.id===RAVINE_ID){announceRavine();return;}
   announce(testRun?'ΔΟΚΙΜΗ · ΕΠΙΠΕΔΟ '+level:options.resume?'Η ΕΞΕΛΙΞΗ ΣΟΥ ΣΥΝΕΧΙΖΕΤΑΙ':'ΑΠΟ ΞΥΛΟ ΣΕ ΚΑΤΑΙΓΙΔΑ',
     testRun?characterStats.weaponName+' · Πλήρης εξοπλισμός αυτού του σταδίου.':characterStats.weaponTier===0?'Μάζεψε ξύλο και μέταλλο. Κατασκεύασε καλύτερο όπλο στις Αναβαθμίσεις.':characterStats.weaponName+' · Μάζεψε υλικά για την επόμενη κατασκευή.',4.3);
 }
 function persistCharacter(){
   if(!gameReady||testRun||phase==='menu'||phase==='settings'&&previousPhase==='menu')return;
-  const saved=save('ironfall.character',{character,levels,garage});updateSavedCharacter();return saved;
+  const saved=save('ironfall.character',{character,levels,garage,...(campaignMap?{map:campaignMap}:{})});updateSavedCharacter();return saved;
 }
 function updateSavedCharacter(){
   const stored=restoreCharacterProgression(read('ironfall.character',null)?.character),button=$('resumeCharacterButton');
@@ -626,10 +637,37 @@ function forgeWeapon(){
   pulse(player.x,player.z,3,0xa3e8cc,.5);audio.play('pickup');toast('ΝΕΟΣ ΕΞΟΠΛΙΣΜΟΣ',characterStats.weaponName+' · '+(characterStats.canReturn?'Το όπλο επιστρέφει στο χέρι σου.':characterStats.canAirSmash?'Ξεκλείδωσες την εναέρια συντριβή.':'Το όπλο και ο χαρακτήρας σου δυνάμωσαν.'));
 }
 
+function disposeDrop(drop){
+  if(drop.kind==='weapon')drop.mesh.userData.dispose();
+  else{scene.remove(drop.mesh);disposeModelGeometry(drop.mesh);}
+}
+function makeDropRoom(){
+  if(drops.length<=70)return;
+  const index=drops.findIndex(d=>d.kind!=='weapon');if(index>=0)disposeDrop(drops.splice(index,1)[0]);
+}
 function spawnDrop(x,z,kind='gold'){
-  if(drops.length>70){const gone=drops.shift();scene.remove(gone.mesh);disposeModelGeometry(gone.mesh);}
+  makeDropRoom();
   const mesh=makeTreasure(kind);mesh.position.set(x,.4,z);scene.add(mesh);
   drops.push({mesh,x,z,kind,age:0,life:55,phase:Math.random()*6.28});
+}
+function dropWeapon(e,id){
+  const b=blueprint(id);
+  if(!b||drops.some(d=>d.weapon===id)||garage.armory.discoveries?.[id]||b.bossReward&&garage.armory.trophies[b.bossReward])return;
+  // Use a reachable ground location if the defeated body was inside wreckage or above a roof.
+  const free=(x,z)=>Math.abs(x)<(world.bounds||BOUNDS)-1&&Math.abs(z)<(world.bounds||BOUNDS)-1&&!world.inRiver?.(x)&&!nearbyObjects(x,z,1).some(o=>circleOverlaps(x,z,.85,o));
+  let x=e.x,z=e.z;
+  if(!free(x,z)){
+    let point;
+    for(let r=1;r<=14&&!point;r++)for(let i=0;i<12;i++){
+      const a=i*Math.PI/6,px=e.x+Math.sin(a)*r,pz=e.z+Math.cos(a)*r;
+      if(free(px,pz)){point={x:px,z:pz};break;}
+    }
+    point??=spawnPosition(13,.85);if(!point)return;
+    ({x,z}=point);
+  }
+  makeDropRoom();
+  const mesh=createWeaponModel(id);mesh.scale.setScalar(.78);mesh.rotation.z=-Math.PI*.42;mesh.position.set(x,.38,z);scene.add(mesh);
+  drops.push({mesh,x,z,kind:'weapon',weapon:id,age:0,life:Infinity,phase:0});
 }
 function openUpgrade(){
   const pool=[...UPGRADE_DEFS],choices=[];
@@ -798,7 +836,7 @@ function armoryImpact(s,from,to,spinning){
  const barbed=readBarbedSegment(s);
  const touching=new Set();let hits=0,breaks=0;
  s.materialHits??=new Map();s.coreHits??=new Set();
- for(const target of [...enemies,...(boss&&!boss.dead?[boss]:[]),...(wall?[wall.target]:[])]){
+ for(const target of [...combatEnemies(),...(boss&&!boss.dead?[boss]:[]),...(wall?[wall.target]:[])]){
   if(target.dead||target.exploding||!spinning&&s.hits.has(target))continue;
   if(!spinning&&(target.x-player.x)*s.fx+(target.z-player.z)*s.fz<0)continue;
   const isWall=target===wall?.target;
@@ -857,7 +895,7 @@ function spinImpact(from,to){
   const touching=new Set();
   const contactTarget=target=>{touching.add(target);return eligibleSpinContact(s,target);};
   let hits=0,breaks=0;
-  for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+  for(const e of [...combatEnemies(),...(boss&&!boss.dead?[boss]:[])]){
     if(e.dead||Math.hypot(e.x-player.x,e.z-player.z)>stats.range+stats.size+(e.radius||1)+2)continue;
     let headContact=firstHammerHit(from,to,[e],radius);
     const shaftContact=characterStats.weaponTier>=2?wireContact(s,barbed,e):firstHammerHit(grip,to,[e],shaftRadius);
@@ -894,6 +932,11 @@ function followupDamage(target,damage,weapon){
 }
 function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   if(e.dead||!Number.isFinite(damage)||damage<=0)return;
+  if(e.isWildlife){
+    world.wildlife.hit(e,damage);
+    showHitPoints(e,damage);audio.play('hit',.45,{material:'flesh'});
+    return;
+  }
   if(e.encounterLeader){
     const front=-(dir?.x||0)*Math.sin(e.facingYaw||0)-(dir?.z||0)*Math.cos(e.facingYaw||0);
     if(e.type==='siegeTransformer'&&e.fold>.7&&front>.38)damage=Math.max(1,Math.round(damage*.52));
@@ -937,11 +980,12 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   audio.play('hit',Math.min(1,damage/100),{material:impactMaterial(e),weapon:response.weapon||(characterStats.weaponTier<2?'wood':'metal')});
   audio.play('enemyHurt',Math.min(1,damage/100),{type:e.type,fatal:e.hp<=0});
   fragments.add(hitPoint.x,hitPoint.y,hitPoint.z,8,e.palette==='organic'?[0x8fbea2,0xb6d5b4,0x83ceaa]:[0xffc271,0xf9e5b1,0x7eacb9],4,.07);
-  if(e.hp<=0)killEnemy(e);
+  if(e.hp<=0)killEnemy(e,response.weapon!=='wildlife');
 }
-function killEnemy(e){
+function killEnemy(e,credited=true){
   if(e.dead)return;
-  e.dead=true;guardHits.delete(e);enemies=enemies.filter(n=>n!==e);kills++;battleKills++;score+=Math.round((e.miniBoss?420:25*(e.xp||1))*comboMultiplier(combatCombo));
+  e.dead=true;guardHits.delete(e);enemies=enemies.filter(n=>n!==e);
+  if(credited){kills++;battleKills++;score+=Math.round((e.miniBoss?420:25*(e.xp||1))*comboMultiplier(combatCombo));}
   armoryEffects.defeat(e);
   if(e.waveNumber===wave?.number)wave.defeated++;
   if(e.encounterEscort)encounter?.escorts.delete(e);
@@ -956,15 +1000,16 @@ function killEnemy(e){
     const fallLimit=settings.quality==='low'?20:32;
     while(enemyFalls.length>fallLimit)disposeInstance(enemyFalls.shift());
   }else disposeInstance(e);
-  const reward=scaleComboReward(e.xp||1,comboMultiplier(combatCombo),comboXpCarry);comboXpCarry=reward.carry;gainXP(reward.amount);
+  if(credited){const reward=scaleComboReward(e.xp||1,comboMultiplier(combatCombo),comboXpCarry);comboXpCarry=reward.carry;gainXP(reward.amount);}
   spawnDrop(e.x,e.z,e.palette==='metal'?'scrap':kills%3===0?'scrap':'wood');
   if(e.miniBoss||level>=6&&kills%8===0)spawnDrop(e.x+.35,e.z+.25,'crystal');
   if(e.miniBoss){spawnDrop(e.x,e.z,'relic');spawnDrop(e.x+.5,e.z,'heart');}
   if(e.encounterLeader)for(const [x,z,kind] of [[-1,0,'scrap'],[1,0,'scrap'],[0,1,'crystal'],[0,-1,'gold']])spawnDrop(e.x+x,e.z+z,kind);
   if(e.encounterLeader&&encounter?.leader===e){
-    const reward=awardBossWeapon(garage.armory,e.type);
-    if(reward){persistCharacter();toast('ΞΕΚΛΕΙΔΩΘΗΚΕ · '+reward.name,testRun?'Διαθέσιμο στο Workshop αυτής της δοκιμής.':'Διαθέσιμο στα Όπλα του Workshop (I).','#f2ca84');}
+    const reward=e.type==='siegeTransformer'?'w19':e.type==='hollowMarshal'?'w20':null;
+    if(reward)dropWeapon(e,reward);
   }
+  if(e.rareWeapon)dropWeapon(e,e.rareWeapon);
   if(e.encounterEscort)spawnDrop(e.x+.28,e.z-.22,'gold');
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
 }
@@ -1006,6 +1051,7 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
   impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7,!['explosion','level-storm'].includes(weapon));
   if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
   o.dead=true;o.mesh.visible=false;world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
+  if(o.isBuilding||o.explosionComplete)world.civilians?.alarm(o.x,o.z,o.isBuilding?17:13);
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
   fragments.add(o.x,o.h*.35,o.z,o.weight>2?30:16,palette,5+q*5,o.weight>2?.5:.25,true);
   pulse(o.x,o.z,Math.max(o.w,o.d)*.65,0xbb9f78,.3);
@@ -1029,7 +1075,7 @@ function hitBoss(damage,dir,strength=5,response={}){
   if(boss.hp<=0)defeatBoss();
 }
 function checkGoal(){
-  if(phase!=='playing'||bossSpawned||encounter||encounterRetry>0)return;
+  if(phase!=='playing'||world.id===RAVINE_ID||bossSpawned||encounter||encounterRetry>0)return;
   const gate=BOSS_GATES[bossGate],total=battleProgress(destructionPercent(world.objects),battleKills);
   if(total<(gate?.threshold??GOAL))return;
   if(!gate){spawnBoss();return;}
@@ -1164,7 +1210,7 @@ function impact(from=headPrevious,to=headNow){
   const wall=shaftWall||headWall;
   const barbed=readBarbedSegment(s);
   let hits=0,hardHits=0,breaks=0;
-  for(const e of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+  for(const e of [...combatEnemies(),...(boss&&!boss.dead?[boss]:[])]){
     if(s.hits.has(e)||e.dead||Math.hypot(e.x-player.x,e.z-player.z)>stats.range+stats.size+(e.radius||1)+2)continue;
     if((e.x-player.x)*s.fx+(e.z-player.z)*s.fz<0)continue;
     // Metal hammers cut with the visible wire beyond the safe grip. Thick
@@ -1213,7 +1259,7 @@ function mountProjectileBlast(point,damage,radius,direct){
   }
 }
 function initMountWorkshop(){
-  const commitWorkshop=context=>{garage=context.garage;let saved=false;if(context.menu){const stored=read('ironfall.character',null);saved=save('ironfall.character',{character:context.character,levels:stored?.levels||{},garage});updateSavedCharacter();}else{applyStats();saved=persistCharacter();}return !!saved&&!context.test&&JSON.stringify(read('ironfall.character',null)?.garage)===JSON.stringify(garage);};
+  const commitWorkshop=context=>{garage=context.garage;let saved=false;if(context.menu){const stored=read('ironfall.character',null);saved=save('ironfall.character',{...stored,character:context.character,levels:stored?.levels||{},garage});updateSavedCharacter();}else{applyStats();saved=persistCharacter();}return !!saved&&!context.test&&JSON.stringify(read('ironfall.character',null)?.garage)===JSON.stringify(garage);};
   mountWorkshop=createMountWorkshop({document,
     getContext(){
       const menu=phase==='menu';if(!menu)return {preview:saveStore.isPreview,menu:false,garage,character,materials:character.materials,level,test:testRun,weaponTier:characterStats.weaponTier,actualMountKind:mountRide?.kind,actualMount:mountRide?.snapshot()};
@@ -1308,7 +1354,7 @@ function updateThrowIndicator(){
 }
 function updateAimPreview(withThrow=!!(touchThrowAim||throwWindup)){
   aimDiagnostics.previews++;
-  const actors=boss&&!boss.dead?[...enemies,boss]:enemies;
+  const actors=boss&&!boss.dead?[...combatEnemies(),boss]:combatEnemies();
   const direction=swing?{x:swing.fx,z:swing.fz}:manualAttackDirection();
   const spec=meleeAimSpec({range:stats.range,unarmed:!!throwFlight,kicking:!!kick,variant:swing?.variant||'',twoHanded:stance>.9});
   meleeHint={...spec,direction};meleeHintTargets=[];
@@ -1333,7 +1379,7 @@ function updateAimPreview(withThrow=!!(touchThrowAim||throwWindup)){
   const start=new THREE.Vector3(metrics.x,metrics.y-gripCenter,metrics.z).applyQuaternion(releaseQ).add(wrist);
   const end={x:start.x+aim.x*characterStats.throwRange,y:start.y,z:start.z+aim.z*characterStats.throwRange};
   const throwRadius=metrics.radius;
-  const contact=firstHammerHit(start,end,[...segmentObjects(start,end,throwRadius),...enemies,...(boss&&!boss.dead?[boss]:[])],throwRadius);
+  const contact=firstHammerHit(start,end,[...segmentObjects(start,end,throwRadius),...actors],throwRadius);
   aimPreview={start,end:contact?{x:contact.x,y:start.y,z:contact.z}:end,contact};
   // Manual preview marks only the actual first intersected enemy, never a
   // nearby target selected by angle. It cannot turn the warrior/projectile.
@@ -1348,7 +1394,7 @@ function updateAimPreview(withThrow=!!(touchThrowAim||throwWindup)){
     touchThrowAim.lockedTarget=throwLock;
   }
   if(throwLock){focusedTarget=throwLock;if(!nearbyTargets.includes(throwLock))nearbyTargets.push(throwLock);}
-  throwPreviewTargets=touchThrowAim&&throwLock?previewThrowChain(throwLock,[...enemies,...(boss&&!boss.dead?[boss]:[])],
+  throwPreviewTargets=touchThrowAim&&throwLock?previewThrowChain(throwLock,actors,
     nearbyObjects(player.x,player.z,characterStats.throwRange+THROW_CHAIN_RADIUS*4),
     {origin:start,maxHits:characterStats.canRicochet?characterStats.maxChainHits:1,radius:throwRadius,chainRadius:THROW_CHAIN_RADIUS}):[];
 }
@@ -1393,7 +1439,7 @@ function landLeap(){
   if(!damage){pulse(player.x,player.z,.9,0xb9d9cb,.2).position.y=player.y+.08;return;}
   impactClouds?.emit(player.x,player.y,player.z,{x:0,z:0},slam?2.2:1);
   frightenNearby(player.x,player.z,slam?1.5:.65,radius+2);
-  for(const e of [...enemies]){const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<=radius+e.radius&&Math.abs((e.y||0)-player.y)<=Math.max(1.1,(e.height||1)*.65))hitEnemy(e,Math.round(damage*lerp(1,.58,clamp(d/radius,0,1))),normalize(e.x-player.x,e.z-player.z),slam?13:5,slam?6:2.2);}
+  for(const e of [...combatEnemies()]){const d=Math.hypot(e.x-player.x,e.z-player.z);if(d<=radius+e.radius&&Math.abs((e.y||0)-player.y)<=Math.max(1.1,(e.height||1)*.65))hitEnemy(e,Math.round(damage*lerp(1,.58,clamp(d/radius,0,1))),normalize(e.x-player.x,e.z-player.z),slam?13:5,slam?6:2.2);}
   for(const o of nearbyObjects(player.x,player.z,radius)){const point=nearestPoint(player.x,player.z,o),d=Math.hypot(point.x-player.x,point.z-player.z);if(d<=radius)hurtObject(o,Math.round(damage*lerp(1,.65,d/radius)),slam?1:.2);}
   if(boss&&!boss.dead&&Math.hypot(boss.x-player.x,boss.z-player.z)<=radius+boss.radius)hitBoss(damage,normalize(boss.x-player.x,boss.z-player.z),slam?15:5);
   for(const r of slam?[radius,radius*.68,radius*.38]:[radius])pulse(player.x,player.z,r,slam?0xffd28b:0xb9d9cb,slam?.55:.3).position.y=player.y+.09;
@@ -1442,12 +1488,12 @@ function releaseHammer(){
 }
 function chooseThrowLock(direction){
   const origin={x:player.x,y:player.y+1.2,z:player.z};
-  const targets=[...enemies,...(boss&&!boss.dead?[boss]:[])];
+  const targets=[...combatEnemies(),...(boss&&!boss.dead?[boss]:[])];
   return selectThrowLock(origin,direction,targets,nearbyObjects(player.x,player.z,characterStats.throwRange+2),
     {range:characterStats.throwRange,radius:hero.userData.getThrowRadius?.()||.45});
 }
 function validThrowLock(target){
-  if(!target||target.dead||(target!==boss&&!enemies.includes(target)))return false;
+  if(!target||target.dead||(target!==boss&&!combatEnemies().includes(target)))return false;
   const direction=normalize(target.x-player.x,target.z-player.z);
   return selectThrowLock({x:player.x,y:player.y+1.2,z:player.z},direction,[target],
     nearbyObjects(player.x,player.z,characterStats.throwRange+2),
@@ -1457,12 +1503,12 @@ function throwTargetPoint(target){
   return {x:target.x,y:(target.y||0)+Math.min(1.35,(target.height||target.h||2)*.6),z:target.z};
 }
 function validChainTarget(h,target){
-  return target&&!target.dead&&!h.hits.has(target)&&(target===boss||enemies.includes(target));
+  return target&&!target.dead&&!h.hits.has(target)&&(target===boss||combatEnemies().includes(target));
 }
 function nextThrowTarget(h){
   if(!settings.throwAutoLock||!characterStats.canRicochet||h.hitCount>=Math.min(THROW_MAX_HITS,characterStats.maxChainHits))return null;
   let nearest=null,bestDistance=THROW_CHAIN_RADIUS;
-  for(const target of [...enemies,...(boss&&!boss.dead?[boss]:[])]){
+  for(const target of [...combatEnemies(),...(boss&&!boss.dead?[boss]:[])]){
     if(!validChainTarget(h,target))continue;
     const point=throwTargetPoint(target),distance=Math.hypot(point.x-h.x,point.y-h.y,point.z-h.z);
     if(distance>bestDistance||distance<.001)continue;
@@ -1566,7 +1612,7 @@ function updateThrownHammer(dt){
       }
       if(h.retrievable)h.vy-=7.5*dt;
       const to={x:h.x+h.dir.x*h.speed*dt,y:h.y+dy*h.speed*dt+(h.retrievable?h.vy*dt:0),z:h.z+h.dir.z*h.speed*dt};
-      const targets=[...segmentObjects(from,to,h.radius),...enemies,...(boss&&!boss.dead?[boss]:[])].filter(target=>!h.hits.has(target));
+      const targets=[...segmentObjects(from,to,h.radius),...combatEnemies(),...(boss&&!boss.dead?[boss]:[])].filter(target=>!h.hits.has(target));
       let contacts=null,hit;
       if(h.armory){h.mesh.updateMatrixWorld(true);const head=h.mesh.getObjectByName('hammerHead'),headFrom=head.getWorldPosition(new THREE.Vector3()),headTo=headFrom.clone().add(new THREE.Vector3(to.x-from.x,to.y-from.y,to.z-from.z));contacts=sweepArmoryHead(h.armory.volumes,head.matrixWorld,headFrom,headTo,targets,firstHammerHit,{maxContacts:h.armory.profile.maxContacts,blueprintId:h.armory.id});hit=contacts[0];}else hit=firstHammerHit(from,to,targets,h.radius);
       h.x=hit?(h.armory?lerp(from.x,to.x,hit.t):hit.x):to.x;h.y=hit?(h.armory?lerp(from.y,to.y,hit.t):hit.y):to.y;h.z=hit?(h.armory?lerp(from.z,to.z,hit.t):hit.z):to.z;
@@ -1600,6 +1646,37 @@ function beginWave(number=1){
   const plan=wavePlan(number);round=plan.number;
   wave={number:round,total:plan.total,spawned:0,defeated:0,batch:0,timer:plan.firstDelay,state:'active',breakTimer:0};
 }
+function rareWeaponAvailable(){
+  const id=nextRareWeapon(characterStats.weaponTier,garage.armory.discoveries);
+  return id&&!enemies.some(e=>e.rareWeapon)&&!drops.some(d=>d.weapon===id)?id:null;
+}
+function spawnCamps(random=Math.random){
+  if(world.camp){
+    const {x,z,dx,dz}=world.camp;
+    const rareWeapon=random()<CAMP_RARE_CHANCE?rareWeaponAvailable():null;
+    for(const side of [-1,1]){
+      const p={x:x+dx*side,z:z+dz*side};
+      spawnEnemy('zombie',p,{rareWeapon:side===1?rareWeapon:null,patrol:{x,z,dx,dz,side,targetX:p.x,targetZ:p.z,alert:false}});
+    }
+    return;
+  }
+  const roads=(world.layout?.roads||[]).filter(n=>Math.abs(n)<=44),posts=[];
+  for(const x of roads)for(const z of roads)if(Math.hypot(x,z)>=22)posts.push({x,z});
+  const placed=[];
+  while(posts.length&&placed.length<3){
+    const [{x,z}]=posts.splice(Math.floor(random()*posts.length),1);
+    if(placed.some(p=>Math.hypot(p.x-x,p.z-z)<29))continue;
+    const alongX=random()<.5,dx=alongX?4:0,dz=alongX?0:4;
+    const points=[-1,1].map(side=>({side,x:x+dx*side,z:z+dz*side}));
+    if(points.some(p=>nearbyObjects(p.x,p.z,1).some(o=>circleOverlaps(p.x,p.z,1,o))))continue;
+    const rare=random()<CAMP_RARE_CHANCE?rareWeaponAvailable():null;
+    for(const p of points){
+      const weapon=p.side===1?rare:null;
+      spawnEnemy('zombie',p,{rareWeapon:weapon,patrol:{x,z,dx,dz,side:p.side,targetX:p.x,targetZ:p.z,alert:false}});
+    }
+    placed.push({x,z});
+  }
+}
 function updateWaves(dt){
   if(!wave||boss&&!boss.dead)return;
   const plan=wavePlan(wave.number);
@@ -1608,43 +1685,45 @@ function updateWaves(dt){
     if(wave.breakTimer<=0){beginWave(round+1);player.hp=Math.min(player.maxHp,player.hp+12);audio.play('start');}
     return;
   }
-  if(wave.spawned>=wave.total&&wave.defeated>=wave.total&&enemies.length===0){
+  if(wave.spawned>=wave.total&&wave.defeated>=wave.total&&!enemies.some(e=>!e.patrol)){
     wave.state='break';wave.breakTimer=plan.breakTime;return;
   }
   wave.timer-=dt;
   if(wave.timer>0||wave.spawned>=wave.total)return;
-  const cap=Math.min(plan.aliveCap,(settings.quality==='low'?36:48)-(encounter?8:1)),slots=cap-enemies.length;
+  const cap=Math.min(plan.aliveCap,(settings.quality==='low'?36:48)-(encounter?8:1)-enemies.filter(e=>e.patrol).length),slots=cap-enemies.filter(e=>!e.patrol).length;
   if(slots<=0){wave.timer=.6;return;}
   const batch=waveBatch(round,wave.spawned,wave.batch,slots);
   let created=0;
   for(const type of batch){
     // Keep the scheduled order on failure: the final mini-boss cannot consume
     // an earlier missing member's slot and then be scheduled a second time.
-    if(!spawnEnemy(type,null,{waveNumber:round}))break;
+    const rareWeapon=round>=2&&(type==='zombie'||type==='brute')&&Math.random()<WAVE_RARE_CHANCE?rareWeaponAvailable():null;
+    if(!spawnEnemy(type,null,{waveNumber:round,rareWeapon}))break;
     wave.spawned++;created++;
   }
   if(created)wave.batch++;
   wave.timer=created?plan.interval:.6;
 }
 function spawnPosition(distance=17,radius=.8){
-  const free=p=>Math.hypot(p.x-player.x,p.z-player.z)>10&&!nearbyObjects(p.x,p.z,radius+.2).some(o=>circleOverlaps(p.x,p.z,radius,o))&&!enemies.some(e=>Math.hypot(e.x-p.x,e.z-p.z)<e.radius+radius+.4);
+  const extent=world.inRiver?world.bounds-2:BOUNDS-2;
+  const free=p=>Math.hypot(p.x-player.x,p.z-player.z)>10&&!world.inRiver?.(p.x)&&(!world.inRiver||world.clearBody(p.x,p.z,0,radius,1.8))&&!nearbyObjects(p.x,p.z,radius+.2).some(o=>circleOverlaps(p.x,p.z,radius,o))&&!enemies.some(e=>Math.hypot(e.x-p.x,e.z-p.z)<e.radius+radius+.4);
   const roads=world.layout?.roads||[];
   for(let i=0;i<48;i++){
     const angle=Math.random()*Math.PI*2,r=distance+Math.random()*5;
-    const p={x:clamp(player.x+Math.sin(angle)*r,-BOUNDS+2,BOUNDS-2),z:clamp(player.z+Math.cos(angle)*r,-BOUNDS+2,BOUNDS-2)};
+    const p={x:clamp(player.x+Math.sin(angle)*r,-extent,extent),z:clamp(player.z+Math.cos(angle)*r,-extent,extent)};
     // Spawn on the connected road network, with arrivals distributed all around.
     if(roads.length){const axis=i%2?'x':'z';p[axis]=roads.reduce((best,v)=>Math.abs(v-p[axis])<Math.abs(best-p[axis])?v:best,roads[0]);}
     if(free(p))return p;
   }
   // Junctions are reserved by the city layout. Search closest valid junctions
   // instead of dropping a wave member into an inaccessible building footprint.
-  const fallback=[];for(const x of roads.length?roads:[0])for(const z of roads.length?roads:[-BOUNDS+5,BOUNDS-5]){
+  const fallback=[];for(const x of roads.length?roads:world.inRiver?[-extent,0,extent]:[0])for(const z of roads.length?roads:world.inRiver?[-extent,extent]:[-BOUNDS+5,BOUNDS-5]){
     const p={x,z};if(free(p))fallback.push(p);
   }
   fallback.sort((a,b)=>Math.abs(Math.hypot(a.x-player.x,a.z-player.z)-distance)-Math.abs(Math.hypot(b.x-player.x,b.z-player.z)-distance));
   return fallback[0]||null;
 }
-function spawnEnemy(forcedType=null,position=null,{waveNumber=null,encounterLeader=false,encounterEscort=false,arriving=false}={}){
+function spawnEnemy(forcedType=null,position=null,{waveNumber=null,encounterLeader=false,encounterEscort=false,arriving=false,patrol=null,rareWeapon=null}={}){
   const qualityCap=settings.quality==='low'?36:48;if(enemies.length>=qualityCap)return null;
   const type=forcedType||enemyTypeForWave(round),base=enemyStatsForWave(type,round);
   if(encounterLeader){base.hp=Math.round(base.hp*(1+Math.max(0,level-5)*.085));base.damage+=Math.floor(Math.max(0,level-5)*1.2);}
@@ -1661,8 +1740,16 @@ function spawnEnemy(forcedType=null,position=null,{waveNumber=null,encounterLead
     if(!pos)return null;
   }
   const mesh=['zombie','robot','brute'].includes(type)?makeEnemy(type):makeCityEnemy(type);installEnemyHead(mesh,type);scene.add(mesh);
+  let carriedWeapon;
+  if(rareWeapon&&mesh.userData.rightArm){
+    base.hp=Math.round(base.hp*1.45);base.damage=Math.round(base.damage*1.3);base.xp+=2;
+    carriedWeapon=createWeaponModel(rareWeapon);
+    carriedWeapon.scale.setScalar(.72);carriedWeapon.rotation.x=Math.PI*.5;carriedWeapon.position.set(0,-.58,.08);
+    mesh.userData.rightArm.add(carriedWeapon);
+  }
   const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,maxHp:base.hp,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(1.1,2.6),state:'walk',dead:false,level:enemyLevel(type,waveNumber||round),slowTime:0,slowFactor:1,stunTime:0,kickFlight:null,telegraph:null,attackDir:{x:0,z:1},waveNumber,navTimer:0,navDirection:{x:0,z:1}};
-  Object.assign(e,{encounterLeader,encounterEscort,fold:0,tankWanted:false,tankDelay:0,baseHeight:base.height});
+  if(carriedWeapon){for(const m of Array.isArray(carriedWeapon.userData.material)?carriedWeapon.userData.material:[carriedWeapon.userData.material])m.dispose();}
+  Object.assign(e,{encounterLeader,encounterEscort,fold:0,tankWanted:false,tankDelay:0,baseHeight:base.height,patrol,rareWeapon:carriedWeapon?rareWeapon:null});
   initEnemyReaction(e,spawnCounter);mesh.position.set(e.x,0,e.z);if(!arriving)enemies.push(e);spawnCounter++;
   if(arriving){audio.play('boss');return e;}
   if(roundTime>5)fragments.add(e.x,.1,e.z,e.miniBoss?18:4,e.palette==='metal'?[0x537b77,0xffac69]:[0x537b77,0x81958a],e.miniBoss?5:2,.09);
@@ -1761,11 +1848,28 @@ function updateEncounterShell(e,dt){
   clearEncounterShell(e);if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
   e.state='walk';e.timer=e.attackRecovery;
 }
+function moveEnemy(e,dx,dz,walls){
+  return world.inRiver?world.moveBody(e,dx,dz,{radius:e.radius,height:e.height}):moveCircle(e,dx,dz,walls,e.radius);
+}
 function updateEnemies(dt){
   function advanceBody(e){
     const oldY=e.y;
     const collisionMoved=advanceKickedEnemy(e,dt);
     const speed=Math.hypot(e.vx,e.vz);
+    if(world.inRiver){
+      if(!world.inRiver(e.x)&&e.y<.4)e.dryBank={x:e.x,z:e.z};
+      e.vy-=18*dt;
+      const motion=world.moveBody(e,collisionMoved?0:e.vx*dt,collisionMoved?0:e.vz*dt,{dy:e.vy*dt,radius:e.radius,height:e.height});
+      if(e.y<world.waterY){
+        const bank=e.dryBank??{x:e.x<5?-1:11,z:e.z};
+        Object.assign(e,bank,{y:0,vx:0,vy:0,vz:0,kickFlight:null});
+      }
+      e.supportY=world.supportHeight(e.x,e.z,e.radius,e.y+.004);
+      if(e.impact)e.impact.time+=dt;
+      const damp=Math.exp(-(e.kickFlight?1.8:8)*dt);e.vx*=damp;e.vz*=damp;
+      if(motion.landed&&e.impact)e.impact.bounced=true;
+      return;
+    }
     // Use one height threshold for both the wall and roof support, including
     // actors knocked off a roof. Crossing an edge must never eject a body
     // toward the far side of the building beneath it.
@@ -1821,13 +1925,19 @@ function updateEnemies(dt){
     e.facingYaw??=e.mesh.rotation.y;
     e.flash=Math.max(0,e.flash-dt);e.stagger=Math.max(0,e.stagger-dt);e.hurtTimer=Math.max(0,e.hurtTimer-dt);
     applyEnemyFlash(e.materials,e.flash/.16);
-    const dx=player.x-e.x,dz=player.z-e.z,dist=Math.hypot(dx,dz),dir=normalize(dx,dz);
+    const candidate=e.wildlifeRival;
+    const rival=candidate&&!candidate.dead&&e.attackKind!=='ranged'&&Math.hypot(candidate.x-e.x,candidate.z-e.z)<9?candidate:null;
+    const combatTarget=rival||player;
+    const dx=combatTarget.x-e.x,dz=combatTarget.z-e.z,dist=Math.hypot(dx,dz),dir=normalize(dx,dz);
     advanceBody(e);
     e.slowTime=Math.max(0,(e.slowTime||0)-dt);e.stunTime=Math.max(0,(e.stunTime||0)-dt);
     const movementScale=e.slowTime>0?(e.slowFactor??1):1;
     e.timer-=dt*movementScale;
     e.sightTimer=(e.sightTimer||0)-dt;
-    if(e.sightTimer<=0){e.sightTimer=.13;e.seesPlayer=dist<13&&(world.hasLineOfSight?.(e.x,e.z,player.x,player.z,.16)??true);}
+    if(e.sightTimer<=0){e.sightTimer=.13;e.seesPlayer=Math.hypot(player.x-e.x,player.z-e.z)<13&&(world.hasLineOfSight?.(e.x,e.z,player.x,player.z,.16)??true);}
+    const target=rival||(e.patrol?patrolIntent(e.patrol,e,player,e.seesPlayer):player);
+    const pursuing=target===combatTarget;
+    if(e.patrol&&e.state==='windup'&&!pursuing){const telegraph=interruptEnemyAttack(e,.4);if(telegraph)removeEffect(telegraph);}
     const afraid=updateEnemyThreat(e,player,dt,{airborne:!!leap,smashing:!!leap?.slam,canSee:e.seesPlayer,threatPower:.6+characterStats.weaponTier*.22})&&!e.encounterLeader;
     if(e.type==='siegeTransformer'){
       e.tankDelay=Math.max(0,e.tankDelay-dt);
@@ -1840,13 +1950,13 @@ function updateEnemies(dt){
     }
     if(afraid&&e.stagger<=0){
       const telegraph=interruptEnemyAttack(e,.45);if(telegraph)removeEffect(telegraph);
-      const speed=e.speed*1.3*movementScale,delta=moveCircle(e,e.fearMoveX*speed*dt,e.fearMoveZ*speed*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
+      const speed=e.speed*1.3*movementScale,delta=moveEnemy(e,e.fearMoveX*speed*dt,e.fearMoveZ*speed*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON));
       e.walk+=Math.hypot(delta.x,delta.z)*6;e.facingYaw=Math.atan2(dir.x,dir.z);
     }
     if(!afraid&&e.stagger<=0&&(e.y-e.supportY<.2||e.state==='lunge')){
       if(e.state==='walk'){
         e.navTimer-=dt;
-        if(e.navTimer<=0){e.navTimer=.18;e.navDirection=world.getChaseDirection?.(e.x,e.z,player.x,player.z,e.radius)||dir;}
+        if(e.navTimer<=0){e.navTimer=.18;e.navDirection=world.getChaseDirection?.(e.x,e.z,target.x,target.z,e.radius)||normalize(target.x-e.x,target.z-e.z);}
         let mx=e.navDirection.x,mz=e.navDirection.z;
         const separation={x:0,z:0};
         for(const other of enemies){if(other===e)continue;const ox=e.x-other.x,oz=e.z-other.z,dd=ox*ox+oz*oz;if(dd>.01&&dd<1.65){const repel=(1.3-Math.sqrt(dd))*.55;separation.x+=ox/Math.sqrt(dd)*repel;separation.z+=oz/Math.sqrt(dd)*repel;}}
@@ -1855,13 +1965,13 @@ function updateEnemies(dt){
         const targetY=player.y+.35;
         const tankShot=tank&&dist<23&&!firstHammerHit({x:e.x,y:e.y+2.8,z:e.z},{x:player.x,y:targetY,z:player.z},segmentObjects(e,player,.18),.18);
         const stop=transforming?.18:clearShot&&dist<6.5?0:1;
-        const speed=e.speed*(tank?2.65:1)*(e.type==='hollowMarshal'&&e.hp<e.maxHp*.45?1.22:1);
-        const delta=moveCircle(e,(mx*speed*movementScale*stop+separation.x)*dt,(mz*speed*movementScale*stop+separation.z)*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+1).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
+        const speed=e.speed*(pursuing?1:.72)*(tank?2.65:1)*(e.type==='hollowMarshal'&&e.hp<e.maxHp*.45?1.22:1);
+        const delta=moveEnemy(e,(mx*speed*movementScale*stop+separation.x)*dt,(mz*speed*movementScale*stop+separation.z)*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+1).filter(o=>o.h>e.y+SUPPORT_EPSILON));
         const traveled=Math.hypot(delta.x,delta.z);e.walk+=traveled*6;e.gait=traveled/Math.max(dt,.001);
-        const yaw=Math.atan2(tank&&!tankShot?mx:dir.x,tank&&!tankShot?mz:dir.z);
+        const faceRoute=!pursuing||tank&&!tankShot,yaw=Math.atan2(faceRoute?mx:dir.x,faceRoute?mz:dir.z);
         if(e.type==='siegeTransformer')e.facingYaw+=clamp(Math.atan2(Math.sin(yaw-e.facingYaw),Math.cos(yaw-e.facingYaw)),-dt*3.2,dt*3.2);
         else e.facingYaw=yaw;
-        if(e.timer<=0&&!transforming&&(tank?tankShot:((e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5)))){
+        if(pursuing&&e.timer<=0&&!transforming&&(tank?tankShot:((e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5)))){
           e.state='windup';e.timer=e.windup;e.attackDir=dir;
           e.attackPoint=tank?{x:player.x,y:targetY,z:player.z}:null;
           e.telegraph=makeTelegraph(tank?player.x:e.x,tank?player.z:e.z,tank?e.attackRadius*.63:e.attackKind==='slam'?e.attackRadius:e.attackKind==='ranged'?e.radius+.3:1.05,e.type==='hollowMarshal'?0xc775ed:e.attackKind==='ranged'?0xff8d62:0xef6863);
@@ -1874,13 +1984,18 @@ function updateEnemies(dt){
           if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
           if(e.attackKind==='ranged'){shoot(e);e.state='walk';e.timer=e.attackRecovery+Math.random()*.6;}
           else if(e.attackKind==='slam'){
-            pulse(e.x,e.z,e.attackRadius,0xfc7765,.42);fragments.add(e.x,.1,e.z,e.miniBoss?28:12,[0xc4bb97,0x75897d],e.miniBoss?8:5,.12);if(dist<e.attackRadius&&player.y<.8)hurtPlayer(e.damage,dir.x,dir.z,false);e.state='walk';e.timer=e.attackRecovery;
+            pulse(e.x,e.z,e.attackRadius,0xfc7765,.42);fragments.add(e.x,.1,e.z,e.miniBoss?28:12,[0xc4bb97,0x75897d],e.miniBoss?8:5,.12);
+            if(dist<e.attackRadius&&combatTarget.y<.8){if(rival)hitEnemy(rival,e.damage,dir,2,0);else hurtPlayer(e.damage,dir.x,dir.z,false);}
+            e.state='walk';e.timer=e.attackRecovery;
           }else{e.state='lunge';e.timer=.27;e.vy=3.4;}
         }
       }else if(e.state==='lunge'){
-        moveCircle(e,e.attackDir.x*e.lungeSpeed*movementScale*dt,e.attackDir.z*e.lungeSpeed*movementScale*dt,nearbyObjects(e.x,e.z,e.radius+e.lungeSpeed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
-        if(dist<e.radius+player.radius+.2)hurtPlayer(e.damage,e.attackDir.x,e.attackDir.z,true,{attacker:e,from:{x:e.x,y:player.y+1,z:e.z}});
-        if(e.timer<=0){e.state='walk';e.timer=e.attackRecovery;}
+        moveEnemy(e,e.attackDir.x*e.lungeSpeed*movementScale*dt,e.attackDir.z*e.lungeSpeed*movementScale*dt,nearbyObjects(e.x,e.z,e.radius+e.lungeSpeed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON));
+        if(dist<e.radius+combatTarget.radius+.2){
+          if(rival){if(e.wildlifeStrike!==rival){e.wildlifeStrike=rival;hitEnemy(rival,e.damage,dir,2,0);}}
+          else hurtPlayer(e.damage,e.attackDir.x,e.attackDir.z,true,{attacker:e,from:{x:e.x,y:player.y+1,z:e.z}});
+        }
+        if(e.timer<=0){e.state='walk';e.timer=e.attackRecovery;e.wildlifeStrike=null;}
       }
     }
     // Damage belongs to the telegraphed lunge, slam or projectile; merely
@@ -2040,15 +2155,37 @@ function resolveBeastPlayerCollision(){
 function defeatBoss(){
   if(!boss||boss.dead)return;boss.dead=true;if(boss.telegraph){removeEffect(boss.telegraph);boss.telegraph=null;}
   const x=boss.x,z=boss.z;fragments.add(x,3,z,100,[0xffc675,0xb8c7c6,0x566e7a,0xff874a],13,.45,true);pulse(x,z,10,0xffd7a0,1.2);
-  releaseBeast();score+=Math.round(2500*comboMultiplier(combatCombo));const reward=scaleComboReward(60,comboMultiplier(combatCombo),comboXpCarry);comboXpCarry=reward.carry;gainXP(reward.amount);for(let n=0;n<4;n++)spawnDrop(x+(n-1.5)*.4,z,'crystal');shake=.7;audio.play('victory');endGame(true);
+  releaseBeast();score+=Math.round(2500*comboMultiplier(combatCombo));const reward=scaleComboReward(60,comboMultiplier(combatCombo),comboXpCarry);comboXpCarry=reward.carry;gainXP(reward.amount);
+  if(!testRun&&world.id!==RAVINE_ID){
+    collectCharacterMaterial(character,'crystal',4);
+    campaignMap=RAVINE_ID;
+  }else for(let n=0;n<4;n++)spawnDrop(x+(n-1.5)*.4,z,'crystal');
+  shake=.7;audio.play('victory');endGame(true);
+}
+function announceRavine(){announce('ΦΑΡΑΓΓΙ ΤΗΣ ΖΟΥΓΚΛΑΣ','Πέρασε στην απέναντι όχθη και νίκησε τη φρουρά στο ξέφωτο.',3.8);}
+function continueAfterVictory(){
+  if(phase!=='victory')return;
+  if(!testRun&&campaignMap===RAVINE_ID&&world.id!==RAVINE_ID){
+    activeCity=null;
+    round=1;
+    $('toasts').replaceChildren();
+    resetWorld(true);
+    spawnCamps();
+    setPhase('playing');persistCharacter();audio.play('start');announceRavine();
+    return;
+  }
+  boss=null;$('bossHud').hidden=true;beginWave(round+1);setPhase('playing');audio.play('start');
+  announce('Η ΠΟΛΗ ΑΝΤΕΧΕΙ ΑΚΟΜΑ','Συνέχισε να εξελίσσεσαι. Η επόμενη ορδή πλησιάζει.',3.2);
 }
 function endGame(won){
   levelStorm?.reset();
   setPhase(won?'victory':'dead');if(!testRun){best=Math.max(best,score);save('ironfall.best',best);}persistCharacter();
   $('endTitle').textContent=won?'Ο ΚΟΛΟΣΣΟΣ ΕΠΕΣΕ.':'ΤΟ ΣΦΥΡΙ ΣΙΩΠΗΣΕ.';
-  $('endText').textContent=won?'Η ορδή δεν τελειώνει. Συνέχισε στην ίδια πόλη με τον εξοπλισμό και την εξέλιξή σου.':'Η εξέλιξη και ο εξοπλισμός σου σε περιμένουν. Πάρε μια ανάσα και ξαναχτύπα.';
+  const nextMap=won&&!testRun&&campaignMap===RAVINE_ID&&world.id!==RAVINE_ID;
+  $('endText').textContent=nextMap?'Το Φαράγγι της Ζούγκλας άνοιξε. Κρατάς τον εξοπλισμό σου και κερδίζεις τέσσερις κρυστάλλους.':won?'Η επόμενη ορδή πλησιάζει.':'Η εξέλιξη και ο εξοπλισμός σου σε περιμένουν. Πάρε μια ανάσα και ξαναχτύπα.';
   $('endStats').innerHTML='<div><strong>'+kills+'</strong><span>ΕΧΘΡΟΙ</span></div><div><strong>'+Math.floor(destructionPercent(world.objects))+'%</strong><span>ΚΑΤΑΣΤΡΟΦΗ</span></div><div><strong>'+relics+'</strong><span>ΚΕΙΜΗΛΙΑ</span></div><div><strong>'+score.toLocaleString('el-GR')+'</strong><span>ΣΚΟΡ · ΡΕΚΟΡ '+best.toLocaleString('el-GR')+'</span></div>';
-  $('continueButton').hidden=!won;$('retryButton').textContent=won?'ΝΕΑ ΔΙΑΔΡΟΜΗ':'ΞΑΝΑΠΑΙΞΕ';
+  $('continueButton').hidden=!won;$('continueButton').textContent=nextMap?'ΣΥΝΕΧΕΙΑ ΣΤΗ ΖΟΥΓΚΛΑ':'ΣΥΝΕΧΕΙΑ ΣΤΗΝ ΙΔΙΑ ΠΟΛΗ';
+  $('retryButton').hidden=nextMap;$('retryButton').textContent=won?'ΝΕΑ ΔΙΑΔΡΟΜΗ':'ΞΑΝΑΠΑΙΞΕ';
   if(!won)audio.play('death');
 }
 
@@ -2238,6 +2375,19 @@ function guardDimensions(){
   return {reach,radius,height:radius+.08,forward:.70,gripCenter};
 }
 const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
+function recoverRiverPlayer(){
+  if(!world.inRiver)return;
+  const y=mountRide?.active?mountRide.body.y:player.y;
+  if(!world.inRiver(player.x)){
+    if(y<.4&&Math.min(Math.abs(player.x-world.river.west),Math.abs(player.x-world.river.east))>.75)safeBank={x:player.x,z:player.z};
+    return;
+  }
+  if(y>=world.waterY)return;
+  pulse(player.x,player.z,1.05,0x9ad3c5,.4).position.y=world.waterY+.06;
+  if(mountRide?.active)mountRide.dismount(player,hero);
+  Object.assign(player,safeBank,{y:0,vx:0,vy:0,vz:0});
+  leap=null;dashTime=0;landingRecovery=0;
+}
 function updatePlayer(dt){
   for(const sequence of swingSequences)tickSwingSequence(sequence,dt,!!(swing||spin));
   player.invincible=Math.max(0,player.invincible-dt);player.hurtAgo+=dt;
@@ -2298,7 +2448,7 @@ function updatePlayer(dt){
     const motion=world.moveBody(player,travel.x*leapSpeed*dt,travel.z*leapSpeed*dt,{dy:l.vy*dt,grounded:false});
     if(motion.ceilingHit)l.vy=0;
     if(inAirDash){dashTime=Math.max(0,dashTime-dt);if(Math.random()<.5)fragments.add(player.x,player.y+.25,player.z,1,[0x7ac9bd],1,.055);}
-    if(motion.landed&&l.vy<=0)landLeap();
+    if(motion.landed&&l.vy<=0&&(!world.inRiver||player.y>=world.waterY))landLeap();
   }else{
     let dx,dz;
     if(dashTime>0){dashTime=Math.max(0,dashTime-dt);dx=dashDirection.x*19*characterStats.mobilityScale*dt;dz=dashDirection.z*19*characterStats.mobilityScale*dt;if(Math.random()<.7)fragments.add(player.x,.15,player.z,1,[0x7ac9bd,0xa6ddcd],1,.06);}
@@ -2313,6 +2463,7 @@ function updatePlayer(dt){
     player.vy=(player.vy||0)-20*dt;
     const actual=world.moveBody(player,dx,dz,{dy:player.vy*dt});player.walk+=Math.hypot(actual.x,actual.z)*6;
   }
+  recoverRiverPlayer();
   if(spinRecovery){spinRecovery.time+=dt;if(spinRecovery.time>=.12)spinRecovery=null;}
   if(attackBuffer){attackBuffer.life-=dt;if(attackBuffer.life<=0)attackBuffer=null;}
   if(throwFlight&&!punch&&!kick&&(chargeHeld||attackBuffer)&&attackCooldown<=0&&!guardHeld){
@@ -2580,16 +2731,25 @@ function poseHero(dt,moving=false){
 function updateDrops(dt){
   for(let i=drops.length-1;i>=0;i--){
     const d=drops[i];d.age+=dt;d.life-=dt;const distance=Math.hypot(player.x-d.x,player.z-d.z);
+    if(d.kind==='weapon'){
+      d.mesh.position.y=.33+Math.sin(visualTime*3)*.055;d.mesh.rotation.y+=dt*.65;
+      if(distance<1.25&&player.y<1.15&&d.age>.35){
+        const b=blueprint(d.weapon),reward=b.bossReward?awardBossWeapon(garage.armory,b.bossReward):awardFoundWeapon(garage.armory,d.weapon);
+        disposeDrop(d);drops.splice(i,1);
+        if(reward){persistCharacter();audio.play('pickup');toast('ΒΡΕΘΗΚΕ · '+reward.name,testRun?'Στο Workshop αυτής της δοκιμής.':'Διαθέσιμο στα Όπλα του Workshop (I).','#f2ca84');}
+      }
+      continue;
+    }
     const material=MATERIAL_TYPES.includes(d.kind),magnet=material?6:d.kind==='relic'?1.7:3.8;
     if(distance<magnet&&d.age>.4){const dir=normalize(player.x-d.x,player.z-d.z);const speed=d.kind==='relic'?4.5:9,travel=Math.min(distance,speed*dt);d.x+=dir.x*travel;d.z+=dir.z*travel;}
     d.mesh.position.set(d.x,.45+Math.sin(visualTime*3+d.phase)*.13,d.z);d.mesh.rotation.y+=dt*(d.kind==='relic'?.9:2.5);
     if(Math.hypot(player.x-d.x,player.z-d.z)<(material?1.3:.8)&&d.age>.45){
-      scene.remove(d.mesh);disposeModelGeometry(d.mesh);drops.splice(i,1);
+      disposeDrop(d);drops.splice(i,1);
       if(d.kind==='relic'){openUpgrade();}
       else if(d.kind==='heart'){const heal=Math.min(28,player.maxHp-player.hp);player.hp+=heal;floatText(player.x,2.2,player.z,'+'+Math.round(heal),'#a3e3af',20);audio.play('pickup',.2);}
       else if(MATERIAL_TYPES.includes(d.kind)){collectCharacterMaterial(character,d.kind,d.amount||1);floatText(player.x,2.15,player.z,'+'+(d.amount||1)+' '+MATERIAL_LABELS[d.kind],d.kind==='wood'?'#edc794':d.kind==='scrap'?'#c9dce6':'#9ceaea',13);audio.play('pickup',.18);renderCharacterProgress();persistCharacter();}
       else{score+=30;gainXP(2);audio.play('pickup',.15);fragments.add(player.x,.8,player.z,5,[0xffc87c,0xffebc4],3,.05);}
-    }else if(d.life<=0){scene.remove(d.mesh);disposeModelGeometry(d.mesh);drops.splice(i,1);}
+    }else if(d.life<=0){disposeDrop(d);drops.splice(i,1);}
   }
 }
 function updateObjects(dt){
@@ -2619,19 +2779,26 @@ function updateEffects(dt){
   if(announcementTimer>0){announcementTimer-=dt;if(announcementTimer<=0)$('announcement').hidden=true;}
 }
 let currentDistrict='';
+function wildlifeContact(actor,target,dir){
+  if(target===player){hurtPlayer(18,dir.x,dir.z,true,{from:{x:actor.x,y:actor.y+.65,z:actor.z}});return;}
+  target.wildlifeRival=actor;
+  hitEnemy(target,24,dir,3,0,null,{weapon:'wildlife',combo:false,fear:false,grounded:true});
+}
 function updateGame(dt){
   elapsed+=dt;roundTime+=dt;tickHitCombo(combatCombo,dt);if(comicState){comicState.life-=dt;if(comicState.life<=0)comicState=null;}
   updatePlayer(dt);hero.userData.armoryShieldModel?.userData.setGuard?.(guarding?1:0);if(phase!=='playing')return;
   armoryEffects.update(dt);
   updateMovingVehicles(dt);
   updateEnemies(dt);if(phase!=='playing')return;
+  world.civilians?.update(dt,player,enemies,boss,!!(swing||spin||leap?.diving));
+  world.wildlife?.update(dt,player,enemies,wildlifeContact);if(phase!=='playing')return;
   updateBoss(dt);if(phase!=='playing')return;
   mountWeapons?.update(dt,mountRide,{enemies:boss&&!boss.dead?[...enemies,boss]:enemies,world,camera,hero});if(phase!=='playing')return;
   updateDrops(dt);updateEncounter(dt);checkGoal();
   updateWaves(dt);
   checkpointTimer+=dt;if(checkpointTimer>=8){checkpointTimer=0;persistCharacter();}
   const district=world.regionAt?.(player.x,player.z);
-  if(district&&currentDistrict!==district.id){currentDistrict=district.id;$('districtName').textContent=district.name;if(roundTime>6)toast(district.name,district.weather==='snow'?'Ο άνεμος φέρνει χιόνι.':district.weather==='ash'?'Πρόσεχε τη λάβα και τις φωτιές.':'Η βροχή δεν σταματά την ορδή.','#82c7bb');}
+  if(district&&currentDistrict!==district.id){currentDistrict=district.id;$('districtName').textContent=district.name;if(roundTime>6)toast(district.name,district.weather==='snow'?'Ο άνεμος φέρνει χιόνι.':district.weather==='ash'?'Πρόσεχε τη λάβα και τις φωτιές.':district.weather==='rain'?'Η βροχή δεν σταματά την ορδή.':'','#82c7bb');}
 }
 function updateHUD(force=false){
   if(!world)return;
@@ -2644,10 +2811,16 @@ function updateHUD(force=false){
   const nextGate=BOSS_GATES[bossGate],target=nextGate?.threshold??GOAL;
   $('goalValue').textContent=Math.floor(percent)+'%';$('goalTarget').textContent=' / '+target+'%';$('goalFill').style.width=Math.min(100,percent/target*100)+'%';
   $('goalDestruction').textContent=Math.floor(destructionValue)+'%';$('goalEnemies').textContent=battleKills+'%';
+  $('goalDestructionLabel').textContent=world.river?'ΚΑΤΑΣΚΕΥΕΣ':'ΚΤΙΡΙΑ';
   const outstanding=encounter?encounter.escorts.size+encounter.gate.escort.length-encounter.sent:0;
   $('objectiveText').textContent=bossSpawned?boss&&!boss.dead?'ΝΙΚΗΣΕ ΤΟΝ ΚΟΛΟΣΣΟ':'Ο ΚΟΛΟΣΣΟΣ ΕΠΕΣΕ'
     :encounter?encounter.entry?'ΑΝΟΙΓΕΙ ΠΥΛΗ':encounter.leader.dead?'ΣΥΝΟΔΕΙΑ: '+outstanding:encounter.gate.name+' · ΣΥΝΟΔΕΙΑ: '+outstanding
     :target+'% · '+(nextGate?.name||'ΚΟΛΟΣΣΟΣ');
+  if(world.camp){
+    const guards=enemies.filter(e=>e.patrol).length;
+    $('goalValue').textContent=Math.floor(destructionValue)+'%';$('goalTarget').textContent='';$('goalFill').style.width=destructionValue+'%';
+    $('objectiveText').textContent=guards?'ΦΥΛΑΚΙΟ · '+guards+' ΦΡΟΥΡΟΙ':'ΤΟ ΦΥΛΑΚΙΟ ΚΑΘΑΡΙΣΤΗΚΕ';
+  }
   $('sectorValue').textContent=String(sector).padStart(2,'0');$('killsValue').textContent=kills;$('relicValue').textContent=relics;$('roundValue').textContent=String(round).padStart(2,'0');
   $('waveEnemiesValue').textContent=boss&&!boss.dead?String(enemies.length):String(Math.max(0,(wave?.total||0)-(wave?.defeated||0)))+' / '+(wave?.total||10);
   $('waveStatus').textContent=boss&&!boss.dead?'ΤΕΛΙΚΟΣ BOSS':wave?.state==='break'?'ΚΥΜΑ ΚΑΘΑΡΟ · ΕΠΟΜΕΝΟ ΣΕ '+Math.ceil(wave.breakTimer)+'s':enemies.filter(e=>e.waveNumber===wave?.number).length+' ΕΝΕΡΓΟΙ · '+Math.max(0,(wave?.total||0)-(wave?.spawned||0))+' ΕΡΧΟΝΤΑΙ';
@@ -2723,7 +2896,17 @@ function drawMinimap(){
   c.fillStyle='#0c181c';c.fillRect(0,0,w,h);
   c.save();c.translate(w/2,h/2);c.rotate(angle);c.scale(scale,scale);
   c.fillStyle='#24393d';c.fillRect(-extent,-extent,extent*2,extent*2);c.fillStyle='#14262c';
-  for(const road of world.layout?.roads||[0]){c.fillRect(road-3.4,-extent,6.8,extent*2);c.fillRect(-extent,road-3.4,extent*2,6.8);}
+  if(world.river){
+    const {west,east}=world.river;
+    c.fillStyle='#2e4634';c.fillRect(-extent,-extent,extent*2,extent*2);
+    c.strokeStyle='#927950';c.lineWidth=1.65;c.lineJoin='round';
+    for(const path of world.trails){c.beginPath();path.forEach(([x,z],i)=>i?c.lineTo(x,z):c.moveTo(x,z));c.stroke();}
+    c.fillStyle='#216968';c.fillRect(west,-extent,east-west,extent*2);
+    c.fillStyle='#b3925b';if(!world.bridge.dead)c.fillRect(west,world.bridgeZ-1,east-west,2);
+    c.fillRect(west,world.logZ-.65,east-west,1.3);
+    c.fillStyle='#b7b4a0';for(const x of [.65,3.5,6.5,9.35])c.fillRect(x-.38,world.stonesZ-.45,.76,.9);
+    for(const landmark of world.landmarks)c.fillRect(landmark.x-1,landmark.z-1,2,2);
+  }else for(const road of world.layout?.roads||[0]){c.fillRect(road-3.4,-extent,6.8,extent*2);c.fillRect(-extent,road-3.4,extent*2,6.8);}
   c.strokeStyle='#53696c';c.lineWidth=1/scale;c.strokeRect(-extent,-extent,extent*2,extent*2);
   c.fillStyle='#34484b';
   for(const o of world.objects)if(o.isBuilding&&!o.dead)c.fillRect(o.x-o.w/2,o.z-o.d/2,o.w,o.d);
@@ -2843,11 +3026,26 @@ function drawFX(){
   updateComboDisplay();
   if(phase==='menu')return;
   drawAim();
+  if(world.wildlife)for(const a of world.wildlife.boars){
+    if(a.mode!=='warn'||Math.hypot(a.x-player.x,a.z-player.z)>18)continue;
+    const dx=Math.sin(a.facing),dz=Math.cos(a.facing),y=a.y+.035;
+    const tip=screenPoint(a.x+dx*1.75,y,a.z+dz*1.75);
+    const left=screenPoint(a.x+dx*.8+dz*.41,y,a.z+dz*.8-dx*.41);
+    const right=screenPoint(a.x+dx*.8-dz*.41,y,a.z+dz*.8+dx*.41);
+    if(!tip.inside)continue;
+    c.save();c.globalAlpha=.8;c.fillStyle='#ffbe6e';c.strokeStyle='#542d1c';c.lineWidth=1.5;
+    c.beginPath();c.moveTo(tip.x,tip.y);c.lineTo(left.x,left.y);c.lineTo(right.x,right.y);c.closePath();c.fill();c.stroke();c.restore();
+  }
   if(throwFlight?.grounded){const p=screenPoint(throwFlight.x,throwFlight.groundY+1.2,throwFlight.z);if(p.inside){c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#10201e';c.strokeText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);c.fillStyle='#ffe2a3';c.fillText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);}}
+  for(const d of drops)if(d.kind==='weapon'&&Math.hypot(d.x-player.x,d.z-player.z)<15){
+    const p=screenPoint(d.x,1.55,d.z);if(!p.inside)continue;
+    c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#172219';c.fillStyle='#ffe2a3';
+    const label=blueprint(d.weapon).name;c.strokeText(label,p.x,p.y);c.fillText(label,p.x,p.y);
+  }
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
-    const branded=armoryEffects.branded.has(e),label='LV '+e.level+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
+    const branded=armoryEffects.branded.has(e),label='LV '+e.level+(e.rareWeapon?' · ΣΠΑΝΙΟΣ':'')+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
     if(rubbleHiddenEnemies.has(e)&&!e.dead)drawRubbleCue(e.x,e.y+e.height*.58,e.z,'#ff8d83');
-    drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':enemyHealthColor(e.level),1,label);
+    drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':e.rareWeapon?'#ffd480':enemyHealthColor(e.level),1,label);
   }
   if(heroHiddenByRubble&&phase==='playing')drawRubbleCue(player.x,player.y+1.15,player.z,'#83f4e7',true);
 
@@ -3096,7 +3294,7 @@ function initInput(){
   $('startingLevel').onchange=preview;preview();$('testStartButton').onclick=()=>startGame(Number($('startingLevel').value),{test:true,city:getLevelCity($('startingLevel').value)});$('forgeButton').onclick=forgeWeapon;
   window.addEventListener('pagehide',persistCharacter);
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
-  $('continueButton').onclick=()=>{boss=null;$('bossHud').hidden=true;beginWave(round+1);setPhase('playing');audio.play('start');announce('Η ΠΟΛΗ ΑΝΤΕΧΕΙ ΑΚΟΜΑ','Συνέχισε να εξελίσσεσαι. Η επόμενη ορδή πλησιάζει.',3.2);};
+  $('continueButton').onclick=continueAfterVictory;
   $('soundButton').onclick=toggleSound;if($('muteButton'))$('muteButton').onclick=toggleSound;if($('menuSoundButton'))$('menuSoundButton').onclick=toggleSound;
   if($('closeFatalButton'))$('closeFatalButton').onclick=()=>{$('fatalError').hidden=true;setPhase('menu');};
   $('upgradesToggle').onclick=()=>toggleUpgradePanel();$('upgradeCloseButton').onclick=()=>toggleUpgradePanel(false);
@@ -3364,6 +3562,10 @@ init().catch(error=>{
 
 window.render_game_to_text=()=>JSON.stringify({
   coordinates:'Metres; X/Z ground plane, Y height',phase,
+  map:world?.id??'city',
+  ravine:world?.river?{bounds:world.bounds,region:world.regionAt(player.x,player.z).id,bridgeIntact:!world.bridge.dead,remainingGuards:enemies.filter(e=>e.patrol).length}:undefined,
+  wildlife:world?.wildlife?.actors.filter(a=>Math.hypot(a.x-player.x,a.z-player.z)<35).map(a=>({kind:a.kind,x:a.x,y:a.y,z:a.z,mode:a.mode,hp:a.kind==='boar'?a.hp:undefined})),
+  civilians:world?.civilians?.actors.filter(a=>a.rig.root.visible).map(a=>({id:a.id,kind:a.rig.name,x:a.x,y:a.y,z:a.z,mode:a.mode})),
   player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),
   armory:{weapon:hero?.userData.armoryWeaponId||'classic',shield:hero?.userData.armoryShieldId||'classic',weaponCore:armoryWeaponStats?.core||'none',shieldCore:armoryShieldStats?.core||'none',trophies:Object.keys(garage.armory.trophies),signature:armoryWeaponStats?.signature||null,branded:armoryEffects.branded.size,burning:armoryEffects.burning.size},
   progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL,next:BOSS_GATES[bossGate]?.threshold??GOAL},
@@ -3371,6 +3573,7 @@ window.render_game_to_text=()=>JSON.stringify({
     x:encounter.entry?.location.x??encounter.leader.x,z:encounter.entry?.location.z??encounter.leader.z,
     hp:encounter.leader.hp,escorts:encounter.escorts.size,pending:encounter.gate.escort.length-encounter.sent}:null,
   boss:boss&&!boss.dead?{x:boss.x,y:boss.y,z:boss.z,hp:boss.hp,maxHp:boss.maxHp,height:boss.h,armor:beastDamageScale(boss.state),entrance:boss.state==='enter'?boss.entry?.stage:null,state:boss.state,warning:beastCombat?.attack?{kind:beastCombat.attack.kind,remaining:Math.max(0,beastCombat.attack.windup-beastCombat.attack.time)}:null}:null,
-  enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp})),
+  enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp,patrol:e.patrol?(e.patrol.alert?'alert':'guarding'):undefined,rareWeapon:e.rareWeapon||undefined})),
+  weapons:drops.filter(d=>d.kind==='weapon').map(d=>({id:d.weapon,x:d.x,z:d.z})),
   projectiles:beastCombat?.projectiles.map(p=>({kind:p.kind,x:p.position.x,y:p.position.y,z:p.position.z,target:{x:p.to.x,z:p.to.z}}))||[],
 });

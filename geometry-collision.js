@@ -258,7 +258,7 @@ function sweepPart(part,start,direction,radius,maximum) {
   return found?best:null;
 }
 
-export function createGeometryCollision({nearObjects,bounds=117}={}) {
+export function createGeometryCollision({nearObjects,bounds=117,groundHeight=()=>0,lowestGround=0}={}) {
   if(typeof nearObjects!=='function')throw new TypeError('Geometry collision requires a nearby-object query');
   let meshes=new WeakMap(),objectMeshes=new WeakMap(),fallbacks=new WeakMap();
   const diagnostics={cacheBuilds:0,partBuilds:0,queries:0,partsTested:0,triangleTests:0,gridCells:0};
@@ -367,8 +367,8 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
   }
 
   function support(x,z,radius=.44,ceiling=Infinity) {
-    let result={height:0,object:null,normal:{x:0,y:1,z:0}};
-    visitParts(x,z,radius,-EPS,ceiling+EPS,(part,object)=>{
+    let result={height:groundHeight(x,z),object:null,normal:{x:0,y:1,z:0}};
+    visitParts(x,z,radius,lowestGround-EPS,ceiling+EPS,(part,object)=>{
       for(const tri of part.worldTriangles) {
         if(tri.normal.y<WALKABLE_Y) {
           // The thin fascia of a pitched roof can reach the foot circle a
@@ -436,7 +436,7 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
 
   function moveBody(entity,dx,dz,{dy=0,radius=entity.radius||.44,height=BODY_HEIGHT,grounded,stepHeight=STEP_HEIGHT}={}) {
     if(![dx,dz,dy,entity.x,entity.z,entity.y??0].every(Number.isFinite))return {x:0,z:0,y:0,grounded:false,landed:false,ceilingHit:false};
-    entity.y=Math.max(0,entity.y||0);
+    entity.y=Math.max(lowestGround,entity.y||0);
     const start={x:entity.x,z:entity.z,y:entity.y};
     const initialSupport=supportHeight(entity.x,entity.z,radius,entity.y+EPS);
     let onGround=grounded!==false&&dy<=0&&Math.abs(entity.y-initialSupport)<.003;

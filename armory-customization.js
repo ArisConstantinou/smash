@@ -1,4 +1,4 @@
-import {createWeaponModel,createShieldModel} from './armory-models.js?v=20261109-trophies1';import {resolveArmory,armoryAvailable} from './armory-rules.js?v=20261109-trophies1';
+import {createWeaponModel,createShieldModel} from './armory-models.js?v=20261109-trophies1';import {resolveArmory,armoryAvailable} from './armory-rules.js?v=20261109-loot1';
 const records=new WeakMap();
 /** Replace only authored appearance-slot children. Original cached meshes and
  * all grip/IK/pivot/effect-helper nodes remain owned by makeWarrior. */

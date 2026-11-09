@@ -1,3 +1,4 @@
+import {RARE_WEAPONS} from './expedition-enemies.js?v=1';
 // Stable blueprint IDs match the approved numbered reference. Shapes unlock
 // with the existing forged tier; choosing an unlocked shape is free. Functional
 // components retain their own purchases/ranks for each individual item.
@@ -48,7 +49,11 @@ export const blueprint=id=>all.find(b=>b.id===id);
 export const armoryCategory=id=>weaponIds.includes(id)?'weapons':'shields';
 export const armoryParts=id=>weaponIds.includes(id)?WEAPON_PARTS:SHIELD_PARTS;
 export function armoryAvailable(id,tier,armory){
- const b=blueprint(id);return !!b&&(b.bossReward?armory?.trophies?.[b.bossReward]===true:Number.isFinite(tier)&&tier>=b.tier);
+ const b=blueprint(id);return !!b&&(b.bossReward?armory?.trophies?.[b.bossReward]===true:armory?.discoveries?.[id]===true||Number.isFinite(tier)&&tier>=b.tier);
+}
+export function awardFoundWeapon(armory,id){
+ if(!RARE_WEAPONS.includes(id)||armory.discoveries?.[id]===true)return null;
+ (armory.discoveries??={})[id]=true;return blueprint(id);
 }
 export function awardBossWeapon(armory,boss){
  const b=WEAPON_BLUEPRINTS.find(b=>b.bossReward===boss);if(!b||armory.trophies?.[boss]===true)return null;
@@ -57,7 +62,7 @@ export function awardBossWeapon(armory,boss){
 const freshParts=id=>Object.fromEntries(armoryParts(id).map(p=>{const initial=p.id==='core'&&['w08','w12','s16'].includes(id)?p.options.find(o=>o.id==='arc'):p.options[0];return [p.id,{selected:initial.id,owned:Object.fromEntries((p.cosmetic?p.options:p.id==='core'?[...new Set([p.options[0],initial])]:[initial]).map(o=>[o.id,1]))}];}));
 export function createArmory(){return {version:2,weapon:'auto',shield:'auto',trophies:{},items:Object.fromEntries(all.map(b=>[b.id,{parts:freshParts(b.id)}]))};}
 const validPaint=value=>typeof value==='string'&&/^#[0-9a-f]{6}$/i.test(value);
-export function restoreArmory(saved){const a=createArmory();if(!saved||typeof saved!=='object')return a;for(const boss of Object.keys(BOSS_WEAPON_INFO))if(saved.trophies?.[boss]===true)awardBossWeapon(a,boss);for(const field of ['weapon','shield']){const ids=field==='weapon'?weaponIds:SHIELD_BLUEPRINTS.map(b=>b.id);if(saved[field]==='auto'||ids.includes(saved[field])&&(!blueprint(saved[field]).bossReward||armoryAvailable(saved[field],0,a)))a[field]=saved[field];}for(const b of all)for(const part of armoryParts(b.id)){const source=saved.items?.[b.id]?.parts?.[part.id],entry=a.items[b.id].parts[part.id];if(!source)continue;for(const o of part.options){const rank=Number(source.owned?.[o.id]);if(Number.isFinite(rank)&&rank>=1)entry.owned[o.id]=part.cosmetic?1:Math.min(5,Math.floor(rank));}if(part.options.some(o=>o.id===source.selected)&&entry.owned[source.selected])entry.selected=source.selected;if(part.cosmetic&&validPaint(source.color))entry.color=source.color.toLowerCase();if(!part.cosmetic){for(const {id} of part.options){const color=source.colors?.[id];if(id!=='none'&&validPaint(color))(entry.colors??={})[id]=color.toLowerCase();}}}return a;}
+export function restoreArmory(saved){const a=createArmory();if(!saved||typeof saved!=='object')return a;for(const boss of Object.keys(BOSS_WEAPON_INFO))if(saved.trophies?.[boss]===true)awardBossWeapon(a,boss);for(const id of RARE_WEAPONS)if(saved.discoveries?.[id]===true)awardFoundWeapon(a,id);for(const field of ['weapon','shield']){const ids=field==='weapon'?weaponIds:SHIELD_BLUEPRINTS.map(b=>b.id);if(saved[field]==='auto'||ids.includes(saved[field])&&(!blueprint(saved[field]).bossReward||armoryAvailable(saved[field],0,a)))a[field]=saved[field];}for(const b of all)for(const part of armoryParts(b.id)){const source=saved.items?.[b.id]?.parts?.[part.id],entry=a.items[b.id].parts[part.id];if(!source)continue;for(const o of part.options){const rank=Number(source.owned?.[o.id]);if(Number.isFinite(rank)&&rank>=1)entry.owned[o.id]=part.cosmetic?1:Math.min(5,Math.floor(rank));}if(part.options.some(o=>o.id===source.selected)&&entry.owned[source.selected])entry.selected=source.selected;if(part.cosmetic&&validPaint(source.color))entry.color=source.color.toLowerCase();if(!part.cosmetic){for(const {id} of part.options){const color=source.colors?.[id];if(id!=='none'&&validPaint(color))(entry.colors??={})[id]=color.toLowerCase();}}}return a;}
 export function resolveArmory(a,tier=0){tier=Math.max(0,Math.min(4,Math.floor(Number(tier)||0)));return {weapon:a.weapon!=='auto'&&armoryAvailable(a.weapon,tier,a)?a.weapon:defaults[tier],shield:a.shield!=='auto'&&armoryAvailable(a.shield,tier,a)?a.shield:'s14'};}
 const canUse=(a,id,tier,test)=>!!blueprint(id)&&(test&&!blueprint(id).bossReward||armoryAvailable(id,tier,a));
 export function equipBlueprint(a,id,{tier=0,test=false}={}){if(!canUse(a,id,tier,test))return false;a[weaponIds.includes(id)?'weapon':'shield']=id;return true;}
