@@ -353,6 +353,7 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
  .workshop-heading{padding-block:5px}
  .workshop-heading h2{font-size:24px}
  #workshopSaveState{max-width:none;white-space:nowrap}
+ #mountWorkshop[data-armory-pane] #workshopPartName{display:none}
  #mountWorkshop[data-armory-pane] #workshopUpgradeInfo{display:inline-flex;min-height:32px;margin:2px 0}
  #mountWorkshop[data-armory-pane]:not([data-armory-info]) :is(#workshopDescription,#workshopUpgradePreview,.workshop-stats p){display:none}
 }
