@@ -839,7 +839,7 @@ body:not([data-state="playing"]) #combatDock #attackButton.air-smash-ready .acti
 .upgrades-toggle.forge-ready{border-color:#b5ebc8;box-shadow:0 0 12px #8bf8bf44}.upgrades-toggle.forge-ready>svg{color:#c1f4cb}
 body[data-touch-controls="true"] .hero-status .hud-brand{display:none}body[data-touch-controls="true"] .character-strip{height:13px;gap:5px;margin:0 0 3px}body[data-touch-controls="true"] .character-strip strong{font-size:11px}body[data-touch-controls="true"] .character-strip span{font-size:8px}body[data-touch-controls="true"] .hero-status .character-xp{height:3px}body[data-touch-controls="true"] .health-heading{margin:3px 0}
 body[data-touch-controls="true"] .forge-card{padding:10px}body[data-touch-controls="true"] .equipped-heading strong{font-size:11px}body[data-touch-controls="true"] .equipped-heading span{font-size:9px}
-.hero-content{max-height:calc(100dvh - 170px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#536d5a transparent;padding-right:12px;touch-action:pan-y}.hero-content .landing-controls{margin-top:16px}.hero-content .hero-description{margin-bottom:16px}
+.hero-content{max-height:calc(100dvh - 170px);overflow-y:auto;padding-right:12px;touch-action:pan-y}.hero-content .landing-controls{margin-top:16px}.hero-content .hero-description{margin-bottom:16px}
 @media(max-width:800px){.hero-content{max-height:calc(100dvh - 130px)}.resume-character,.character-testing{width:100%}.character-testing{padding:10px}.hero-content .combat-hints,.hero-content .direction-note,.hero-content .air-hint{display:none}}
 @media(orientation:landscape) and (max-height:500px){.hero-content{max-height:calc(100dvh - 65px);padding-bottom:14px}.hero-content .hero-rule,.hero-content .hero-description,.hero-content .landing-controls,.hero-content .touch-intro,.hero-content .touch-intro-note{display:none}.hero-content h1{margin-bottom:10px}.character-testing{margin-top:9px}.resume-character{margin-top:8px}.character-testing summary span{display:inline;margin-left:5px}}
 
@@ -1307,3 +1307,7 @@ html[data-page-scaled] #gameViewport{
  --app-height:var(--game-viewport-height);
  transform-origin:top left;transform:var(--game-viewport-transform);
 }
+
+/* Scrollable panels retain their input and omit the browser scrollbar chrome. */
+*{scrollbar-width:none}
+*::-webkit-scrollbar{display:none}

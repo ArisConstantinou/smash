@@ -82,14 +82,64 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
 #workshopSaveState{text-align:right}
 .workshop-footer:has(#workshopTestControls[hidden]):has(#workshopFeedback:empty){display:none}
 .workshop-content{flex:1;display:grid;grid-template-columns:176px minmax(0,1fr) 356px;gap:12px;padding:4px 18px 12px;overflow:hidden;min-height:0}
-.workshop-parts{display:flex;flex-direction:column;gap:4px;overflow-y:auto;min-height:0;padding-right:4px;scrollbar-width:thin;scrollbar-color:#ac9155 #102b34}
+.workshop-parts{display:flex;flex-direction:column;gap:4px;overflow-y:auto;min-height:0;padding-right:4px}
 .workshop-parts button{flex-shrink:0;justify-content:flex-start;min-height:55px;padding:2px 8px;font-size:12px;text-align:left;gap:5px}.workshop-parts .part-art{width:48px}.workshop-parts .card-label{min-width:0;overflow-wrap:anywhere}
+.workshop-visuals{display:flex;flex-direction:column;min-width:0;min-height:0;gap:6px;padding-right:8px;border-right:1px solid #70909577}
+.workshop-visuals h3,.workshop-visuals h4{margin:0;color:#efd49a;font-size:13px}
+.workshop-catalog{display:grid;align-content:start;gap:4px;min-height:44px;flex:1;overflow:auto}
+.workshop-catalog button,.workshop-finishes button{min-width:0;min-height:44px;gap:4px;padding:3px;font-size:12px}
+.workshop-finishes .card-label{overflow-wrap:anywhere}
+.workshop-finishes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.workshop-finishes button{flex-direction:column;text-align:center}
+.workshop-swatch{width:22px;height:13px;border:1px solid #ecdaa4;border-radius:2px}
+.workshop-details #workshopPerformanceTitle{font-size:14px;margin-bottom:4px}
+.workshop-details #workshopPerformanceTitle:not([hidden])~#workshopPartName{font-size:14px;margin-top:6px}
+.workshop-details .workshop-parts{position:static;flex-direction:row;overflow:auto;padding:4px 0;touch-action:pan-x pan-y}
+.workshop-details .workshop-parts button{flex:0 0 84px;min-height:52px;flex-direction:column;justify-content:center;padding:3px;text-align:center;gap:0}
+.workshop-details .workshop-parts .part-art{width:36px}
+.workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:10px}
+.workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-stats p{grid-column:1/-1}
+.workshop-catalog,.workshop-visuals{touch-action:pan-x pan-y}
+.workshop-catalog{grid-auto-rows:max-content}
+.mount-workshop button{
+ background-image:linear-gradient(155deg,#244d5a,#112f3b 68%);border:1px solid #678790;
+ border-radius:5px;text-shadow:none
+}
+.mount-workshop button[aria-pressed=true],#workshopUpgrade:not(:disabled),#workshopSave:not(:disabled){
+ border-color:#edcc85;background-image:linear-gradient(155deg,#57543a,#17343f 76%);
+ box-shadow:inset 0 0 0 1px #e5c77b;color:#fff0c5
+}
+.workshop-tabs button{flex:0 1 132px;font-size:13px;flex-direction:column;gap:2px}
+.workshop-tabs button>.part-art,.workshop-tabs button>.tool-art{width:32px;height:32px}
+.workshop-tabs button .card-label{min-width:0;font:700 12px/1.15 Arial,sans-serif}
+.workshop-catalog button{
+ position:relative;display:flex;flex-direction:column;justify-content:flex-start;
+ min-height:92px;padding:4px;font:700 12px/1.2 Arial,sans-serif;text-align:center
+}
+.workshop-catalog .part-art{width:56px;height:56px;aspect-ratio:1}
+.workshop-catalog .card-label{
+ display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:normal
+}
+.workshop-catalog button[data-locked=true] .part-art{opacity:.55}
+.workshop-catalog button[data-equipped=true]::after{
+ content:'✓';position:absolute;top:4px;right:6px;color:#a7efce
+}
+.workshop-finishes button{line-height:1.2}
+.workshop-sections,#workshopUpgradeInfo{display:none}
+.workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-options{
+ grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(70px,1fr);overflow-x:auto
+}
+.workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-options button{min-height:75px;padding:3px}
+.workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-options .part-art{width:48px}
+.workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-options :is(.card-label,small){
+ max-width:100%;font:700 12px/1.15 Arial,sans-serif;overflow-wrap:anywhere
+}
 .workshop-turntable{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid #70909577;border-radius:6px;background:radial-gradient(ellipse at 50% 55%,#3c697b77,transparent 65%),repeating-linear-gradient(0deg,transparent 0 47px,#7395950a 48px),#0d2a36;overflow:hidden}
 #mountPreview{display:block;flex:1;width:100%;height:0;min-height:130px;touch-action:none;cursor:grab}#mountPreview:active{cursor:grabbing}
 .workshop-preview-tools{display:flex;flex-shrink:0;align-items:center;gap:4px;padding:5px 7px;border-top:1px solid #708d8144}.workshop-preview-tools span:not(.tool-art){font-size:12px;text-align:center;flex:1;color:#b4d5cf}.workshop-preview-tools button{padding:4px 7px;min-height:36px;font-size:12px}.workshop-preview-tools .tool-art{width:24px;height:24px}
 .workshop-families{display:grid;flex-shrink:0;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:3px 7px}.workshop-families button{flex-direction:column;gap:0;font-size:12px;padding:3px 5px}.workshop-families .part-art{width:100%;height:70px;aspect-ratio:auto}.workshop-families .part-art img{height:800%;object-fit:fill}.workshop-families .card-label{line-height:16px;min-height:16px}
 #workshopAuto{flex-shrink:0;margin:4px 7px 7px;min-height:30px;font-size:12px;padding:4px 7px}#workshopAuto .tool-art{width:21px;height:21px}
-.workshop-details{min-width:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#ad955b #102b34;padding:0 5px 5px 0}.workshop-details h3{margin:0 0 6px;font-size:22px;color:#efd49a;letter-spacing:1px;border-bottom:1px solid #7c999077;padding:4px 8px;background:#183d4e}
+.workshop-details{min-width:0;overflow-y:auto;padding:0 5px 5px 0}.workshop-details h3{margin:0 0 6px;font-size:22px;color:#efd49a;letter-spacing:1px;border-bottom:1px solid #7c999077;padding:4px 8px;background:#183d4e}
 .workshop-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.workshop-options button{position:relative;flex-direction:column;gap:0;min-height:116px;padding:6px;font-size:12px}.workshop-options .part-art{width:80px}.workshop-options small{font-size:12px;color:#b8ccc5;line-height:18px}.workshop-options button[data-equipped=true]::after{content:'✓';position:absolute;right:9px;top:5px;color:#a7efce;font-size:17px}
 #workshopDescription{font-size:14px;line-height:1.4;margin:8px 2px;color:#b9d0ce}.workshop-stats{border-block:1px solid #af9b6655;padding:4px 3px}.workshop-stats>div{display:flex;justify-content:space-between;gap:6px;font-size:12px;padding:3px 0}.workshop-stats strong{font-size:14px;color:#f1d79a;text-align:right}.workshop-stats p{margin:5px 0;font-size:12px;color:#a6dce1;overflow-wrap:anywhere}
 .workshop-cost{display:flex;gap:4px;justify-content:space-between;font-size:12px;color:#ecd49e;margin:7px 0}.workshop-cost>span{display:flex;flex:1;flex-direction:column;align-items:center;text-align:center;background:#102e3980;padding:5px 2px}.workshop-cost .tool-art{width:34px;height:32px}
@@ -97,7 +147,7 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
 .workshop-footer{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:6px 18px;border-top:1px solid #b6a26f77;background:#0c2632}.workshop-footer p{margin:0;font-size:14px;color:#c6dfce}#workshopTestControls{display:flex;align-items:center;gap:6px;flex-shrink:0}#workshopTestControls label{font-size:12px}#workshopTestControls button{font-size:12px;min-height:36px;padding:4px 9px}#workshopTestControls .tool-art{width:22px;height:22px}#workshopTestLevel{min-width:76px;background:#173944;min-height:36px;padding:5px;color:#e9d498}
 @media(max-width:1100px){.workshop-content{grid-template-columns:142px minmax(0,1fr) 300px;gap:8px;padding-inline:10px}.workshop-parts button{padding:2px 6px}.workshop-parts .part-art{width:38px}.workshop-heading{padding-inline:12px}.workshop-heading h2{font-size:27px}#workshopSaveState{max-width:115px}}
 /* Keep thumbnail pixels square: never stretch the chassis atlas into a banner. */
-.workshop-families .part-art{width:82px;height:82px;aspect-ratio:1}.workshop-tabs button>.part-art{width:42px;height:42px}.mount-hud-art{width:64px;height:64px}
+.workshop-families .part-art{width:82px;height:82px;aspect-ratio:1}.mount-hud-art{width:64px;height:64px}
 #mountToggleLabel,#mountWorkshopButton>span:not(.dock-touch-label){display:block;font:700 12px/1.1 Arial,sans-serif;letter-spacing:-.3px}
 .mount-hud-art img{width:100%;height:100%;left:0;top:0;object-fit:contain}
 .workshop-parts .card-label{overflow-wrap:normal;font:700 12px/1.3 Arial,sans-serif;letter-spacing:-.2px}
@@ -122,8 +172,8 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
  .workshop-heading #workshopClose>span:not(.tool-art){display:none}
  .workshop-heading .tool-art{width:21px;height:21px}
  .workshop-tabs{min-height:44px;padding:4px var(--workshop-gutter) 0;gap:4px}
- .workshop-tabs button{min-height:44px;padding:2px;gap:2px;font-size:12px;line-height:14px}
- .workshop-tabs button>.part-art,.workshop-tabs button>.tool-art{width:24px;height:24px}
+ .workshop-tabs button{flex:1 1 0;min-height:48px;padding:2px;gap:2px;font-size:12px;line-height:14px}
+ .workshop-tabs button>.part-art,.workshop-tabs button>.tool-art{width:28px;height:28px}
  .workshop-context{margin:4px var(--workshop-gutter)}
  #workshopSaveState{max-width:12em}
  .workshop-content{gap:8px;padding:0 var(--workshop-gutter) 6px}
@@ -184,6 +234,10 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
   grid-template-rows:var(--workshop-preview-height) auto;
  }
  .workshop-details{padding:0;overflow:visible}
+ .workshop-visuals{border-right:0;border-bottom:1px solid #70909577;padding:0 0 6px}
+ .workshop-catalog{grid-auto-flow:column;grid-auto-columns:132px;overflow-x:auto;scroll-snap-type:x proximity}
+ .workshop-catalog button{scroll-snap-align:start}
+ .workshop-finishes{grid-template-columns:repeat(4,minmax(0,1fr))}
  .workshop-footer{flex-direction:column;align-items:stretch}
  #workshopTestControls{justify-content:space-between}
  #workshopTestControls label{max-width:65px}
@@ -199,4 +253,126 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
  .workshop-turntable{overflow:auto}
  #mountPreview{min-height:100px}
  .workshop-parts .card-label{overflow-wrap:anywhere}
+}
+
+@media(max-width:700px),(orientation:landscape) and (max-height:550px){
+ .workshop-sections{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:0 var(--workshop-gutter) 5px}
+ .workshop-sections button{min-width:0;min-height:36px;padding:3px;font-size:12px}
+ #mountWorkshop[data-armory-pane] .workshop-content{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);overflow:hidden}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-content{grid-template-rows:auto minmax(0,1fr)}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-details,
+ #mountWorkshop[data-armory-pane="parts"] :is(.workshop-visuals,.workshop-turntable,#workshopStats,#workshopPerformanceTitle),
+ #mountWorkshop[data-armory-pane="stats"] :is(.workshop-visuals,.workshop-turntable),
+ #mountWorkshop[data-armory-pane="stats"] .workshop-details>:not(#workshopPerformanceTitle,#workshopStats){display:none}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options{
+  grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(76px,1fr);overflow-x:auto
+ }
+ #mountWorkshop[data-armory-pane="parts"] .workshop-details{overflow:auto}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options button{min-height:72px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-parts .part-art{width:28px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-cost .tool-art{width:24px;height:22px}
+ #mountWorkshop[data-armory-pane="parts"] #workshopDescription{margin-block:4px}
+ #mountWorkshop[data-armory-pane] .workshop-visuals{border:0;padding:0}
+ #mountWorkshop[data-armory-pane] .workshop-visuals h3{display:none}
+ #mountWorkshop[data-armory-pane] .workshop-catalog{
+  flex:none;grid-template-rows:auto;grid-auto-flow:column;grid-auto-columns:124px;
+  overflow-x:auto;scroll-snap-type:x proximity
+ }
+ #mountWorkshop[data-armory-pane] .workshop-catalog button{min-height:92px}
+ #mountWorkshop[data-armory-pane] .workshop-finishes{grid-template-columns:repeat(4,minmax(0,1fr))}
+ #mountWorkshop[data-armory-pane] .workshop-finishes button{min-height:38px;font-size:11px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-turntable{grid-template-rows:minmax(80px,1fr) auto}
+ #mountWorkshop[data-armory-pane="visual"] #mountPreview{min-height:80px;height:100%}
+}
+@media(orientation:landscape) and (max-height:550px){
+ #mountWorkshop[data-armory-pane="visual"] .workshop-content{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr)
+ }
+ #mountWorkshop[data-armory-pane="visual"] .workshop-visuals{align-self:start}
+ #mountWorkshop[data-armory-pane="parts"]:not([data-armory-info]) .workshop-details{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-auto-rows:max-content;
+  grid-template-areas:"parts info" "options cost" "options purchase";column-gap:8px;align-content:start
+ }
+ #mountWorkshop[data-armory-pane="parts"] #workshopParts{grid-area:parts}
+ #mountWorkshop[data-armory-pane="parts"] #workshopOptions{grid-area:options;align-self:start}
+ #mountWorkshop[data-armory-pane="parts"] #workshopUpgradeInfo{grid-area:info}
+ #mountWorkshop[data-armory-pane="parts"] #workshopCost{grid-area:cost;margin-block:2px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-purchase{grid-area:purchase;align-self:start}
+}
+@media(max-width:700px) and (max-height:700px),(orientation:landscape) and (max-height:550px){
+ #mountWorkshop[data-armory-pane="parts"] #workshopUpgradeInfo{display:inline-flex;min-height:30px;margin:2px 0}
+ #mountWorkshop[data-armory-pane="parts"]:not([data-armory-info]) :is(#workshopPartName,#workshopDescription,#workshopUpgradePreview){
+  display:none
+ }
+ #mountWorkshop[data-armory-pane="parts"][data-armory-info] .workshop-details>:not(#workshopUpgradeInfo,#workshopPartName,#workshopDescription,#workshopUpgradePreview){
+  display:none
+ }
+ #mountWorkshop[data-armory-pane="parts"] .workshop-parts button{min-height:44px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options .part-art{width:38px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-purchase button{min-height:38px;padding:3px}
+}
+@media(orientation:landscape) and (max-height:380px){
+ .workshop-heading h2{font-size:17px}
+ .workshop-heading :is(#workshopSave,#workshopClose){min-height:34px}
+ .workshop-tabs,.workshop-tabs button{min-height:34px}
+ .workshop-tabs button>.part-art,.workshop-tabs button>.tool-art{width:20px;height:20px}
+ .workshop-context{margin-block:2px}
+ #workshopSaveState{max-width:none;white-space:nowrap;font-size:11px}
+ .workshop-sections button{min-height:30px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-visuals h3{display:none}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-visuals{gap:3px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-catalog{grid-auto-columns:96px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-catalog button{min-height:60px;padding:2px;gap:1px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-catalog .card-label{max-width:100%;overflow-wrap:anywhere}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-catalog .part-art{width:28px;height:28px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-finishes button{min-height:28px;flex-direction:row;font-size:10px;gap:3px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-swatch{width:12px;flex-shrink:0}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-turntable{grid-template-rows:minmax(0,1fr) auto}
+ #mountWorkshop[data-armory-pane="visual"] #mountPreview{min-height:0}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-parts{padding-block:2px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-parts button{flex-basis:104px;min-height:44px;flex-direction:row;gap:3px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-parts .part-art{width:22px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options{grid-auto-columns:minmax(92px,1fr)}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options .part-art{width:32px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options button{min-height:62px;padding:2px}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-options small{display:none}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-cost .tool-art{display:none}
+ #mountWorkshop[data-armory-pane="parts"]:not([data-armory-info]) .workshop-details{
+  position:relative;grid-template-areas:"parts info" "options cost";grid-template-rows:48px auto
+ }
+ #mountWorkshop[data-armory-pane="parts"] #workshopUpgradeInfo{align-self:start}
+ #mountWorkshop[data-armory-pane="parts"] #workshopCost{align-self:start}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-cost>span{padding:2px 1px;font-size:11px;line-height:1.1}
+ #mountWorkshop[data-armory-pane="parts"] .workshop-purchase{
+  position:absolute;right:5px;bottom:1px;width:calc(50% - 7px)
+ }
+}
+@media(min-width:701px) and (max-width:1100px) and (min-height:551px){
+ .workshop-heading{padding-block:5px}
+ .workshop-heading h2{font-size:24px}
+ #workshopSaveState{max-width:none;white-space:nowrap}
+ #mountWorkshop[data-armory-pane] #workshopUpgradeInfo{display:inline-flex;min-height:32px;margin:2px 0}
+ #mountWorkshop[data-armory-pane]:not([data-armory-info]) :is(#workshopDescription,#workshopUpgradePreview,.workshop-stats p){display:none}
+}
+@media(orientation:portrait) and (min-width:701px) and (max-width:1024px){
+ #mountWorkshop[data-armory-pane] .workshop-content{
+  grid-template-columns:minmax(190px,30%) minmax(0,1fr);
+  grid-template-rows:minmax(200px,.8fr) minmax(0,1.2fr)
+ }
+ #mountWorkshop[data-armory-pane] .workshop-details{
+  grid-column:1/-1;display:grid;align-content:start;grid-template-columns:minmax(140px,.6fr) minmax(0,1fr);grid-auto-rows:max-content;
+  grid-template-areas:"title parts" "stats name" "stats options" "stats info" "stats desc" "stats quote" "stats cost" "stats purchase";
+  column-gap:10px
+ }
+ #mountWorkshop[data-armory-pane] .workshop-catalog{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #mountWorkshop[data-armory-pane] #workshopPerformanceTitle{grid-area:title}
+ #mountWorkshop[data-armory-pane] #workshopStats{grid-area:stats;align-content:start;align-self:start;grid-template-columns:1fr}
+ #mountWorkshop[data-armory-pane] #workshopParts{grid-area:parts}
+ #mountWorkshop[data-armory-pane] #workshopPartName{grid-area:name}
+ #mountWorkshop[data-armory-pane] #workshopOptions{grid-area:options}
+ #mountWorkshop[data-armory-pane] #workshopUpgradeInfo{grid-area:info}
+ #mountWorkshop[data-armory-pane] #workshopDescription{grid-area:desc}
+ #mountWorkshop[data-armory-pane] #workshopUpgradePreview{grid-area:quote}
+ #mountWorkshop[data-armory-pane] #workshopCost{grid-area:cost}
+ #mountWorkshop[data-armory-pane] .workshop-purchase{grid-area:purchase}
 }

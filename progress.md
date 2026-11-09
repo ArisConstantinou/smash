@@ -276,3 +276,9 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 - On the public baseline, startup at 1.65× browser scale crops the menu and battle controls even with the existing gesture lock. The preview fits the entire game shell to the visual viewport before the game module loads and updates it on resize, pan and page restoration. The transform is removed at 1×.
 - Matched 393×682 and 932×313 Chromium captures cover both menu and battle. Touch start, joystick movement, pause, reload and saved-run resume passed with restored zoom. The HUD suite also checks restored pan offsets and ordinary layouts. Evidence is under `tests/hud-layout` in staging. Physical iPhone verification remains open.
 - All 602 automated tests passed with the wire and viewport fixes together. The installed Chromium game client passed, as did desktop WebKit with simulated restored viewport metrics. Re-rendered Workshop atlas image hashes matched all 11 shipped files.
+
+## Unified Workshop equipment selection — 2026-11-09
+
+- A single weapon or shield selection keeps its appearance catalogue, paint, 3D preview, attachments and stats together. The existing shared hammer and shield kits now live in their corresponding category and retain the original save keys.
+- Equipment cards use square art rendered from the original models, with separate labels and CSS borders. Mobile uses sections of the same item, tablet adapts its grid to orientation, and the game hides native scrollbars while preserving scrolling for overflow.
+- Verified all 18 catalogue entries, finish and attachment saves across reload, and seven desktop, phone and tablet viewports. Primary upgrade controls fit without vertical scrolling on the tested phone and tablet layouts. The gameplay suite passed all 602 tests and the browser mount suite passed.

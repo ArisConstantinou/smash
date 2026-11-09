@@ -64,7 +64,9 @@ try{
  await page.locator('#workshopSave').click();assert.match(await page.locator('#workshopSaveState').innerText(),/ΑΠΟΘΗΚΕΥΤΗΚΕ/);
  await page.evaluate(()=>{window.__originalStorageWrite=Storage.prototype.setItem;Storage.prototype.setItem=()=>{throw new DOMException('test quota','QuotaExceededError');};});await page.locator('#workshopSave').click();assert.match(await page.locator('#workshopSaveState').innerText(),/ΑΠΟΤΥΧΙΑ/);await page.evaluate(()=>Storage.prototype.setItem=window.__originalStorageWrite);await page.locator('#workshopSave').click();
  await page.locator('#workshopTabs button').filter({hasText:'ΠΑΙΚΤΗΣ'}).click();
- for(const part of ['ΚΕΦΑΛΙ','ΚΟΡΜΟΣ','ΧΕΡΙΑ','ΠΟΔΙΑ','ΜΠΟΤΕΣ','ΑΣΠΙΔΑ','ΣΦΥΡΙ']){await page.locator('#workshopParts button').filter({hasText:part}).click();await page.locator('#workshopOptions button').filter({hasText:'ΕΦΟΔΟΥ'}).click();await page.locator('#workshopUpgrade').click();}
+ for(const part of ['ΚΕΦΑΛΙ','ΚΟΡΜΟΣ','ΧΕΡΙΑ','ΠΟΔΙΑ','ΜΠΟΤΕΣ']){await page.locator('#workshopParts button').filter({hasText:part}).click();await page.locator('#workshopOptions button').filter({hasText:'ΕΦΟΔΟΥ'}).click();await page.locator('#workshopUpgrade').click();}
+ for(const tab of ['ΟΠΛΑ','ΑΣΠΙΔΕΣ']){await page.locator('#workshopTabs button').filter({hasText:tab}).click();await page.locator('#workshopParts button').filter({hasText:'ΚΟΙΝΟ ΣΕΤ'}).click();await page.locator('#workshopOptions button').filter({hasText:'ΕΦΟΔΟΥ'}).click();await page.locator('#workshopUpgrade').click();}
+ await page.locator('#workshopTabs button').filter({hasText:'ΠΑΙΚΤΗΣ'}).click();
  await page.locator('#workshopSave').click();const preview=await page.evaluate(()=>__garageQA.workshop.inspect());assert.ok(Math.abs(preview.feetY+.045)<.001);assert.ok(preview.attachments.length>=12);await shot({path:resolve(out,'desktop-armored-player.png')});
  for(const [name,width,height]of [['desktop',1440,1000],['phone',430,932],['landscape',932,430]]){await page.setViewportSize({width,height});const h=await page.locator('.workshop-shell').evaluate(n=>n.getBoundingClientRect().height);for(const label of ['ΜΑΖΙ','ΠΑΙΚΤΗΣ','ΟΧΗΜΑ']){await page.locator('#workshopTabs button').filter({hasText:label}).click();assert.equal(await page.locator('.workshop-shell').evaluate(n=>n.getBoundingClientRect().height),h);assert.ok(await page.locator('.workshop-shell').evaluate(n=>n.scrollWidth<=n.clientWidth+1));await shot({path:resolve(out,name+'-visual-'+label+'.png')});}await page.locator('#workshopTabs button').filter({hasText:'ΠΑΙΚΤΗΣ'}).click();await page.waitForFunction(()=>{const images=[...document.querySelectorAll('#workshopOptions img')];return images.length===4&&images.every(i=>i.complete&&i.naturalWidth===1280);},null,{timeout:15000});results.push({name,width,height,constantHeight:h});}
  await shot({path:resolve(out,'persisted-scifi.png')});
@@ -82,25 +84,30 @@ try{
  await page.keyboard.press('i');assert.equal(await page.evaluate(()=>__garageQA.phase),'playing');assert.deepEqual(errors,[]);
  // Catalog choices must change actual live equipment, including in CI's software diagnostic renderer.
  await page.keyboard.press('i');await page.locator('#workshopTabs button').filter({hasText:'ΟΠΛΑ'}).click();for(const id of Array.from({length:12},(_,i)=>'w'+String(i+1).padStart(2,'0'))){await page.locator('[data-blueprint="'+id+'"]').click();assert.equal(await page.evaluate(()=>__garageQA.hero.userData.armoryWeaponId),id);}
+ const armoryPane=name=>page.locator('#workshopSections [data-armory-pane="'+name+'"]').click();
+ await armoryPane('parts');
  await page.locator('#workshopParts button').filter({hasText:'ΠΥΡΗΝΑΣ'}).click();
  await page.locator('[data-choice="fire"]').click();assert.match(await upgradePreview.innerText(),/Στο χτύπημα.*εγκαύματος/);
  await upgrade.click();assert.match(await upgradePreview.innerText(),/Βαθμίδα 1 → 2.*Κάθε παλμός/s);
  await upgradePreview.scrollIntoViewIfNeeded();await shot({path:resolve(out,'phone-upgrade-preview.png')});
  for(const [width,height] of [[430,932],[320,568],[932,430],[667,313]]){
   await page.setViewportSize({width,height});
+  await armoryPane('visual');
   const layout=await page.evaluate(()=>{
    const box=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();
    const shell=document.querySelector('.workshop-shell');
-   return {overflow:shell.scrollWidth>shell.clientWidth+1,save:box('#workshopSave'),close:box('#workshopClose'),
-    parts:box('#workshopParts'),preview:box('.workshop-turntable'),tools:box('.workshop-preview-tools'),
-    preset:box('#workshopFamilies'),details:box('.workshop-details')};
+   const content=document.querySelector('.workshop-content');
+   return {overflow:shell.scrollWidth>shell.clientWidth+1||content.scrollHeight>content.clientHeight+1,save:box('#workshopSave'),close:box('#workshopClose'),
+    visuals:box('#workshopVisuals'),parts:box('#workshopParts'),preview:box('.workshop-turntable'),tools:box('.workshop-preview-tools'),
+    preset:box('#workshopFamilies'),bars:[...shell.querySelectorAll('*')].some(n=>getComputedStyle(n).scrollbarWidth!=='none')};
   });
   assert.ok(!layout.overflow&&layout.save.right<=layout.close.x,`Workshop fits ${width}×${height}`);
+  assert.ok(!layout.bars,'Workshop scrollbars are hidden');
   assert.ok(Math.abs(layout.tools.top-layout.preset.top)<2,'Armory tools and preset share one row');
-  if(width<height){
-   assert.ok(Math.abs(layout.parts.left-layout.details.left)<1&&Math.abs(layout.preview.right-layout.details.right)<1);
-   assert.ok(layout.details.width>=width-34,'Portrait details use the full content width');
-  }else assert.ok(Math.abs(layout.preview.top-layout.details.top)<1&&layout.details.width>=240);
+  if(width<height)assert.ok(layout.visuals.bottom<=layout.preview.top&&layout.preview.width>=width-34);
+  else assert.ok(layout.visuals.right<=layout.preview.left);
+  await armoryPane('stats');assert.ok(await page.locator('#workshopStats').isVisible());
+  await armoryPane('parts');assert.equal(await page.locator('[data-choice="fire"]').getAttribute('data-equipped'),'true');
   await upgrade.scrollIntoViewIfNeeded();
   assert.ok(await upgrade.isEnabled(),'Next-rank purchase stays available after rotation');
  }
