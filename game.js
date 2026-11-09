@@ -20,7 +20,7 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261109-readability1';
-import {createForgeMenu} from './menu.js?v=20261109.9';
+import {createForgeMenu} from './menu.js?v=20261109-jungle-select';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
@@ -29,7 +29,7 @@ import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261109-armory-wire';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261109-gauntlet1';
 import {createWorld} from './world.js?v=20261109-rain-view';
-import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=fauna1';
+import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=opening2';
 import {GameAudio} from './audio.js?v=20261109-pause';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -44,11 +44,11 @@ import {MAX_CHARACTER_LEVEL,CHARACTER_WEAPONS,MATERIAL_TYPES,createCharacterProg
 import {initEnemyReaction,updateEnemyThreat,startEnemyFear,interruptEnemyAttack,poseEnemyReaction,applyEnemyFlash} from './enemy-reactions.js?v=20261106-feel1';
 
 import {beastObstacleContacts} from './beast-obstacles.js?v=20261109-beast1';
-import {makeBeastMech} from './beast-mech.js?v=20261109-beast1';
-import {BeastCombat,distanceToBeam} from './beast-combat.js?v=20261109-beast1';
+import {makeBeastMech} from './beast-mech.js?v=20261109-beast-motion1';
+import {BeastCombat,distanceToBeam} from './beast-combat.js?v=20261109-beast-motion1';
 import {BeastPortal} from './beast-portal.js?v=20261109-beast1';
 import {installBeastReveal} from './beast-reveal.js?v=20261109-beast1';
-import {BEAST_ENTRY,beastHealth,beastDamageScale,beastPortalLocation,chooseBeastAttack} from './beast-rules.js?v=20261109-beast1';
+import {BEAST_ENTRY,BEAST_BODY_SLAM_DROP,beastHealth,beastDamageScale,beastPortalLocation,beastUnderbody,chooseBeastAttack} from './beast-rules.js?v=20261109-body-slam1';
 import {createGeometryCollision} from './geometry-collision.js?v=20261109-readability1';
 
 const $ = id => document.getElementById(id);
@@ -392,6 +392,37 @@ function makeTelegraph(x,z,radius,tint=0xff665b){
   const mesh=new THREE.Mesh(new THREE.RingGeometry(.88,1,48),new THREE.MeshBasicMaterial({color:tint,transparent:true,opacity:.5,side:THREE.DoubleSide,depthWrite:false}));
   mesh.rotation.x=-Math.PI/2;mesh.position.set(x,.09,z);mesh.scale.setScalar(radius);scene.add(mesh);return mesh;
 }
+const MINI_SPECIALS={
+  siegeTransformer:{range:7.8,angle:.83,windup:.92,color:0xffa04b},
+  hollowMarshal:{range:10,width:2.3,windup:1.05,color:0xc775ed},
+};
+function markMiniSpecial(e,profile,dir){
+  const {range,angle,width,color}=profile;
+  const geometry=angle?new THREE.CircleGeometry(range,32,Math.atan2(-dir.z,dir.x)-angle,angle*2):new THREE.PlaneGeometry(width,range);
+  const mesh=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color,transparent:true,opacity:.4,side:THREE.DoubleSide,depthWrite:false}));
+  mesh.rotation.x=-Math.PI/2;
+  if(!angle)mesh.rotateZ(Math.atan2(dir.x,dir.z));
+  const offset=angle?0:range/2;
+  mesh.position.set(e.x+dir.x*offset,e.y+.1,e.z+dir.z*offset);scene.add(mesh);
+  return {mesh,profile,x:e.x,z:e.z,y:e.y,dir};
+}
+function releaseMiniSpecial(e){
+  const {x,y,z,dir,profile}=e.attackSpecial;
+  const {range,angle,width,color}=profile;
+  const from=new THREE.Vector3(x,y+.8,z),to=new THREE.Vector3(x+dir.x*range,y+.8,z+dir.z*range);
+  const dx=player.x-x,dz=player.z-z,along=dx*dir.x+dz*dir.z,distance=Math.hypot(dx,dz);
+  const target={x:player.x,y:player.y+.8,z:player.z};
+  const hit=angle?null:firstHammerHit(from,to,segmentObjects(from,to,.14),.14);
+  const length=hit?Math.hypot(hit.x-x,hit.z-z):range;
+  const inside=angle?distance<=range&&along>=distance*Math.cos(angle):along>=0&&along<=length&&Math.abs(dx*dir.z-dz*dir.x)<=width*.5+player.radius;
+  const blocked=angle&&inside&&firstHammerHit(from,target,segmentObjects(from,target,.12),.12);
+  if(inside&&!blocked&&Math.abs(player.y-y)<1.1)hurtPlayer(e.damage*.85,dir.x,dir.z,true,{attacker:e,from});
+  if(angle){
+    for(let i=-1;i<=1;i++){const a=Math.atan2(dir.x,dir.z)+angle*i*.7;pulse(x+Math.sin(a)*range*.65,z+Math.cos(a)*range*.65,1.3,color,.32);}
+  }else weaponTrail(from,hit?to.set(hit.x,hit.y,hit.z):to,.5,color,false);
+  audio.play('hit',.8,{material:e.palette==='metal'?'metal':'stone'});
+  e.attackSpecial=null;e.state='walk';e.timer=e.attackRecovery;
+}
 function removeEffect(mesh){
   const trail=weaponTrailRecords.get(mesh);
   if(trail){
@@ -537,7 +568,8 @@ function startGame(startLevel=1,options={}){
   garage=restoreGarage(stored?.garage);activeStartingLevel=Number.isFinite(startLevel)?clamp(Math.floor(startLevel),1,MAX_CHARACTER_LEVEL):1;
   const requested=typeof startLevel==='number'?startLevel:1;
   activeCity=options.city??null;testRun=!!options.test||requested>1;audio.unlock().then(()=>audio.play('start'));
-  campaignMap=!testRun&&options.resume&&stored?.map===RAVINE_ID?RAVINE_ID:null;
+  const requestedMap=testRun?options.map:options.resume?stored?.map:null;
+  campaignMap=requestedMap===RAVINE_ID?RAVINE_ID:null;
   // The menu already rendered this untouched arena and its GPU resources.
   // Rebuilding it on the first click discards that warmup and stalls play.
   const reusePreparedWorld=!campaignMap&&pristineMenuWorld&&phase==='menu'&&world?.city===activeCity&&sector===1;
@@ -653,10 +685,10 @@ function makeDropRoom(){
   if(drops.length<=70)return;
   const index=drops.findIndex(d=>d.kind!=='weapon');if(index>=0)disposeDrop(drops.splice(index,1)[0]);
 }
-function spawnDrop(x,z,kind='gold'){
+function spawnDrop(x,z,kind='gold',amount=1){
   makeDropRoom();
   const mesh=makeTreasure(kind);mesh.position.set(x,.4,z);scene.add(mesh);
-  drops.push({mesh,x,z,kind,age:0,life:55,phase:Math.random()*6.28});
+  drops.push({mesh,x,z,kind,amount,age:0,life:55,phase:Math.random()*6.28});
 }
 function dropWeapon(e,id){
   const b=blueprint(id);
@@ -1025,6 +1057,7 @@ function killEnemy(e,credited=true){
     if(reward)dropWeapon(e,reward);
   }
   if(e.rareWeapon)dropWeapon(e,e.rareWeapon);
+  if(e.rareSupplies){spawnDrop(e.x-.35,e.z,'crystal',4);spawnDrop(e.x+.35,e.z,'scrap',9);}
   if(e.encounterEscort)spawnDrop(e.x+.28,e.z-.22,'gold');
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
 }
@@ -1065,6 +1098,7 @@ function hurtObject(o,damage,q=0,impactPoint=null,weapon=null){
   if(!fracture)audio.play(o.hp<=0?'break':'hit',Math.max(q,Math.min(1,damage/120)),{material:impactMaterial(o),weapon:weapon||(characterStats.weaponTier<2?'wood':'metal')});
   impactClouds?.emit(contact.x,contact.y,contact.z,normalize(contact.x-player.x,contact.z-player.z),o.isBuilding?1:.7,!['explosion','level-storm'].includes(weapon));
   if(o.hp>0){fragments.add(o.x+randomBetween(-o.w/2,o.w/2),.7,o.z+randomBetween(-o.d/2,o.d/2),5,[o.color||0x8c9a91,0xf1c588],3,.1);return false;}
+  if(o.type==='jungle-trunk')flashMaterials(o,0);
   o.dead=true;o.mesh.visible=false;world.invalidateNavigation?.();score+=Math.round(o.weight*80);lootCounter++;
   if(o.isBuilding||o.explosionComplete)world.civilians?.alarm(o.x,o.z,o.isBuilding?17:13);
   const palette=o.mesh.userData.fragments||[o.color||0x879893,0xcab596,0x50666a];
@@ -1668,6 +1702,15 @@ function rareWeaponAvailable(){
 }
 function spawnCamps(random=Math.random){
   if(world.camp){
+    const opening=world.openingCamp;
+    if(opening){
+      const rareIndex=random()<.40?Math.floor(random()*opening.spawns.length):-1;
+      for(const [index,[x,z,type]] of opening.spawns.entries()){
+        const rare=index===rareIndex,rareWeapon=rare?rareWeaponAvailable():null;
+        const e=spawnEnemy(type,{x,z},{rareWeapon,patrol:{x:opening.x,z:opening.z,dx:x-opening.x,dz:z-opening.z,side:1,targetX:x,targetZ:z,alert:true,opening:true}});
+        if(e){e.timer=.65+index*.16;e.rareSupplies=rare&&!e.rareWeapon;}
+      }
+    }
     const {x,z,dx,dz}=world.camp;
     const rareWeapon=random()<CAMP_RARE_CHANCE?rareWeaponAvailable():null;
     for(const side of [-1,1]){
@@ -1741,7 +1784,8 @@ function spawnPosition(distance=17,radius=.8){
 }
 function spawnEnemy(forcedType=null,position=null,{waveNumber=null,encounterLeader=false,encounterEscort=false,arriving=false,patrol=null,rareWeapon=null}={}){
   const qualityCap=settings.quality==='low'?36:48;if(enemies.length>=qualityCap)return null;
-  const type=forcedType||enemyTypeForWave(round),base=enemyStatsForWave(type,round);
+  const threatRound=patrol?.opening?clamp(Math.ceil(level*.5)+1,2,9):round;
+  const type=forcedType||enemyTypeForWave(round),base=enemyStatsForWave(type,threatRound);
   if(encounterLeader){base.hp=Math.round(base.hp*(1+Math.max(0,level-5)*.085));base.damage+=Math.floor(Math.max(0,level-5)*1.2);}
   if(encounterEscort){base.hp=Math.round(base.hp*1.18);base.xp+=1;}
   let pos=position||spawnPosition(encounterLeader?13:17,base.radius);
@@ -1763,7 +1807,7 @@ function spawnEnemy(forcedType=null,position=null,{waveNumber=null,encounterLead
     carriedWeapon.scale.setScalar(.72);carriedWeapon.rotation.x=Math.PI*.5;carriedWeapon.position.set(0,-.58,.08);
     mesh.userData.rightArm.add(carriedWeapon);
   }
-  const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,maxHp:base.hp,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(1.1,2.6),state:'walk',dead:false,level:enemyLevel(type,waveNumber||round),slowTime:0,slowFactor:1,stunTime:0,kickFlight:null,telegraph:null,attackDir:{x:0,z:1},waveNumber,navTimer:0,navDirection:{x:0,z:1}};
+  const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,maxHp:base.hp,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(1.1,2.6),state:'walk',dead:false,level:enemyLevel(type,waveNumber||threatRound),slowTime:0,slowFactor:1,stunTime:0,kickFlight:null,telegraph:null,attackDir:{x:0,z:1},waveNumber,navTimer:0,navDirection:{x:0,z:1}};
   if(carriedWeapon){for(const m of Array.isArray(carriedWeapon.userData.material)?carriedWeapon.userData.material:[carriedWeapon.userData.material])m.dispose();}
   Object.assign(e,{encounterLeader,encounterEscort,fold:0,tankWanted:false,tankDelay:0,baseHeight:base.height,patrol,rareWeapon:carriedWeapon?rareWeapon:null});
   initEnemyReaction(e,spawnCounter);mesh.position.set(e.x,0,e.z);if(!arriving)enemies.push(e);spawnCounter++;
@@ -1913,6 +1957,10 @@ function updateEnemies(dt){
     if(u.leftArm){u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;u.leftArm.rotation.z=u.leftArm.userData.restRoll||0;}
     if(u.rightArm){u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;u.rightArm.rotation.z=u.rightArm.userData.restRoll||0;}
     u.animate?.(e,dt,visualTime);
+    if(e.state==='windup'&&e.attackSpecial){
+      if(e.type==='siegeTransformer')u.body.rotation.y=-.22;
+      else if(u.rightArm){u.rightArm.rotation.x=-1.95;u.rightArm.rotation.z=.2;u.leftArm.rotation.x=-.45;}
+    }
     if(!falling)poseEnemyReaction(e,visualTime);
     if(!i)return;
     const start=i.startFraction??.30,kick=start+(1-start)*smooth(i.time/.035),recover=1-smooth((i.time-.08)/(i.duration-.08));
@@ -1987,18 +2035,24 @@ function updateEnemies(dt){
         const faceRoute=!pursuing||tank&&!tankShot,yaw=Math.atan2(faceRoute?mx:dir.x,faceRoute?mz:dir.z);
         if(e.type==='siegeTransformer')e.facingYaw+=clamp(Math.atan2(Math.sin(yaw-e.facingYaw),Math.cos(yaw-e.facingYaw)),-dt*3.2,dt*3.2);
         else e.facingYaw=yaw;
-        if(pursuing&&e.timer<=0&&!transforming&&(tank?tankShot:((e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5)))){
+        const normal=(e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5);
+        const profile=MINI_SPECIALS[e.type],special=!tank&&profile&&dist<profile.range&&e.seesPlayer&&(!normal||e.lastMiniAttack==='slam');
+        if(pursuing&&e.timer<=0&&!transforming&&(tank?tankShot:normal||special)){
           e.state='windup';e.timer=e.windup;e.attackDir=dir;
           e.attackPoint=tank?{x:player.x,y:targetY,z:player.z}:null;
-          e.telegraph=makeTelegraph(tank?player.x:e.x,tank?player.z:e.z,tank?e.attackRadius*.63:e.attackKind==='slam'?e.attackRadius:e.attackKind==='ranged'?e.radius+.3:1.05,e.type==='hollowMarshal'?0xc775ed:e.attackKind==='ranged'?0xff8d62:0xef6863);
+          e.attackSpecial=special?markMiniSpecial(e,profile,dir):null;
+          e.lastMiniAttack=special?'special':tank?'shell':'slam';
+          if(special)e.timer=profile.windup;
+          e.telegraph=e.attackSpecial?.mesh||makeTelegraph(tank?player.x:e.x,tank?player.z:e.z,tank?e.attackRadius*.63:e.attackKind==='slam'?e.attackRadius:e.attackKind==='ranged'?e.radius+.3:1.05,e.type==='hollowMarshal'?0xc775ed:e.attackKind==='ranged'?0xff8d62:0xef6863);
           if(tank){e.telegraph.position.y=targetY;e.facingYaw=Math.atan2(dir.x,dir.z);}
         }
       }else if(e.state==='windup'){
-        if(e.telegraph){if(!e.attackPoint)e.telegraph.position.set(e.x,.09,e.z);e.telegraph.material.opacity=.35+Math.sin(visualTime*25)*.2;}
+        if(e.telegraph){if(!e.attackPoint&&!e.attackSpecial)e.telegraph.position.set(e.x,.09,e.z);e.telegraph.material.opacity=.35+Math.sin(visualTime*25)*.2;}
         if(e.timer<=0){
           if(e.attackPoint){launchEncounterShell(e);poseBody(e);continue;}
           if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
-          if(e.attackKind==='ranged'){shoot(e);e.state='walk';e.timer=e.attackRecovery+Math.random()*.6;}
+          if(e.attackSpecial)releaseMiniSpecial(e);
+          else if(e.attackKind==='ranged'){shoot(e);e.state='walk';e.timer=e.attackRecovery+Math.random()*.6;}
           else if(e.attackKind==='slam'){
             pulse(e.x,e.z,e.attackRadius,0xfc7765,.42);fragments.add(e.x,.1,e.z,e.miniBoss?28:12,[0xc4bb97,0x75897d],e.miniBoss?8:5,.12);
             if(dist<e.attackRadius&&combatTarget.y<.8){if(rival)hitEnemy(rival,e.damage,dir,2,0);else hurtPlayer(e.damage,dir.x,dir.z,false);}
@@ -2075,7 +2129,7 @@ function beastBeamHit(from,to,dt,hits){
   if(hit&&!hits.has(hit.target)){hits.add(hit.target);hurtObject(hit.target,210,.5,hit,'explosion');}
   return end;
 }
-const BEAST_CUES={missiles:['ΠΥΡΑΥΛΟΙ ΑΠΟ ΨΗΛΑ','Βγες από τους κόκκινους κύκλους!'],rockets:['ΟΜΟΒΡΟΝΤΙΑ ΡΟΥΚΕΤΩΝ','Κινήσου πλάγια — ο στόχος έχει κλειδώσει.'],laser:['ΦΟΡΤΙΣΗ LASER','Απόφυγε τη γραμμή και τη σάρωση.'],stomp:['ΣΥΝΘΛΙΨΗ','Μακριά από τα πόδια — ή πήδα!'],rearStomp:['ΠΙΣΩ ΣΥΝΘΛΙΨΗ','Τα πίσω πόδια σηκώνονται — βγες από τους κύκλους ή πήδα!']};
+const BEAST_CUES={missiles:['ΠΥΡΑΥΛΟΙ ΑΠΟ ΨΗΛΑ','Βγες από τους κόκκινους κύκλους!'],rockets:['ΟΜΟΒΡΟΝΤΙΑ ΡΟΥΚΕΤΩΝ','Κινήσου πλάγια — ο στόχος έχει κλειδώσει.'],laser:['ΦΟΡΤΙΣΗ LASER','Απόφυγε τη γραμμή και τη σάρωση.'],stomp:['ΣΥΝΘΛΙΨΗ','Μακριά από τα πόδια — ή πήδα!'],rearStomp:['ΠΙΣΩ ΣΥΝΘΛΙΨΗ','Τα πίσω πόδια σηκώνονται — βγες από τους κύκλους ή πήδα!'],bodySlam:['ΣΥΝΤΡΙΒΗ ΣΩΜΑΤΟΣ','Βγες από τον κόκκινο κύκλο πριν πέσει ο Κολοσσός!']};
 function spawnBoss(){
   bossSpawned=true;
   const mesh=beastRig,u=mesh.userData;mesh.rotation.set(0,0,0);u.head.rotation.y=0;mesh.position.set(0,u.groundOffset,0);u.pose();
@@ -2122,15 +2176,25 @@ function moveBeast(b,next,dt){
   const u=b.mesh.userData,old={x:b.x,y:b.y,z:b.z,yaw:b.mesh.rotation.y,walk:b.walk};
   const oldPose={...u.poseState},oldBody=u.body.quaternion.clone(),oldHead=u.head.quaternion.clone();
   b.mesh.position.set(next.x,next.y+u.groundOffset,next.z);b.mesh.rotation.y=next.yaw;
-  u.pose({time:next.walk,moving:next.moving,stomp:next.stomp,rearStomp:next.rearStomp||0,roar:next.roar||0});
+  const flinch=b.impact&&!(next.bodyDrop>2)?Math.sin(Math.PI*Math.min(1,b.impact.time/b.impact.duration))*.025:0;
+  u.pose({time:next.walk,moving:next.moving,strafe:next.strafe,stomp:next.stomp,rearStomp:next.rearStomp,roar:next.roar,
+    bodyDrop:next.bodyDrop,pitch:(next.pitch||0)+flinch,roll:next.roll,bodyShift:next.bodyShift,jaw:next.jaw});
   const headPoint=u.head.getWorldPosition(tempV);
-  u.head.rotation.y=Math.atan2(player.x-headPoint.x,player.z-headPoint.z)-next.yaw;
-  u.head.rotation.x=clamp(Math.atan2(headPoint.y-player.y-1,Math.max(5,Math.hypot(headPoint.x-player.x,headPoint.z-player.z)))-(next.roar||0)*.45,-.55,.38);
-  u.body.rotation.x=b.impact?Math.sin(Math.PI*Math.min(1,b.impact.time/b.impact.duration))*.025:0;
-  const contacts=beastObstacleContacts(b.mesh,nearbyObjects(next.x,next.z,Math.hypot(b.w,b.d)*.5+2),{plane:b.state==='enter'?b.entryPlane:null});
+  const distance=Math.hypot(headPoint.x-player.x,headPoint.z-player.z);
+  const gaze=clamp(Math.atan2(player.y+1-headPoint.y,Math.max(5,distance))+(next.roar||0)*.45,-.38,.55);
+  const localAim=u.body.worldToLocal(tempV.set(player.x,headPoint.y+Math.tan(gaze)*distance,player.z)).sub(u.head.position);
+  u.head.rotation.y=Math.atan2(localAim.x,localAim.z);
+  u.head.rotation.x=-Math.atan2(localAim.y,Math.hypot(localAim.x,localAim.z));
+  let contacts=beastObstacleContacts(b.mesh,nearbyObjects(next.x,next.z,Math.hypot(b.w,b.d)*.5+2),{plane:b.state==='enter'?b.entryPlane:null});
   b.crushTimer=Math.max(0,b.crushTimer-dt);
+  if(next.bodyImpact&&contacts.length){
+    for(const {object,point} of contacts){
+      if(Number.isFinite(object.hp))hurtObject(object,Math.max(320,object.hp),1,point,'explosion');
+    }
+    contacts=contacts.filter(({object})=>!object.dead);
+  }
   if(contacts.length){
-    if(b.crushTimer===0){b.crushTimer=.18;
+    if(b.state!=='bodySlam'&&b.crushTimer===0){b.crushTimer=.18;
       for(const {object,point} of contacts.slice(0,2))hurtObject(object,Math.max(320,(object.maxHp??object.hp)*.48),.6,point,'explosion');
       shake=Math.max(shake,.13);
     }
@@ -2138,6 +2202,16 @@ function moveBeast(b,next,dt){
     return false;
   }
   b.x=next.x;b.y=next.y;b.z=next.z;b.walk=next.walk;return true;
+}
+function warnBodySlamProps(b){
+  const nearby=nearbyObjects(b.x,b.z,Math.hypot(b.w,b.d)*.5+2).filter(o=>isExplosiveProp(o)&&!o.exploding);
+  if(!nearby.length)return;
+  const u=b.mesh.userData,pose=u.poseState;
+  u.pose({...pose,moving:0,bodyDrop:BEAST_BODY_SLAM_DROP});
+  const contacts=beastObstacleContacts(b.mesh,nearby);
+  u.pose(pose);
+  // Give an obstructing vehicle or barrel its normal fuse before the chassis drops.
+  for(const {object,point} of contacts)hurtObject(object,Math.max(320,object.hp),1,point,'explosion');
 }
 function updateBoss(dt){
   if(!boss||boss.dead)return;const b=boss;
@@ -2147,19 +2221,51 @@ function updateBoss(dt){
   if(b.impact){b.impact.time+=dt;if(b.impact.time>=b.impact.duration)b.impact=null;}
   if(!b.enraged&&b.hp<b.maxHp*.45){b.enraged=true;announce('ΥΠΕΡΦΟΡΤΩΣΗ','Οι προειδοποιήσεις παραμένουν — οι ανάσες του μικραίνουν.',3);}
   const next={x:b.x,y:b.y,z:b.z,yaw:b.mesh.rotation.y,walk:b.walk,moving:0,stomp:0};
-  // Keep watching the player even during committed attacks. Feet and the
-  // chest stay planted for a locked stomp/laser; their world warnings cannot
-  // rotate after the player has already committed to a dodge.
+  // The chassis stays planted for locked attacks and while the player is underneath it.
   const targetYaw=Math.atan2(player.x-b.x,player.z-b.z),turn=Math.atan2(Math.sin(targetYaw-next.yaw),Math.cos(targetYaw-next.yaw));
-  if(!['laser','stomp','rearStomp'].includes(b.state))next.yaw+=clamp(turn,-dt*1.7,dt*1.7);
+  const underbody=beastUnderbody(b,player);
+  if((b.state==='walk'||b.state==='recover')&&!underbody)next.yaw+=clamp(turn,-dt*1.7,dt*1.7);
   if(b.state==='walk'){
     const dir=normalize(player.x-b.x,player.z-b.z),dist=Math.hypot(player.x-b.x,player.z-b.z),speed=(b.enraged?2.7:2)*(b.slowTime>0?b.slowFactor:1);
-    if(dist>b.radius*.8+3){next.moving=1;next.x=clamp(b.x+dir.x*speed*dt,-BOUNDS+b.radius,BOUNDS-b.radius);next.z=clamp(b.z+dir.z*speed*dt,-BOUNDS+b.radius,BOUNDS-b.radius);next.walk+=dt;}
-    if(b.timer<=0){const kind=chooseBeastAttack(b,player);beastCombat.start(kind,b,player);b.state=kind;b.timer=10;next.x=b.x;next.z=b.z;next.yaw=b.mesh.rotation.y;next.moving=0;next.walk=b.walk;}
+    if(b.timer<=0){
+      const kind=chooseBeastAttack(b,player);beastCombat.start(kind,b,player);b.state=kind;b.timer=10;
+      if(kind==='bodySlam')warnBodySlamProps(b);
+      next.yaw=b.mesh.rotation.y;
+    }else{
+      const approach=dist>b.radius*.8+3;
+      const side=!approach&&!underbody&&Math.abs(turn)>.38?Math.sign(turn):0;
+      if(approach||side){
+        next.moving=1;next.strafe=side;next.roll=-side*.045;next.walk+=dt;
+        const dx=approach?dir.x:Math.cos(next.yaw)*side*.65;
+        const dz=approach?dir.z:-Math.sin(next.yaw)*side*.65;
+        next.x=clamp(b.x+dx*speed*dt,-BOUNDS+b.radius,BOUNDS-b.radius);
+        next.z=clamp(b.z+dz*speed*dt,-BOUNDS+b.radius,BOUNDS-b.radius);
+      }
+    }
   }else if(b.state==='recover'){
     if(b.timer<=0){b.state='walk';b.timer=b.enraged?.8:1.6;}
   }else if(!beastCombat.attack){b.state='recover';b.timer=b.enraged?1.4:2.3;}
   const a=beastCombat.attack,lift=a?Math.sin(Math.min(1,a.time/a.windup)*Math.PI/2)*(a.launched?0:1):0;next.stomp=a?.kind==='stomp'?lift:0;next.rearStomp=a?.kind==='rearStomp'?lift:0;
+  if(a?.kind==='bodySlam'){
+    const elapsed=a.time+dt,impact=elapsed-a.windup,fall=.23;
+    next.bodyImpact=!a.launched&&impact>=0;
+    if(impact<-fall)next.bodyDrop=.72*smooth(elapsed/(a.windup-fall));
+    else if(impact<0)next.bodyDrop=lerp(.72,BEAST_BODY_SLAM_DROP,((impact+fall)/fall)**2);
+    else next.bodyDrop=BEAST_BODY_SLAM_DROP*(1-smooth((impact-.12)/.72));
+  }else if(a?.kind==='laser'){
+    const fire=a.time+dt-a.windup;
+    const brace=smooth((a.time+dt)/a.windup)*(1-smooth((fire-a.duration)/a.settle));
+    next.bodyDrop=.43*brace;next.pitch=.14*brace;next.jaw=.44*brace;
+    next.roll=.055*(2*smooth(fire/a.duration)-1)*brace;
+  }else if(a?.kind==='missiles'||a?.kind==='rockets'){
+    const fire=a.time+dt-a.windup,settle=1-smooth(fire/a.duration);
+    const load=smooth((a.time+dt)/a.windup)*settle;
+    const kick=smooth((fire+.015)/.08)*settle;
+    const rockets=a.kind==='rockets';
+    next.bodyDrop=(rockets?.32:-.11)*load+.16*kick;
+    next.pitch=(rockets?.12:-.14)*load-(rockets?.24:.075)*kick;
+    next.bodyShift=-(rockets?.45:.20)*kick;
+  }
   moveBeast(b,next,dt);
   resolveBeastPlayerCollision();
   beastCombat.update(dt,b,player,camera);
@@ -2178,7 +2284,7 @@ function defeatBoss(){
   }else for(let n=0;n<4;n++)spawnDrop(x+(n-1.5)*.4,z,'crystal');
   shake=.7;audio.play('victory');endGame(true);
 }
-function announceRavine(){announce('ΦΑΡΑΓΓΙ ΤΗΣ ΖΟΥΓΚΛΑΣ','Πέρασε στην απέναντι όχθη και νίκησε τη φρουρά στο ξέφωτο.',3.8);}
+function announceRavine(){announce('ΕΝΕΔΡΑ ΣΤΑ ΕΡΕΙΠΙΑ','Σπάσε την κάλυψη και νίκησε τη φρουρά. Το ποτάμι είναι πιο κάτω.',2.9);}
 function continueAfterVictory(){
   if(phase!=='victory')return;
   if(!testRun&&campaignMap===RAVINE_ID&&world.id!==RAVINE_ID){
@@ -2941,13 +3047,14 @@ function updateHUD(force=false){
     :encounter?encounter.entry?'ΑΝΟΙΓΕΙ ΠΥΛΗ':encounter.leader.dead?'ΣΥΝΟΔΕΙΑ: '+outstanding:encounter.gate.name+' · ΣΥΝΟΔΕΙΑ: '+outstanding
     :target+'% · '+(nextGate?.name||'ΚΟΛΟΣΣΟΣ');
   if(world.camp){
-    const guards=enemies.filter(e=>e.patrol).length;
+    const guards=enemies.filter(e=>e.patrol),opening=guards.filter(e=>e.patrol.opening).length;
     $('goalValue').textContent=Math.floor(destructionValue)+'%';$('goalTarget').textContent='';$('goalFill').style.width=destructionValue+'%';
-    $('objectiveText').textContent=guards?'ΦΥΛΑΚΙΟ · '+guards+' ΦΡΟΥΡΟΙ':'ΤΟ ΦΥΛΑΚΙΟ ΚΑΘΑΡΙΣΤΗΚΕ';
+    $('objectiveText').textContent=opening?'ΕΡΕΙΠΙΑ · '+opening+' ΦΡΟΥΡΟΙ':guards.length?'ΠΕΡΑΣΕ ΤΟ ΠΟΤΑΜΙ · '+guards.length+' ΦΡΟΥΡΟΙ':'ΤΑ ΦΥΛΑΚΙΑ ΚΑΘΑΡΙΣΤΗΚΑΝ';
   }
   $('sectorValue').textContent=String(sector).padStart(2,'0');$('killsValue').textContent=kills;$('relicValue').textContent=relics;$('roundValue').textContent=String(round).padStart(2,'0');
   $('waveEnemiesValue').textContent=boss&&!boss.dead?String(enemies.length):String(Math.max(0,(wave?.total||0)-(wave?.defeated||0)))+' / '+(wave?.total||10);
   $('waveStatus').textContent=boss&&!boss.dead?'ΤΕΛΙΚΟΣ BOSS':wave?.state==='break'?'ΚΥΜΑ ΚΑΘΑΡΟ · ΕΠΟΜΕΝΟ ΣΕ '+Math.ceil(wave.breakTimer)+'s':enemies.filter(e=>e.waveNumber===wave?.number).length+' ΕΝΕΡΓΟΙ · '+Math.max(0,(wave?.total||0)-(wave?.spawned||0))+' ΕΡΧΟΝΤΑΙ';
+  if(world.camp){$('waveEnemiesValue').textContent=String(enemies.filter(e=>e.patrol).length);$('waveStatus').textContent='ΦΡΟΥΡΟΙ ΖΟΥΓΚΛΑΣ';}
   $('timeValue').textContent=String(Math.floor(elapsed/60)).padStart(2,'0')+':'+String(Math.floor(elapsed%60)).padStart(2,'0');
   $('chargeFill').style.width=throwFlight?(punch?Math.round(clamp(punch.time/punch.duration,0,1)*100)+'%':'0%'):spin?Math.round(spin.momentum*100)+'%':spinCharge?'100%':'0%';
   $('chargeWrap').classList.toggle('spinning',!!spin);
@@ -3167,9 +3274,9 @@ function drawFX(){
     const label=blueprint(d.weapon).name;c.strokeText(label,p.x,p.y);c.fillText(label,p.x,p.y);
   }
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
-    const branded=armoryEffects.branded.has(e),label='LV '+e.level+(e.rareWeapon?' · ΣΠΑΝΙΟΣ':'')+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
+    const rare=e.rareWeapon||e.rareSupplies,branded=armoryEffects.branded.has(e),label='LV '+e.level+(rare?' · ΣΠΑΝΙΟΣ':'')+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
     if(rubbleHiddenEnemies.has(e)&&!e.dead)drawRubbleCue(e.x,e.y+e.height*.58,e.z,'#ff8d83');
-    drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':e.rareWeapon?'#ffd480':enemyHealthColor(e.level),1,label);
+    drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':rare?'#ffd480':enemyHealthColor(e.level),1,label);
   }
   if(heroHiddenByRubble&&phase==='playing')drawRubbleCue(player.x,player.y+1.15,player.z,'#83f4e7',true);
 
@@ -3410,12 +3517,13 @@ function initInput(){
   for(const name of ['contextmenu','selectstart','dragstart']){
     viewport.addEventListener(name,cancelGesture,gestureOptions);
   }
-  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?activeStartingLevel:1,{test:testRun,resume:!testRun,city:activeCity});
+  $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?activeStartingLevel:1,{test:testRun,resume:!testRun,city:activeCity,map:campaignMap});
   $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};
   $('resumeCharacterButton').onclick=()=>startGame(1,{resume:true});
   $('startingLevel').value='1';
   const preview=()=>{const s=getCharacterStats(createCharacterProgression(Number($('startingLevel').value)));$('startingLoadout').textContent=s.weaponName+' · '+(s.canLightning?'Αναπηδήσεις και κεραυνοί':s.canReturn?'Αυτόματη επιστροφή':s.canAirSmash?'Εναέρια συντριβή':'Μικρό άλμα, ρίψη και συλλογή');};
   $('startingLevel').onchange=preview;preview();$('testStartButton').onclick=()=>startGame(Number($('startingLevel').value),{test:true,city:getLevelCity($('startingLevel').value)});$('forgeButton').onclick=forgeWeapon;
+  if($('jungleStartButton'))$('jungleStartButton').onclick=()=>startGame(6,{test:true,map:RAVINE_ID});
   window.addEventListener('pagehide',persistCharacter);
   $('resumeButton').onclick=()=>setPhase('playing');$('pauseButton').onclick=pauseGame;
   $('continueButton').onclick=continueAfterVictory;
@@ -3693,7 +3801,7 @@ init().catch(error=>{
 window.render_game_to_text=()=>JSON.stringify({
   coordinates:'Metres; X/Z ground plane, Y height',phase,
   map:world?.id??'city',
-  ravine:world?.river?{bounds:world.bounds,region:world.regionAt(player.x,player.z).id,bridgeIntact:!world.bridge.dead,remainingGuards:enemies.filter(e=>e.patrol).length}:undefined,
+  ravine:world?.river?{bounds:world.bounds,region:world.regionAt(player.x,player.z).id,bridgeIntact:!world.bridge.dead,remainingGuards:enemies.filter(e=>e.patrol).length,openingGuards:enemies.filter(e=>e.patrol?.opening).length}:undefined,
   wildlife:world?.wildlife?.actors.filter(a=>Math.hypot(a.x-player.x,a.z-player.z)<35).map(a=>({kind:a.kind,x:a.x,y:a.y,z:a.z,mode:a.mode,hp:a.kind==='boar'?a.hp:undefined})),
   civilians:world?.civilians?.actors.filter(a=>a.rig.root.visible).map(a=>({id:a.id,kind:a.rig.name,x:a.x,y:a.y,z:a.z,mode:a.mode})),
   player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),

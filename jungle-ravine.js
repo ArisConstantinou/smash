@@ -48,6 +48,8 @@ export function createJungleRavine(scene){
   const leaves=own(new THREE.IcosahedronGeometry(1,1));
   const timber=own(new THREE.CylinderGeometry(.75,1,1,8));
   const bark=material(0x694733), grain=material(0x81583c), basalt=material(0x516369);
+  const foliageMaterial=own(new THREE.MeshLambertMaterial({vertexColors:true,flatShading:true}));
+  const fallingTrees=[];
   const boards=[0x9a6940,0xb17e4d,0x94603a,0xa87444].map(material);
   const iron=material(0x46514d);
   let randomState=49731;
@@ -59,8 +61,8 @@ export function createJungleRavine(scene){
     if(!chunks.has(key))chunks.set(key,{positions:[],colors:[]});
     return chunks.get(key);
   }
-  function paint(geometry,color,x,y,z,sx,sy,sz,rx=0,ry=0,rz=0){
-    const {positions,colors}=chunk(x,z);
+  function paint(geometry,color,x,y,z,sx,sy,sz,rx=0,ry=0,rz=0,buffer=null){
+    const {positions,colors}=buffer??chunk(x,z);
     matrix.position.set(x,y,z);matrix.rotation.set(rx,ry,rz);matrix.scale.set(sx,sy,sz);matrix.updateMatrix();
     const p=geometry.attributes.position,index=geometry.index,count=index?.count??p.count;
     const tint=new THREE.Color(color);
@@ -79,7 +81,8 @@ export function createJungleRavine(scene){
     for(const [px,pz,w,d] of lanes)distance=Math.min(distance,Math.hypot((x-px)/w,(z-pz)/d));
     const detail=Math.sin(x*3.9+z*1.7)*Math.cos(z*3.1-x*1.4), patches=Math.sin(x*.81+z*.21)*Math.cos(z*.72-x*.17);
     const alongTrail=(2.15-trailDistance(x,z))*.45;
-    const dirt=THREE.MathUtils.smoothstep(Math.max(1-distance,alongTrail)+.19*patches,-.19,.32);
+    const clearing=.82-Math.hypot((x+34)/8.6,(z-32)/6.7);
+    const dirt=THREE.MathUtils.smoothstep(Math.max(1-distance,alongTrail,clearing)+.19*patches,-.19,.32);
     const grass=new THREE.Color(0x435638).lerp(new THREE.Color(0x627347),.47+.28*patches+.19*detail);
     const clay=new THREE.Color(0x9b7044).lerp(new THREE.Color(0xc39759),.58+.23*patches+.16*detail);
     return grass.lerp(clay,dirt);
@@ -186,32 +189,42 @@ export function createJungleRavine(scene){
     paint(pathGeometry,0x65753e,x,.129,stonesZ,.49,.46,1,-Math.PI/2);
   }
 
-  function tree(x,z,height,reach){
+  function tree(x,z,height,reach,breakable=false){
     const girth=reach*.19;
-    paint(timber,0x624635,x,height*.47,z,girth,height*.96,girth,0,0,.045);
+    const buffer=breakable?{positions:[],colors:[]}:null;
+    const tx=breakable?0:x,tz=breakable?0:z;
+    paint(timber,0x624635,tx,height*.47,tz,girth,height*.96,girth,0,0,.045,buffer);
     for(let i=0;i<5;i++){
       const a=i*Math.PI*2/5+.15;
       const dx=Math.cos(a),dz=Math.sin(a);
-      paint(rock,0x604637,x+dx*.65,.38,z+dz*.65,1.58,.83,.32,0,-a,-.22);
-      paint(timber,0x624635,x+dx*.74,height*.77,z+dz*.74,.24,height*.42,.25,-dz*.48,0,dx*.48);
+      paint(rock,0x604637,tx+dx*.65,.38,tz+dz*.65,1.58,.83,.32,0,-a,-.22,buffer);
+      paint(timber,0x624635,tx+dx*.74,height*.77,tz+dz*.74,.24,height*.42,.25,-dz*.48,0,dx*.48,buffer);
       for(let j=0;j<3;j++){
         const offset=j*.24+.32;
-        paint(Math.hypot(x,z)<35?leaves:roughLeaves,[0x315637,0x3c6438,0x54793b,0x6f8f47][(i+j)%4],x+dx*reach*offset,height+range(-.74,.55),z+dz*reach*offset,reach*range(.39,.66),range(.47,.83),reach*range(.35,.57),.08,a,range(-.16,.16));
+        paint(breakable||Math.hypot(x,z)<35?leaves:roughLeaves,[0x315637,0x3c6438,0x54793b,0x6f8f47][(i+j)%4],tx+dx*reach*offset,height+range(-.74,.55),tz+dz*reach*offset,reach*range(.39,.66),range(.47,.83),reach*range(.35,.57),.08,a,range(-.16,.16),buffer);
       }
     }
     const collisionTree=new THREE.Group();
     const trunk=new THREE.Mesh(timber,bark);trunk.position.y=height*.47;trunk.scale.set(girth,height*.96,girth);trunk.rotation.z=.045;
     trunk.visible=false;collisionTree.add(trunk);
-    solid(collisionTree,'jungle-trunk',x,z,girth*2+.4,girth*2,height);
+    const trunkObject=solid(collisionTree,'jungle-trunk',x,z,girth*2+.4,girth*2,height,breakable?85:null);
+    if(!breakable)return;
+    const geometry=own(new THREE.BufferGeometry());
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(buffer.positions,3));
+    geometry.setAttribute('color',new THREE.Float32BufferAttribute(buffer.colors,3));geometry.computeVertexNormals();
+    const crown=new THREE.Mesh(geometry,foliageMaterial);crown.userData.noCollision=true;crown.castShadow=true;collisionTree.add(crown);
+    collisionTree.userData.fragments=[0x694733,0x956238,0x487840];
+    fallingTrees.push({object:trunkObject,crown,time:0});
   }
   const roughLeaves=own(new THREE.IcosahedronGeometry(1,0));
   for(const [x,z,h,w] of [[-10,-9,7.9,3.5],[-5,-12,6.9,3.4],[-13,1,7.6,3.5],[-12,12,6.2,2.9],[-17,-6,8,3.8],[13,-12,8.6,3.5],[20,-10,8.8,3.7],[24,4,7.5,3.4],[21,13,8.1,3.7],[14,14,6.8,3.4],[-7,15,7,3.4],[-19,13,8.1,3.8],[17,-20,8.3,4],[-4,22,7.3,3.8],[-22,-17,7,3.7],[24,21,8.1,4]])tree(x,z,h,w);
   for(let gx=-78;gx<=78;gx+=8.5)for(let gz=-78;gz<=78;gz+=9.5){
     const x=gx+range(-2.3,2.3),z=gz+range(-2.3,2.3);
-    if(x>-25&&x<28&&z>-23&&z<23||x>-2&&x<12||trailDistance(x,z)<5||Math.hypot(x-grove.x,z-grove.z)<7||Math.hypot(x-gate.x,z-gate.z)<7)continue;
+    if(x>-25&&x<28&&z>-23&&z<23||x>-2&&x<12||trailDistance(x,z)<5||Math.hypot(x+34,z-31)<11||Math.hypot(x-grove.x,z-grove.z)<7||Math.hypot(x-gate.x,z-gate.z)<7)continue;
     if(random()<.45&&Math.max(Math.abs(x),Math.abs(z))<66)continue;
     tree(x,z,range(5,10.6),range(2.5,4.15));
   }
+  for(const [x,z,h,w] of [[-41,32,6.8,2.7],[-39,26,8.2,3.3],[-27,43,7.7,3.0],[-28,25,7.1,3],[-24,36,8,3.3],[-23,26,6.5,2.8],[-12,12,7.4,3.2],[-5,15,6.9,3.0],[23,2,8,3.4],[29,19,7.5,3.1],[42,39,8.4,3.4]])tree(x,z,h,w,true);
   const fern=new THREE.BufferGeometry();
   const frond=[];
   for(let n=0;n<7;n++){
@@ -278,6 +291,18 @@ export function createJungleRavine(scene){
 
   const monument=new THREE.Group();
   const stoneBlocks=[0x637166,0x4d5d57,0x75816b].map(material);
+  const mossStone=material(0x667b43);
+  for(const [x,z,yaw,rows] of [[-36,29,.32,3],[-31,35,.1,4],[-33,27,-.5,2],[-28,31,.75,3],[-26,28,-.4,2],[-15,18,.5,3],[19,4,.3,3],[24,9,-.2,2],[48,44,.3,3]]){
+    const ruin=new THREE.Group(),stones=new THREE.Group();ruin.add(stones);stones.rotation.y=yaw;
+    for(let row=0;row<rows;row++)for(let col=0;col<2;col++){
+      if(row===rows-1&&col===0)continue;
+      const slab=box(stones,stoneBlocks[(row+col)%3],(col-.5)*.89+(row%2?.15:0),.29+row*.56,0,.86,.55,.8-row*.035);
+      slab.rotation.y=(row+col)%2?.07:-.09;
+    }
+    box(stones,mossStone,.55,rows*.56+.015,-.06,.64,.055,.54).userData.noCollision=true;
+    ruin.userData.fragments=[0x637166,0x75816b,0x4d5d57];
+    solid(ruin,'jungle-ruin',x,z,2.65,2.65,rows*.56,70+rows*12);
+  }
   for(const side of [-1,1]){
     for(let row=0;row<6;row++){
       const x=side*(1.72+(row<2?.15:0));
@@ -331,7 +356,7 @@ export function createJungleRavine(scene){
   collision.warm(contact);group.updateMatrixWorld(true);
   const world={
     id:RAVINE_ID,group,objects,hazards:[],bounds,city:null,spawn:{x:arrival.x,z:arrival.z},sky:0x47756b,waterY,
-    camp:{x:16,z:-2,dx:0,dz:2.5},bridge,logZ,stonesZ,bridgeZ,
+    camp:{x:16,z:-2,dx:0,dz:2.5},openingCamp:{x:-33,z:32,spawns:[[-34,33,'zombie'],[-31,30,'crawler'],[-29,33,'robot']]},bridge,logZ,stonesZ,bridgeZ,
     river:{west,east},inRiver,regionAt,trails,layout:{roads:[],plots:[]},landmarks:[falls,grove,gate],districts:[zone,arrival,falls,grove,gate],buildingObjects:[],
     nearObjects,moveBody:collision.moveBody,clearBody:collision.clearBody,supportHeight:collision.supportHeight,
     supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,collisionDiagnostics:collision.diagnostics,
@@ -340,7 +365,17 @@ export function createJungleRavine(scene){
     updateVisibility(player){
       for(const mesh of landscapes){const {center,radius}=mesh.geometry.boundingSphere;mesh.visible=Math.hypot(player.x-center.x,player.z-center.z)<radius+44;}
     },
-    update(){},
+    update(dt){
+      for(const tree of fallingTrees){
+        if(!tree.object.dead||tree.time>=.85)continue;
+        const {object,crown}=tree;
+        if(tree.time===0){group.add(crown);crown.position.set(object.x,0,object.z);}
+        tree.time+=dt;
+        crown.rotation.z=(object.seed<500?-1:1)*1.45*Math.min(1,tree.time/.65)**2;
+        crown.position.y=-Math.max(0,tree.time-.65)*3;
+        if(tree.time>=.85)crown.visible=false;
+      }
+    },
     dispose(){
       world.wildlife.dispose();
       scene.remove(group);

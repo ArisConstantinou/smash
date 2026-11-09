@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+const gameUrl=process.env.SMASH_GAME_URL||'http://127.0.0.1:8000/candidate/';
 const stage=process.env.CODEX_GENERATED_OUTPUT||'E:/CodexGenerated/smash/staging',out=resolve(stage,'tests/boss-trophies');
 await mkdir(out,{recursive:true});process.env.TEMP=process.env.TMP=resolve(stage,'work/temp');
 const skill=resolve(process.env.USERPROFILE,'.codex/skills/develop-web-game');
@@ -32,6 +33,18 @@ window.__trophyQA={
    player.x=player.z=0;hero.position.set(0,0,0);
    return {trophies:read('ironfall.character',null).garage.armory.trophies,removed:!drops.includes(drop)&&!drop.mesh.parent};
  },
+ special(type,dodge){
+   startGame(5,{test:true,camps:false,civilians:false});$('announcement').hidden=true;
+   for(const o of nearbyObjects(0,0,16)){o.dead=true;o.mesh.visible=false;}
+   const e=spawnEnemy(type,{x:0,z:0},{encounterLeader:true});e.speed=0;e.timer=0;e.lastMiniAttack='slam';
+   Object.assign(player,{x:0,z:4,y:0,invincible:0});
+   const before=player.hp;updateEnemies(.016);const shape=e.telegraph?.geometry.type;
+   if(dodge)player.x=5;
+   poseHero(0);cameraTarget.set(0,.6,2);updateBattleCamera(1,cameraTarget);camera.lookAt(cameraTarget);camera.updateMatrixWorld(true);
+   world.updateVisibility(player,camera);updateHUD(true);renderer.render(scene,camera);drawFX();
+   this.finishSpecial=()=>{for(let i=0;i<80;i++)updateEnemies(1/60);return player.hp;};
+   return {shape,before,warned:player.hp};
+ },
  use(){
    for(const ring of rings)removeEffect(ring.mesh);rings=[];numbers=[];hpEchoes=[];
    for(const fallen of enemyFalls)disposeInstance(fallen);enemyFalls=[];
@@ -60,7 +73,7 @@ try{
  context=await managed.browser.newContext({viewport:{width:1440,height:900}});
  await context.route('**/game.js*',r=>r.fulfill({contentType:'text/javascript',body:source+hook}));
  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:8000/candidate/',{waitUntil:'networkidle'});
+ await page.goto(gameUrl,{waitUntil:'networkidle'});
  await page.waitForFunction(()=>window.__trophyQA?.ready,null,{timeout:120000});
  const tab=page.locator('#workshopTabs button').filter({hasText:'ΟΠΛΑ'});
  const card=id=>page.locator('[data-blueprint="'+id+'"]');
@@ -86,6 +99,17 @@ try{
  await page.locator('#menuMountWorkshopButton').click();await tab.click();
  assert.equal(await card('w19').getAttribute('data-locked'),'false');assert.equal(await card('w20').getAttribute('data-equipped'),'true');
  await page.waitForFunction(()=>[...document.querySelectorAll('[data-blueprint^="w2"] img,[data-blueprint="w19"] img')].every(img=>img.complete&&img.naturalWidth>0));
- assert.deepEqual(errors,[]);await writeFile(resolve(out,'results.json'),JSON.stringify({siege,marshal,reload:true,errors},null,2));
- console.log(JSON.stringify({siege,marshal,reload:true,errors}));
+ await close();await page.setViewportSize({width:1440,height:900});await page.evaluate(()=>__trophyQA.start());
+ const specials={};
+ for(const [type,shape] of [['siegeTransformer','CircleGeometry'],['hollowMarshal','PlaneGeometry']]){
+   const warning=await page.evaluate(type=>__trophyQA.special(type,false),type);
+   assert.equal(warning.shape,shape);assert.equal(warning.before,warning.warned);
+   await page.screenshot({path:resolve(out,type+'-special-warning.png')});
+   const hit=await page.evaluate(()=>__trophyQA.finishSpecial());assert.ok(hit<warning.before);
+   const sidestep=await page.evaluate(type=>__trophyQA.special(type,true),type);
+   const dodged=await page.evaluate(()=>__trophyQA.finishSpecial());assert.equal(dodged,sidestep.before);
+   specials[type]={shape,hit,dodged};
+ }
+ assert.deepEqual(errors,[]);await writeFile(resolve(out,'results.json'),JSON.stringify({siege,marshal,specials,reload:true,errors},null,2));
+ console.log(JSON.stringify({siege,marshal,specials,reload:true,errors}));
 }finally{await context?.close();await managed.cleanup();}

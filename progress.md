@@ -1,5 +1,16 @@
 Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\Smash; find failed ChatGPT/GitHub WebGPU/WASM work and fix hammer/whirlwind destruction FPS collapse plus the recorded pending updates. Keep this source folder and project structure for future work.
 
+## Colossus ranged motion — candidate
+
+- The Colossus tips back for overhead missiles, leans into rockets before recoiling, braces and follows its laser sweep, and steps sideways when the player circles at close range. The four feet stay grounded while firing. The projectile emitters follow the chassis and the warnings retain their locked aim.
+- Desktop WebGPU before and after frames and a slowed clip are in `E:/CodexGenerated/smash/staging/tests/beast-portal`. The installed browser input client and all 610 Node tests passed. The final focused check also verified recoil, planted feet, a lateral step, and the underbody dodge. Preview `http://127.0.0.1:8000/candidate/` serves the candidate.
+
+## Colossus underbody attack — candidate
+
+- When the grounded player stays below the chassis, the Colossus plants its feet and marks a fixed danger circle for 1.65 seconds. The chassis drops with articulated legs, hits once and rises into recovery. Contacting explosive props receive their normal warning fuse as the attack starts.
+- In desktop WebGPU QA, the standing player took damage only on impact. Moving out with W avoided the damage. In the street fixture the attack cleared eight props and completed the same drop. The 606 Node tests passed. Before/after captures and the slow clip are under `E:/CodexGenerated/smash/staging/tests/beast-portal`.
+- Review remaining feedback separately. The Marshal uses one attack and the Siege Transformer has a close slam and a ranged tank cannon. Several Workshop ranks add roughly one to two percentage points of power. The jungle has one breakable bridge, one shelter and three crates across 144 × 144 m.
+
 ## City civilians — 2026-11-09
 
 - Residents occupy city streets at the start and use three articulated models. They walk when safe, turn and run when threatened by nearby enemies, a weapon swing or demolition, and choose a clear route around street obstacles before settling.
@@ -339,3 +350,9 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 
 - Cooldown now scales from 2 to 30 seconds with shout power. The upgrade card previews the current and next cost. The warrior prepares, flexes both knees when stationary, leans from the pelvis, and returns to neutral on release. The travelling wave follows the posed mouth.
 - 609 tests passed. Chromium WebGPU verified the keyboard hold, emulated touch tap, the first 2s to 3s upgrade, and a slower close-up capture. In a short desktop A/B, median p95 intervals were 25 ms with the brace bypassed (noisy warmup) and 8.4 ms with the brace enabled. This does not establish a performance gain.
+
+## Jungle and boss integration
+
+- The level picker offers Play Jungle beside the city gallery. It starts a level-six trial with iron equipment. Retry stays in the jungle and the campaign checkpoint is isolated from the trial.
+- The jungle opens on a fight in breakable ruins, with a chance for a rare guard and loot. Mini bosses can warn and follow through with directional attacks. The Colossus now braces and recoils for ranged attacks and marks its underbody slam before dropping.
+- Desktop and emulated touch WebGPU checked the new entry. The jungle browser suite passed campaign transition, props, wildlife, routes and save isolation. The trophy suite passed both mini boss warnings, hits, dodges and trophy pickups.

@@ -5,6 +5,7 @@ import {pathToFileURL} from 'node:url';
 import {createCharacterProgression} from '../character-progression.js';
 import {createGarage} from '../mount-rules.js';
 
+const gameUrl=process.env.SMASH_GAME_URL||'http://127.0.0.1:8000/candidate/';
 const stage=process.env.CODEX_GENERATED_OUTPUT||'E:/CodexGenerated/smash/staging';
 const out=resolve(stage,'tests/jungle-ravine');await mkdir(out,{recursive:true});
 process.env.TEMP=process.env.TMP=resolve(stage,'work/temp');
@@ -71,6 +72,7 @@ window.__ravineQA={
  },
  aim(x,y,z){const p=screenPoint(x,y,z);return {x:p.x,y:p.y};},
  bridge(){return {hp:world.bridge.hp,dead:world.bridge.dead,support:world.supportHeight(5,0,.44)};},
+ openingProp(kind){const o=world.objects.find(o=>o.type===kind&&Math.hypot(o.x-world.spawn.x,o.z-world.spawn.z)<7);return {x:o.x,y:.8,z:o.z,hp:o.hp,dead:o.dead};},
  saved(){return read('ironfall.character',null);},
  checkpoint(){persistCharacter();return this.saved();},
 };`;
@@ -97,11 +99,12 @@ let context;
 try{
   context=await managed.browser.newContext({viewport:{width:1440,height:900}});
   await context.addInitScript(save=>{
-    if(!localStorage.getItem('ironfall.preview.character'))localStorage.setItem('ironfall.preview.character',JSON.stringify(save));
+    const key=location.pathname.startsWith('/candidate/')?'ironfall.preview.character':'ironfall.character';
+    if(!localStorage.getItem(key))localStorage.setItem(key,JSON.stringify(save));
   },initial);
-  await context.route('**/candidate/game.js*',route=>route.fulfill({contentType:'text/javascript',body:source+hook}));
+  await context.route('**/game.js*',route=>route.fulfill({contentType:'text/javascript',body:source+hook}));
   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
-  await page.goto('http://127.0.0.1:8000/candidate/');
+  await page.goto(gameUrl);
   await page.locator('#resumeCharacterButton').click();
   await page.waitForFunction(()=>__ravineQA.backend==='WebGPU'&&JSON.parse(render_game_to_text()).phase==='playing');
   assert.equal(await page.evaluate(()=>JSON.parse(render_game_to_text()).map),'city');
@@ -116,13 +119,31 @@ try{
   await page.locator('#continueButton').click();
   await page.waitForFunction(()=>JSON.parse(render_game_to_text()).map==='jungle-ravine');
   const entered=await page.evaluate(()=>JSON.parse(render_game_to_text()));
-  assert.equal(entered.armory.weapon,'w04');assert.equal(entered.ravine.remainingGuards,2);
+  assert.equal(entered.armory.weapon,'w04');assert.equal(entered.ravine.remainingGuards,5);
+  assert.equal(entered.ravine.openingGuards,3);
+  assert.equal(entered.enemies.filter(e=>e.patrol==='alert').length,3);
+  assert.deepEqual(entered.enemies.map(e=>e.type),['zombie','crawler','robot']);
+  assert.ok(entered.enemies.find(e=>e.type==='robot').hp>150);
   assert.equal(entered.ravine.bounds*2,144);
   assert.deepEqual(await page.evaluate(()=>__ravineQA.saved()),reward);
   await page.evaluate(()=>__ravineQA.quiet());
   await page.waitForTimeout(900);
   const ravineFrames=await frameSample(page);
   await page.screenshot({path:resolve(out,'02-entry.png')});
+  for(const kind of ['jungle-trunk','jungle-ruin']){
+    const prop=await page.evaluate(kind=>__ravineQA.openingProp(kind),kind);
+    await page.evaluate(({x,z})=>__ravineQA.place(x,z+2.5),prop);
+    await page.waitForTimeout(260);
+    const pointer=await page.evaluate(({x,y,z})=>__ravineQA.aim(x,y,z),prop);
+    await page.mouse.move(pointer.x,pointer.y);
+    for(let i=0;i<4&&!(await page.evaluate(kind=>__ravineQA.openingProp(kind).dead,kind));i++){
+      await page.keyboard.press('Space');await page.waitForTimeout(120);
+      await page.mouse.down();await page.waitForTimeout(310);await page.mouse.up();await page.waitForTimeout(620);
+    }
+    assert.equal(await page.evaluate(kind=>__ravineQA.openingProp(kind).dead,kind),true,kind);
+    await page.screenshot({path:resolve(out,'opening-'+kind+'-broken.png')});
+  }
+  await page.evaluate(()=>__ravineQA.place(-38,35));
   const trips=await page.evaluate(()=>{
     const trail=__ravineQA.trail(0);
     const approach=__ravineQA.travel(trail.slice(1,7));
@@ -209,6 +230,11 @@ try{
   await page.evaluate(()=>__ravineQA.place(11.4,0));await page.waitForTimeout(550);
   await page.screenshot({path:resolve(out,'04-far-bank-phone.png')});
   const earned=await page.evaluate(()=>__ravineQA.checkpoint());
+  await page.reload();
+  await page.locator('#chooseRoundButton').click();
+  await page.locator('#jungleStartButton').click();
+  await page.waitForFunction(()=>JSON.parse(render_game_to_text()).ravine?.openingGuards===3);
+  assert.deepEqual(await page.evaluate(()=>__ravineQA.checkpoint()),earned,'Direct stage testing must leave the campaign save intact');
   await page.reload();await page.locator('#resumeCharacterButton').click();
   await page.waitForFunction(()=>JSON.parse(render_game_to_text()).map==='jungle-ravine');
   assert.equal(await page.evaluate(()=>JSON.parse(render_game_to_text()).armory.weapon),'w04');

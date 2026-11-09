@@ -2,7 +2,7 @@
 // +Z is the muzzle direction. Rigid sections bake detail into two material
 // batches each; all four legs retain independent joints, feet and pistons.
 import * as THREE from './vendor/three.module.js';
-import {BEAST_HEIGHT} from './beast-rules.js?v=20261109-beast1';
+import {BEAST_HEIGHT} from './beast-rules.js?v=20261109-body-slam1';
 const P={armor:0x4f696b,edge:0x8d9997,dark:0x263437,joint:0x1b2427,steel:0xa0aaa5,orange:0xff7e22,yellow:0xe4ac48};
 const up=new THREE.Vector3(0,1,0);
 function beveledPlate(){
@@ -135,24 +135,29 @@ export function makeBeastMech(){
   for(let toe=0;toe<3;toe++){feet.plate(P.armor,[(toe-1)*.82,.18,1.0],[.75,1.08,2.2],[-.22,0,0]);feet.plate(P.edge,[(toe-1)*.82,-.20,1.75],[.68,.3,.75]);feet.plate(P.dark,[(toe-1)*.82,.70,.65],[.59,.18,.65]);}
   const foot=feet.finish();root.add(foot);legs.push({hip,rest,pole,upperLength,lowerLength,upper,lower,foot,knee:new THREE.Vector3(),target:rest.clone()});
  }
- const delta=new THREE.Vector3(),axis=new THREE.Vector3(),bend=new THREE.Vector3();
- function pose({time=0,moving=0,stomp=0,rearStomp=0,roar=0}={}){
-  root.userData.poseState={time,moving,stomp,rearStomp,roar};
-  body.position.y=Math.sin(time*1.6)*.035;headRoot.rotation.x=Math.sin(time*1.3)*.025-roar*.16; jawRoot.rotation.x=-.06+Math.max(0,stomp)*.12+roar*.45;
+ const delta=new THREE.Vector3(),axis=new THREE.Vector3(),bend=new THREE.Vector3(),hip=new THREE.Vector3();
+ function pose({time=0,moving=0,strafe=0,stomp=0,rearStomp=0,roar=0,bodyDrop=0,pitch=0,roll=0,bodyShift=0,jaw=0}={}){
+  root.userData.poseState={time,moving,strafe,stomp,rearStomp,roar,bodyDrop,pitch,roll,bodyShift,jaw};
+  body.position.set(0,-bodyDrop,bodyShift);body.rotation.set(pitch,0,roll);body.updateMatrix();
+  headRoot.rotation.x=Math.sin(time*1.3)*.025-roar*.16;
+  jawRoot.rotation.x=-.06+Math.max(0,stomp)*.12+roar*.45+jaw;
   for(let i=0;i<4;i++){
    const l=legs[i],cycle=time*1.65+(i===0||i===3?0:Math.PI),lift=Math.max(0,Math.sin(cycle))*moving;
-   l.target.copy(l.rest);l.target.z+=Math.cos(cycle)*moving*.7;l.target.y+=lift*.75+(i<2?stomp*1.8:rearStomp*1.8);
-   delta.subVectors(l.target,l.hip);const distance=Math.min(delta.length(),l.upperLength+l.lowerLength-.01);axis.copy(delta).normalize();
+   const step=Math.cos(cycle)*moving*.7;
+   l.target.copy(l.rest);l.target.x+=step*strafe;l.target.z+=step*(1-Math.abs(strafe));
+   l.target.y+=lift*.75+(i<2?stomp*1.8:rearStomp*1.8);
+   hip.copy(l.hip).applyMatrix4(body.matrix);
+   delta.subVectors(l.target,hip);const distance=Math.min(delta.length(),l.upperLength+l.lowerLength-.01);axis.copy(delta).normalize();
    const along=(l.upperLength**2-l.lowerLength**2+distance**2)/(2*distance),height=Math.sqrt(Math.max(0,l.upperLength**2-along**2));
-   bend.copy(l.pole).addScaledVector(axis,-l.pole.dot(axis)).normalize();l.knee.copy(l.hip).addScaledVector(axis,along).addScaledVector(bend,height);
-   segment(l.upper,l.hip,l.knee);segment(l.lower,l.knee,l.target);l.foot.position.copy(l.target);l.foot.rotation.x=-lift*.1;
+   bend.copy(l.pole).addScaledVector(axis,-l.pole.dot(axis)).normalize();l.knee.copy(hip).addScaledVector(axis,along).addScaledVector(bend,height);
+   segment(l.upper,hip,l.knee);segment(l.lower,l.knee,l.target);l.foot.position.copy(l.target);l.foot.rotation.x=-lift*.1;
   }
   root.updateMatrixWorld(true);
  }
  pose();const box=new THREE.Box3().setFromObject(root,true),height=box.max.y-box.min.y,scale=BEAST_HEIGHT/height;
  root.scale.setScalar(scale);root.position.y=-box.min.y*scale;
  root.userData={body,head:headRoot,jaw:jawRoot,laser:laserRoot,legs,missileMounts,rocketMounts,pose,poseState:{time:0,moving:0,stomp:0},designScale:scale,groundOffset:root.position.y,
-  worldPoint(point,out=new THREE.Vector3()){root.updateWorldMatrix(true,false);return root.localToWorld(out.copy(point));},
+  worldPoint(point,out=new THREE.Vector3()){return body.localToWorld(out.copy(point));},
   feet(){root.updateMatrixWorld(true);return legs.map(l=>l.foot.getWorldPosition(new THREE.Vector3()));},
   dispose(){root.traverse(n=>{if(n.isMesh)n.geometry.dispose();});root.removeFromParent();}};
  root.updateMatrixWorld(true);return root;

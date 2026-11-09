@@ -30,7 +30,7 @@
   <link rel="stylesheet" href="./style.css?v=20261109.8">
   <link rel="stylesheet" href="./controls.css?v=20261109-shout-brace">
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
-  <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
+  <link rel="stylesheet" href="./level-picker.css?v=20261109-jungle-select">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
   <link rel="stylesheet" href="./mount-workshop.css?v=20261109.9a">
 </head>
@@ -248,10 +248,11 @@
     <div id="roundPicker" class="forge-dialog-overlay city-overlay" hidden>
       <section class="forge-dialog city-dialog" role="dialog" aria-modal="true" aria-labelledby="roundPickerTitle" aria-describedby="roundPickerDescription">
         <header class="city-dialog-header">
-          <div><span class="forge-dialog-kicker">ΕΠΙΛΟΓΗ LEVEL · 15 ΠΡΟΟΡΙΣΜΟΙ</span><h2 id="roundPickerTitle">ΔΙΑΛΕΞΕ <em>ΠΟΛΗ</em></h2></div>
-          <button id="closeRoundPickerButton" class="forge-dialog-close" type="button" aria-label="Κλείσιμο επιλογής πόλης"><svg aria-hidden="true"><use href="#i-cross"/></svg></button>
+          <div><span class="forge-dialog-kicker">ΕΠΙΛΟΓΗ LEVEL · 16 ΠΡΟΟΡΙΣΜΟΙ</span><h2 id="roundPickerTitle">ΔΙΑΛΕΞΕ <em>ΠΙΣΤΑ</em></h2></div>
+          <button id="jungleStartButton" class="jungle-launch" type="button" aria-label="Παίξε στο Φαράγγι της Ζούγκλας, δοκιμή επιπέδου 6" title="Φαράγγι της Ζούγκλας · Επίπεδο 6" disabled>ΠΑΙΞΕ ΖΟΥΓΚΛΑ</button>
+          <button id="closeRoundPickerButton" class="forge-dialog-close" type="button" aria-label="Κλείσιμο επιλογής πίστας"><svg aria-hidden="true"><use href="#i-cross"/></svg></button>
         </header>
-        <p id="roundPickerDescription" class="city-sr-only">Διάλεξε μία εικόνα πόλης και πάτησε Παίξε. Χρησιμοποίησε τα βέλη ή τα κουμπιά σελίδας για όλα τα επίπεδα 1 έως 15. Η κανονική αποθήκευσή σου δεν αλλάζει.</p>
+        <p id="roundPickerDescription" class="city-sr-only">Διάλεξε μία εικόνα πόλης και πάτησε Παίξε. Χρησιμοποίησε τα βέλη ή τα κουμπιά σελίδας για όλα τα επίπεδα 1 έως 15. Ή πάτησε Παίξε Ζούγκλα για το Φαράγγι. Η κανονική αποθήκευσή σου δεν αλλάζει.</p>
         <input id="startingLevel" type="hidden" value="1">
         <div class="city-browser">
           <figure class="city-preview">
@@ -554,6 +555,6 @@
       "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261109-shout-brace"></script>
+  <script type="module" src="./game.js?v=20261109-jungle-select"></script>
 </body>
 </html>

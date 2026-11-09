@@ -34,7 +34,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     'forgeLayout','menuProgress','menuLevelLabel','menuLevelValue','menuXpLabel','menuProgressPercent',
     'menuProgressTrack','menuProgressFill','menuProgressHero','menuHeroCanvas',
     'menuHeroFallback','menuProgressOrigin','menuNextLevel','menuResumeDetail',
-    'startButton','resumeCharacterButton','testStartButton','chooseRoundButton',
+    'startButton','resumeCharacterButton','testStartButton','jungleStartButton','chooseRoundButton',
     'menuSettingsButton','roundPicker','closeRoundPickerButton','startingLevel',
     'menuWorkshop','menuWoodProp','menuMetalProp','menuForgeSparks','menuWorkshopHint',
   ].map(id => [id,$(id)]));
@@ -68,6 +68,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     menu.dataset.ready = String(ready);
     if(el.startButton)el.startButton.disabled=!ready;
     if(el.testStartButton)el.testStartButton.disabled=!ready;
+    if(el.jungleStartButton)el.jungleStartButton.disabled=!ready;
     if(el.resumeCharacterButton){el.resumeCharacterButton.hidden=false;el.resumeCharacterButton.disabled=!ready||!snapshot?.hasSave;}
   }
   function paintRatio() {
@@ -268,7 +269,7 @@ export function createForgeMenu({THREE, makeWarrior, xpForNextLevel, getCharacte
     el.menuWorkshop.style.setProperty('--tilt-y',((e.clientX-r.left-r.width/2)/Math.max(1,r.width)*5).toFixed(2)+'deg');
   });
   listen(el.menuWorkshop,'pointerleave',()=>{el.menuWorkshop.style.setProperty('--tilt-x','0deg');el.menuWorkshop.style.setProperty('--tilt-y','0deg');});
-  for(const button of [el.startButton,el.resumeCharacterButton,el.testStartButton]){
+  for(const button of [el.startButton,el.resumeCharacterButton,el.testStartButton,el.jungleStartButton]){
     listen(button,'click',()=>{if(!button.disabled){interacted=true;fire('menuPress');}});
   }
   for(const button of [...(menu.querySelectorAll?.('button')||[])]){

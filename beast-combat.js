@@ -1,8 +1,8 @@
-// Four distinct, finite attacks. Every target locks before firing: moving out
+// Every attack target locks before firing: moving out
 // of the marked space remains a valid dodge even in the enraged phase.
 import * as THREE from './vendor/three.module.js';
 import {VehicleExplosionBatch} from './vehicle-explosion.js?v=20261108-colossus1';
-export const BEAST_ATTACKS=Object.freeze(['missiles','rockets','laser','stomp','rearStomp']);
+export const BEAST_ATTACKS=Object.freeze(['missiles','rockets','laser','stomp','rearStomp','bodySlam']);
 const up=new THREE.Vector3(0,1,0);
 export function missileOffset(index){const angle=(index-1)*Math.PI*2/5;return index===0?{x:0,z:0}:{x:Math.sin(angle)*4,z:Math.cos(angle)*4};}
 // r170's small InstancedMesh uniform path kept the prewarmed identity matrices
@@ -46,7 +46,10 @@ export class BeastCombat{
   const target=new THREE.Vector3(player.x,Math.max(0,player.y)+.9,player.z),u=b.mesh.userData;
   const origin=u.worldPoint(new THREE.Vector3(0,5.2,4));
   const stomp=kind==='stomp'||kind==='rearStomp';
-  this.attack={kind,time:0,windup:kind==='laser'?1.65:stomp?1.35:1.25,target,origin,launched:false,angle:Math.atan2(target.x-origin.x,target.z-origin.z),distance:Math.max(12,Math.hypot(target.x-origin.x,target.z-origin.z)),hits:new Set(),feet:u.feet().slice(kind==='rearStomp'?2:0,kind==='rearStomp'?4:2).map(p=>p.clone()),radius:5.8,damageScale:b.damageScale||1};
+  const bodySlam=kind==='bodySlam',center=bodySlam?new THREE.Vector3(b.x,this.surface(b.x,b.z),b.z):null;
+  this.attack={kind,time:0,windup:kind==='laser'||bodySlam?1.65:stomp?1.35:1.25,
+   duration:kind==='laser'?2.4:bodySlam?.86:stomp?.6:.58,settle:kind==='laser'?.38:0,
+   target,origin,launched:false,angle:Math.atan2(target.x-origin.x,target.z-origin.z),distance:Math.max(12,Math.hypot(target.x-origin.x,target.z-origin.z)),hits:new Set(),feet:stomp?u.feet().slice(kind==='rearStomp'?2:0,kind==='rearStomp'?4:2):[],center,radius:bodySlam?7.8:5.8,damageScale:b.damageScale||1};
   this.cue(kind);return this.attack;
  }
  launch(b){
@@ -60,7 +63,12 @@ export class BeastCombat{
     else {const offset=(i-1)*2.6;to.x+=Math.cos(a.angle)*offset;to.z-=Math.sin(a.angle)*offset;}
     this.projectiles.push({kind:a.kind,from,to,previous:from.clone(),position:from.clone(),time:0,duration:missile?1.65+i*.13:Math.max(.9,from.distanceTo(to)/23),radius:missile?3.1:2.5,damage:(missile?32:38)*a.damageScale});
    }
-  }else if(a.kind==='stomp'||a.kind==='rearStomp')for(const point of a.feet){this.blast(point,a.radius,38*a.damageScale,{groundOnly:true});this.bursts.push({s:{destroyed:true,deadTime:0,burstOrigin:point.clone(),visualScale:.7}});}
+  }else if(a.center||a.feet.length){
+   for(const point of a.center?[a.center]:a.feet){
+    this.blast(point,a.radius,(a.center?58:38)*a.damageScale,{groundOnly:true});
+    this.bursts.push({s:{destroyed:true,deadTime:0,burstOrigin:point.clone(),visualScale:a.center?1.1:.7}});
+   }
+  }
   a.launched=true;
  }
  update(dt,b,player,camera){
@@ -68,15 +76,18 @@ export class BeastCombat{
   this.clock+=dt;
   const a=this.attack;
   if(a){a.time+=dt;if(!a.launched&&a.time>=a.windup)this.launch(b);
-   const duration=a.kind==='laser'?2.4:(a.kind==='stomp'||a.kind==='rearStomp')?.6:.25;
    if(a.kind==='laser'){
-    const active=a.time>=a.windup,t=Math.max(0,Math.min(1,(a.time-a.windup)/2.4)),angle=a.angle-.38+t*.76;
-    const origin=b.mesh.userData.worldPoint(new THREE.Vector3(0,5.2,4));
-    const end=new THREE.Vector3(origin.x+Math.sin(angle)*a.distance,a.target.y,origin.z+Math.cos(angle)*a.distance);
-    const clipped=active?this.beamHit(origin,end,dt,a.hits):null;
-    this.setBeam(origin,clipped||end,active?.32:.055);this.beam.material.opacity=active?.9:.35+Math.sin(a.time*18)*.15;
+    const fire=a.time-a.windup;
+    if(fire>=a.duration)this.beam.visible=false;
+    else{
+     const active=fire>=0,angle=a.angle-.38+Math.max(0,fire/a.duration)*.76;
+     const origin=b.mesh.userData.worldPoint(new THREE.Vector3(0,5.2,4));
+     const end=new THREE.Vector3(a.origin.x+Math.sin(angle)*a.distance,a.target.y,a.origin.z+Math.cos(angle)*a.distance);
+     const clipped=active?this.beamHit(origin,end,dt,a.hits):null;
+     this.setBeam(origin,clipped||end,active?.32:.055);this.beam.material.opacity=active?.9:.35+Math.sin(a.time*18)*.15;
+    }
    }
-   if(a.time>=a.windup+duration){this.attack=null;this.beam.visible=false;}
+   if(a.time>=a.windup+a.duration+a.settle){this.attack=null;this.beam.visible=false;}
   }
   for(let i=this.projectiles.length-1;i>=0;i--){
    const p=this.projectiles[i];p.previous.copy(p.position);p.time+=dt;const t=Math.min(1,p.time/p.duration);
@@ -96,7 +107,8 @@ export class BeastCombat{
    d.position.set(point.x,point.y>3?point.y:floor.y+.12,point.z);d.rotation.set(-Math.PI/2,0,0);d.scale.set(radius,radius,1);d.updateMatrix();this.markerPool.set(n++,d.matrix);};
   const a=this.attack;
   if(a&&!a.launched){
-   if(a.kind==='stomp'||a.kind==='rearStomp')for(const p of a.feet)marker(p,a.radius);
+   if(a.center)marker(a.center,a.radius);
+   else if(a.feet.length)for(const p of a.feet)marker(p,a.radius);
    else if(a.kind==='missiles')for(let i=0;i<6;i++){const offset=missileOffset(i);marker({x:a.target.x+offset.x,y:a.target.y,z:a.target.z+offset.z},3.1);}
    else if(a.kind==='rockets')for(let i=-1;i<=1;i++)marker({x:a.target.x+Math.cos(a.angle)*i*2.6,y:a.target.y,z:a.target.z-Math.sin(a.angle)*i*2.6},2.5);
   }

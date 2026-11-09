@@ -95,3 +95,15 @@
   #menu .city-dialog { grid-template-rows:44px minmax(0,1fr) 62px 20px;gap:8px;padding:10px; }.city-browser { grid-template-rows:100px minmax(0,1fr);gap:8px; }.city-preview figcaption>small { display:none; }.city-preview h3 { font-size:19px; }.city-preview figcaption { padding:10px; }.city-card-copy small { display:none; }
 }
 @media(prefers-reduced-motion:reduce) { .city-card,.city-card-image { transition:none; }.city-card:hover { transform:none; } }
+
+#menu .city-dialog-header .jungle-launch {
+  margin-inline-start:auto; flex:none; min-height:44px; padding:6px 14px;
+  border:1px solid #7baf74; border-radius:5px; background:#28483b; color:#e5f3c3;
+  font:800 13px/1.2 Arial,sans-serif; cursor:pointer;
+}
+#menu .city-dialog-header .jungle-launch:hover { background:#39634d; }
+#menu .city-dialog-header .jungle-launch:focus-visible { outline:2px solid #e5f3c3; outline-offset:2px; }
+#menu .city-dialog-header .jungle-launch:disabled { opacity:.55; cursor:default; }
+@media (max-width:599px) {
+  #menu .city-dialog-header .jungle-launch { max-width:100px; padding-inline:8px; font-size:12px; }
+}

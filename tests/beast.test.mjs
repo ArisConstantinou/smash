@@ -37,8 +37,8 @@ test('mech collision hits an actual reachable foot and leaves the space under it
  mesh.userData.dispose();
 });
 
-test('all four attacks have a warning, finite recovery and cleanup; ordnance never follows a late dodge',()=>{
- const scene=new THREE.Scene(),mesh=makeBeastMech();scene.add(mesh);const b={mesh},camera=new THREE.PerspectiveCamera();
+test('all attacks have a warning, finite recovery and cleanup; ordnance never follows a late dodge',()=>{
+ const scene=new THREE.Scene(),mesh=makeBeastMech();scene.add(mesh);const b={mesh,x:0,z:0},camera=new THREE.PerspectiveCamera();
  const player={x:0,y:0,z:38},blasts=[],beams=[],cues=[];
  const combat=new BeastCombat(scene,{blast:(p,r,d,o)=>blasts.push({p:p.clone(),r,d,o}),beamHit:(a,b)=>beams.push([a.clone(),b.clone()]),cue:k=>cues.push(k)});
  for(const kind of BEAST_ATTACKS){
@@ -49,7 +49,7 @@ test('all four attacks have a warning, finite recovery and cleanup; ordnance nev
   for(let i=0;i<750;i++)combat.update(.01,b,player,camera);
   assert.equal(combat.attack,null);assert.equal(combat.projectiles.length,0);assert.equal(combat.bursts.length,0);assert.equal(combat.beam.visible,false);assert.equal(combat.markerCount,0);
   if(kind==='laser')assert.ok(beams.length>0);
-  else{assert.equal(blasts.length,kind==='missiles'?6:kind==='rockets'?3:2);assert.ok(blasts.every(hit=>hit.p.x<30),'Locked attack cannot teleport to the dodging player');}
+  else{assert.equal(blasts.length,{missiles:6,rockets:3,stomp:2,rearStomp:2,bodySlam:1}[kind]);assert.ok(blasts.every(hit=>hit.p.x<30),'Locked attack cannot teleport to the dodging player');}
  }
  assert.deepEqual(cues,[...BEAST_ATTACKS]);combat.reset();assert.equal(combat.explosions.mesh.visible,false);combat.dispose();mesh.userData.dispose();
 });

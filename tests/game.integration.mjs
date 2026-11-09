@@ -4470,6 +4470,96 @@ test('standing behind the boss triggers a visible warning then actual rear damag
  api.beastCombat.reset();b.state='walk';b.timer=0;b.rearCooldown=0;api.player.invincible=0;api.updateBoss(.01);assert.equal(api.beastCombat.attack.kind,'rearStomp');
  const after=api.player.hp;api.player.x=60;api.player.z=60;for(let i=0;i<90;i++)api.updateBoss(1/60);assert.equal(api.player.hp,after,'Leaving the marked rear area must still work');
 });
+test('the Colossus warns and lowers its planted chassis before a dodgeable underbody slam',()=>{
+ arena(5,{test:false});api.spawnBoss();const b=api.boss,u=b.mesh.userData;
+ Object.assign(b,{x:0,y:0,z:0,state:'walk',timer:0});b.entryPlane.constant=1e6;
+ b.mesh.position.set(0,u.groundOffset,0);b.mesh.rotation.y=0;u.pose();
+ const feet=u.feet(),hp=api.player.hp;
+ api.player.x=1;api.player.z=0;api.player.invincible=0;
+ api.updateBoss(1/60);
+ assert.equal(api.beastCombat.attack.kind,'bodySlam');assert.equal(api.beastCombat.markerCount,1);
+ for(let i=0;i<89;i++)api.updateBoss(1/60);
+ assert.equal(api.player.hp,hp);assert.ok(u.body.position.y<-.5);
+ for(let i=0;i<10;i++)api.updateBoss(1/60);
+ assert.ok(api.player.hp<hp);assert.ok(u.body.position.y<-3.5);
+ u.feet().forEach((foot,i)=>assert.ok(foot.distanceTo(feet[i])<1e-5));
+ assert.equal(b.mesh.rotation.y,0);
+ for(let i=0;i<55;i++)api.updateBoss(1/60);
+ assert.equal(b.state,'recover');close(u.body.position.y,0);
+ b.state='walk';b.timer=0;api.player.invincible=0;
+ api.updateBoss(1/60);assert.equal(api.beastCombat.attack.kind,'bodySlam');
+ const after=api.player.hp;api.player.x=15;
+ for(let i=0;i<110;i++)api.updateBoss(1/60);
+ assert.equal(api.player.hp,after);assert.equal(b.mesh.rotation.y,0);
+});
+test('the Colossus plants its feet and fires rockets from the recoiling launcher at the locked aim',()=>{
+ arena(5);api.spawnBoss();const b=api.boss,u=b.mesh.userData;
+ Object.assign(b,{x:0,y:0,z:0,state:'walk',timer:0,attack:1});b.entryPlane.constant=1e6;
+ b.mesh.position.set(0,u.groundOffset,0);b.mesh.rotation.y=0;u.pose();
+ api.player.x=0;api.player.z=24;
+ const planted=u.feet();
+ api.updateBoss(1/60);
+ assert.equal(api.beastCombat.attack.kind,'rockets');
+ api.player.x=8;
+ for(let i=0;i<70;i++)api.updateBoss(1/60);
+ assert.ok(u.body.rotation.x>.1);
+ const head=u.head.getWorldPosition(new THREE.Vector3()),forward=u.head.getWorldDirection(new THREE.Vector3());
+ const aim=core.normalize(api.player.x-head.x,api.player.z-head.z);
+ const gaze=core.normalize(forward.x,forward.z);
+ assert.ok(aim.x*gaze.x+aim.z*gaze.z>.9999);
+ for(let i=0;i<20&&!api.beastCombat.attack.launched;i++)api.updateBoss(1/60);
+ assert.equal(api.beastCombat.attack.launched,true);
+ const middle=api.beastCombat.projectiles[1];
+ assert.equal(middle.to.x,0);
+ assert.ok(middle.from.distanceTo(u.worldPoint(u.rocketMounts[3]))<1e-5);
+ for(let i=0;i<6;i++)api.updateBoss(1/60);
+ assert.ok(u.body.position.z<-.25);
+ u.feet().forEach((foot,i)=>assert.ok(foot.distanceTo(planted[i])<1e-5));
+ api.beastCombat.reset();b.state='walk';b.timer=1;
+ api.player.x=b.w*.37;api.player.z=0;
+ api.updateBoss(.2);
+ assert.ok(b.x>.1,'A nearby player circling the boss makes it step sideways');
+ assert.ok(b.z<-.04,'The step follows an arc around the player');
+});
+test('mini bosses alternate their close slam with a locked directional attack',()=>{
+ for(const [type,shape] of [['siegeTransformer','CircleGeometry'],['hollowMarshal','PlaneGeometry']]){
+  arena(5);const enemy=stationaryEnemy(type,0,0);
+  Object.assign(api.player,{x:0,z:4,invincible:0});enemy.state='walk';enemy.timer=0;
+  api.updateEnemies(.016);assert.equal(enemy.state,'windup');assert.equal(enemy.lastMiniAttack,'slam');
+  api.player.x=12;api.updateEnemies(enemy.windup+.02);
+  api.player.x=0;enemy.timer=0;api.updateEnemies(.15);
+  assert.equal(enemy.state,'windup');assert.equal(enemy.lastMiniAttack,'special');
+  assert.equal(enemy.telegraph.geometry.type,shape);
+  const warning=enemy.attackSpecial,health=api.player.hp;
+  api.player.x=5;api.updateEnemies(.2);
+  assert.equal(enemy.attackSpecial,warning);assert.equal(api.player.hp,health);
+  api.updateEnemies(warning.profile.windup);
+  assert.equal(api.player.hp,health);assert.equal(enemy.telegraph,null);
+  api.player.x=0;enemy.timer=0;enemy.lastMiniAttack='slam';api.updateEnemies(.15);
+  assert.equal(enemy.lastMiniAttack,'special');
+  api.updateEnemies(enemy.attackSpecial.profile.windup+.02);
+  assert.ok(api.player.hp<health);
+ }
+});
+test('jungle opening starts in combat and rolls either an early weapon or rare supplies',()=>{
+ const key='ironfall.character',previous=storage.get(key);
+ try{
+  storage.delete(key);api.startGame(1,{camps:false});api.persistCharacter();
+  const save=JSON.parse(storage.get(key));save.map='jungle-ravine';
+  const enter=()=>{storage.set(key,JSON.stringify(save));api.startGame(1,{resume:true,camps:false});};
+  enter();api.spawnCamps(()=>.99);
+  assert.equal(api.enemies.filter(e=>e.patrol.opening&&e.patrol.alert).length,3);
+  assert.ok(api.enemies.every(e=>!e.rareWeapon&&!e.rareSupplies));
+  enter();api.spawnCamps(()=>0);
+  const carrier=api.enemies.find(e=>e.patrol.opening&&e.rareWeapon==='w04');assert.ok(carrier);
+  api.killEnemy(carrier);assert.ok(api.drops.some(d=>d.weapon==='w04'));
+  save.garage.armory.discoveries={w04:true};enter();api.spawnCamps(()=>0);
+  const supplyGuard=api.enemies.find(e=>e.patrol.opening&&e.rareSupplies);assert.ok(supplyGuard);
+  api.killEnemy(supplyGuard);
+  assert.ok(api.drops.some(d=>d.kind==='crystal'&&d.amount===4));
+  assert.ok(api.drops.some(d=>d.kind==='scrap'&&d.amount===9));
+ }finally{if(previous===undefined)storage.delete(key);else storage.set(key,previous);}
+});
 test('boss survives a former full-health burst and exposes a meaningful recovery damage window',()=>{
  arena(5);api.spawnBoss();const b=api.boss;b.state='walk';const maximum=b.hp;
  api.hitBoss(3000,{x:0,z:1},5);assert.equal(b.dead,false);assert.equal(maximum-b.hp,2400);
