@@ -1,7 +1,7 @@
 import {createLevelPicker} from './level-picker.js?v=20261107-cities10';
 
 // Date-based release identifier; increment the final component for each release.
-export const GAME_VERSION = '2026.11.09.2';
+export const GAME_VERSION = '2026.11.09.3';
 
 // This controller owns only the title screen. Its preview has a small, isolated
 // renderer so it never moves the battle hero, changes a save, or renders while

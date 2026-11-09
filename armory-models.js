@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import {armoryBuilder,armoryPalette,sculptedWoodGeometry,cartridge} from './armory-geometry.js';
-import {createArmory,blueprint} from './armory-rules.js';
+import {createArmory,blueprint} from './armory-rules.js?v=20261109-trophies1';
 import {createArmoryMaterials,disposeArmoryMaterials} from './armory-materials.js';
 const circle=(r,n=24,cx=0,cy=0)=>Array.from({length:n},(_,i)=>[cx+Math.cos(i/n*Math.PI*2)*r,cy+Math.sin(i/n*Math.PI*2)*r]);
 function partConfig(a,id){return a.items[id].parts;}
@@ -37,6 +37,24 @@ function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}})
   b.bevel(P.paint,0,.20,-.02,.74,.15,.26,.025);b.bevel(P.steel,0,-.20,0,.67,.12,.27,.025);b.cylinder(P.gold,0,-.29,0,.115,.18,'y',12);
  }else if(id==='w11'){
   b.bevel(P.dark,0,0,0,1.10,.65,.59,.035);b.bevel(P.paint,.10,0,0,.80,.66,.60,.04);b.bevel(P.steel,-.51,0,0,.18,.71,.66,.035);b.bevel(P.steel,.55,0,0,.15,.69,.63,.03);b.bevel(P.light,.635,0,0,.035,.53,.48,.009);for(const y of [-.22,0,.22])for(const z of [-.22,0,.22])b.cone(P.steel,-.67,y,z,.066,.17,[-1,0,0]);for(const side of [-1,1])for(const y of [-.22,.22])b.bolt(P.gold,side*.30,y,.326,.027);b.bevel(P.gold,.13,0,.33,.08,.59,.035,.012);
+ }else if(id==='w19'){
+  // The Transformer's offset siege barrel, shortened and mounted on a haft.
+  const amber=parts.finish.selected==='navy'?0xc48738:P.paint;
+  b.bevel(P.dark,-.29,0,0,.70,.58,.56,.045);b.bevel(amber,-.36,0,0,.52,.56,.60,.038);
+  b.cylinder(P.steel,.19,0,0,.225,.78,'x',10);b.cylinder(P.dark,.03,0,0,.269,.24,'x',10);
+  b.bevel(amber,.57,0,0,.29,.53,.53,.032);
+  const outer=[[-.25,-.25],[.25,-.25],[.25,.25],[-.25,.25]],bore=circle(.137,10);
+  const muzzle=b.poly(P.steel,outer,.092,0,[bore],.012);muzzle.position.x=.70;muzzle.rotation.y=Math.PI/2;
+  b.cylinder(P.dark,.62,0,0,.135,.012,'x',10);b.bevel(P.steel,-.69,0,0,.115,.53,.52,.025);
+  for(const side of [-1,1]){for(const x of [-.51,-.34,-.17]){const mark=b.bevel(P.pale??P.light,x,.025,side*.313,.045,.28,.019,.006);mark.rotation.z=-.36;}for(const y of [-.18,.18])b.bolt(P.gold,.55,y,side*.273,.03);}
+ }else if(id==='w20'){
+  // The Marshal's armored shock baton, including its three exposed pulse coils.
+  const violet=0xb674ef,plate=parts.finish.selected==='navy'?0x574a65:P.paint;
+  b.cylinder(P.dark,0,.11,0,.121,.83,'y',10);
+  b.cylinder(P.steel,0,-.31,0,.155,.14,'y',8);b.cylinder(plate,0,.50,0,.175,.17,'y',8);
+  for(const y of [-.11,.08,.27]){b.cylinder(violet,0,y,0,.153,.065,'y',12);b.ring(P.steel,0,y+.038,0,.152,.013,'y',12);}
+  for(const x of [-.202,.202]){b.bevel(plate,x,.12,0,.108,.67,.17,.022);b.bolt(P.steel,x,.31,.09,.024);b.bolt(P.steel,x,-.13,.09,.024);}
+  b.cylinder(P.steel,0,.602,0,.148,.056,'y',8);b.cylinder(violet,0,.637,0,.090,.026,'y',8);
  }else if(id==='w12'){
   b.poly(P.dark,circle(.49,24,0,.25),.32,0,[circle(.305,24,0,.25)],.025);b.poly(P.steel,circle(.50,8,0,.25),.065,.18,[circle(.34,16,0,.25)],.015);
   for(let i=0;i<8;i++){const angle=i*Math.PI/4,x=Math.cos(angle)*.43,y=.25+Math.sin(angle)*.43,m=b.bevel(i%2?P.paint:P.gold,x,y,.215,.19,.12,.075,.014);m.rotation.z=angle;b.bolt(P.steel,x,y,.264,.026);}
@@ -49,9 +67,10 @@ function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}})
  if(strike!=='plain'||extra>0||kit.selected!=='standard'){
   if(number<5){for(let i=0;i<8;i++){const angle=i*Math.PI/4,r=.26,y=.27;if(strike==='spiked')b.cone(P.steel,Math.sin(angle)*.31,y,Math.cos(angle)*.31,.045,.12,[Math.sin(angle),0,Math.cos(angle)]);else radialStud(b,P,angle,y,r,.045);}if(strike==='flanged')for(let i=0;i<4;i++){const angle=i*Math.PI/2,m=b.bevel(P.gold,Math.sin(angle)*.26,.22,Math.cos(angle)*.26,.065,.53,.06,.012);m.rotation.y=angle;}}
   else if(id==='w12'){for(const side of [-1,1])b.bevel(P.gold,side*.48,.25,.25,.08,.35,.06,.012);}
-  else{const x=id==='w07'?-.56:id==='w08'?.30:id==='w11'?-.66:(id==='w09'?.64:id==='w10'?.59:.49);for(const y of [-.13,.13])for(const z of [-.13,.13]){if(strike==='spiked')b.cone(P.steel,x+Math.sign(x)*.07,y,z,.044,.12,[Math.sign(x),0,0]);else b.bolt(P.gold,x+Math.sign(x)*.025,y,z,.035,'x');}if(strike==='flanged')for(const y of [-.16,.16])b.bevel(P.gold,0,y,.34,.75,.06,.06,.012);}
+  else if(id==='w20'){for(const x of [-.17,.17])for(const y of [-.15,.16,.44]){if(strike==='spiked')b.cone(P.steel,x*1.3,y,0,.047,.11,[Math.sign(x),0,0]);else b.bolt(P.gold,x*1.3,y,.07,.027);}if(strike==='flanged')b.bevel(P.steel,0,.13,.145,.09,.56,.052,.012);}
+  else{const x=id==='w07'?-.56:id==='w08'?.30:id==='w11'?-.66:id==='w19'?-.74:(id==='w09'?.64:id==='w10'?.59:.49);for(const y of [-.13,.13])for(const z of [-.13,.13]){if(strike==='spiked')b.cone(P.steel,x+Math.sign(x)*.07,y,z,.044,.12,[Math.sign(x),0,0]);else b.bolt(P.gold,x+Math.sign(x)*.025,y,z,.035,'x');}if(strike==='flanged')for(const y of [-.16,.16])b.bevel(P.gold,0,y,.34,.75,.06,.06,.012);}
  }
- const coreY=id==='w12'?-.27:number<5?-.19:0,coreZ=id==='w12'?.23:number<5?.20:id==='w09'||id==='w10'||id==='w11'?.36:.28;
+ const coreY=id==='w12'||id==='w20'?-.27:number<5?-.19:0,coreZ=id==='w12'?.23:id==='w20'?.18:number<5?.20:id==='w09'||id==='w10'||id==='w11'||id==='w19'?.36:.28;
  if(parts.core.selected!=='none')cartridge(b,P,parts.core.selected,0,coreY,coreZ,rank(parts,'core'));
  const mesh=b.finish(mat);mesh.name='Armory head '+id;mesh.userData.part='head';mesh.userData.corePosition={x:0,y:coreY,z:coreZ};mesh.userData.compoundRing=id==='w12'?{x:0,y:.25,z:0,inner:.30,outer:.53,depth:.38}:null;return mesh;
 }

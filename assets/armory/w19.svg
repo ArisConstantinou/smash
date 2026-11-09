@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+ <defs>
+  <linearGradient id="steel" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#cad5d4"/><stop offset=".45" stop-color="#7d9498"/><stop offset="1" stop-color="#293e45"/></linearGradient>
+  <linearGradient id="armor" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#e8b55e"/><stop offset="1" stop-color="#945520"/></linearGradient>
+ </defs>
+ <g transform="rotate(-22 80 80)" stroke="#152830" stroke-width="2" stroke-linejoin="round">
+  <path d="M73 56h13v78H73z" fill="url(#steel)"/><path d="M69 94h21l-2 42-4 5h-11l-4-5z" fill="#5d4034"/>
+  <path d="m71 99 16 4m-16 3 16 4m-16 3 16 4m-16 3 16 4m-16 3 16 4" fill="none" stroke="#aa7750"/>
+  <path d="M67 91h25v6H67zM71 137h15v6H71z" fill="#d2a95c"/>
+  <path d="m17 41 8-9 50 1 11 9-1 31-12 9H28l-12-8z" fill="#334a51"/>
+  <path d="m18 41 51 1 10 9-3 23-11 7H28l-12-8z" fill="url(#armor)"/>
+  <path d="m80 47 37 1 11 8v13l-13 5H78z" fill="url(#steel)"/>
+  <path d="m106 48 8-6 21 4 12 7v18l-12 8-28-5z" fill="url(#armor)"/>
+  <path d="m128 49 12 2 8 6v13l-10 7-10-2-7-8V56z" fill="url(#steel)"/>
+  <path d="m133 55 8 1 2 5v6l-5 4-8-2-3-5 2-6z" fill="#102127"/>
+  <path d="m32 48 6 1-9 20-6-1zm13 1 6 1-9 20-6-1zm13 1 6 1-9 20-6-1z" fill="#f7dfaa" stroke="none"/>
+  <path d="m17 43 9 1v34l-9-3z" fill="url(#steel)"/><circle cx="115" cy="52" r="2" fill="#ffe2a0"/><circle cx="114" cy="69" r="2" fill="#ffe2a0"/>
+ </g>
+</svg>

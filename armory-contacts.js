@@ -12,9 +12,11 @@ export function armoryHeadVolumes(id,{strike='plain',core='none'}={}){
  else if(id==='w11')list=[sphere(-.55,0,0,.34,'spikes',1.18,.82),sphere(0,0,0,.31,'body',.78,.9),sphere(.40,0,0,.34,'flat',.90,1.24)];
  else if(id==='w12'){list=[];for(let i=0;i<12;i++){const a=i*Math.PI/6;for(const z of [-.08,.08])list.push(sphere(Math.cos(a)*.425,.25+Math.sin(a)*.425,z,.132,'rim'));}list.push(sphere(0,-.28,0,.15,'rim'));}
  else if(id==='w07')list=[sphere(-.35,0,0,.26),sphere(.04,0,0,.21),sphere(.35,0,0,.14),sphere(.55,0,0,.085)];
+ else if(id==='w19')list=[sphere(-.48,0,0,.31),sphere(-.12,0,0,.28),sphere(.24,0,0,.225),sphere(.55,0,0,.25)];
+ else if(id==='w20')list=[sphere(0,-.24,0,.17),sphere(0,.02,0,.19),sphere(0,.26,0,.19),sphere(0,.50,0,.19)];
  else{const r=id==='w09'?.33:id==='w10'?.38:id==='w06'?.26:.25,x=id==='w09'?.45:id==='w10'?.39:.32;list=[sphere(-x,0,0,r),sphere(0,0,0,r),sphere(x,0,0,r)];}
  if(strike!=='plain'&&id!=='w12')for(const s of list)s.r+=strike==='spiked'?.055:.025;
- if(core!=='none')list.push(sphere(0,id==='w12'?-.27:Number(id.slice(1))<5?-.19:0,id==='w12'?.23:Number(id.slice(1))<5?.20:Number(id.slice(1))>=9?.36:.28,.10,id==='w08'?'bridge':'head',id==='w08'?.35:.75,id==='w08'?.7:.8));return list;
+ if(core!=='none')list.push(sphere(0,id==='w12'||id==='w20'?-.27:Number(id.slice(1))<5?-.19:0,id==='w12'?.23:id==='w20'?.18:Number(id.slice(1))<5?.20:Number(id.slice(1))>=9?.36:.28,.10,id==='w08'?'bridge':'head',id==='w08'?.35:.75,id==='w08'?.7:.8));return list;
 }
 /** Cast through the existing real target geometry/WASM path. Shared temporary
  * vectors are consumed synchronously; only returned contacts own their data. */

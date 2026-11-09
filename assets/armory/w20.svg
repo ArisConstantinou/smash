@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+ <defs>
+  <linearGradient id="plate"><stop stop-color="#56636a"/><stop offset=".42" stop-color="#adadb7"/><stop offset="1" stop-color="#32303f"/></linearGradient>
+  <linearGradient id="pulse"><stop stop-color="#7133a2"/><stop offset=".5" stop-color="#f6b7ff"/><stop offset="1" stop-color="#9e4be0"/></linearGradient>
+ </defs>
+ <g transform="rotate(31 80 80)" stroke="#1b2030" stroke-width="2" stroke-linejoin="round">
+  <path d="M74 71h12l1 66-4 7h-7l-4-6z" fill="#6f5046"/>
+  <path d="m73 104 13 4m-13 3 13 4m-13 3 13 4m-13 3 13 4m-13 3 13 4" fill="none" stroke="#a77d63"/>
+  <path d="M70 90h20v7H70zM72 138h16v7H72z" fill="#b59866"/>
+  <path d="M69 28h22l4 10v42l-5 10H70l-5-10V37z" fill="#282b3c"/>
+  <path d="M68 42h24v9H68zm0 14h24v9H68zm0 14h24v9H68z" fill="url(#pulse)"/>
+  <path d="m64 36 8-4 2 7v41l-5 9-8-5V40zm32 0-8-4-2 7v41l5 9 8-5V40z" fill="url(#plate)"/>
+  <path d="m65 22 9-7h13l8 7v11l-6 6H71l-6-6zM69 84h22l3 7-4 8H70l-4-7z" fill="url(#plate)"/>
+  <path d="m75 21 5-4 6 4-4 7h-5z" fill="url(#pulse)"/>
+  <circle cx="66" cy="45" r="2" fill="#dfd4c4"/><circle cx="66" cy="75" r="2" fill="#dfd4c4"/>
+  <circle cx="94" cy="45" r="2" fill="#dfd4c4"/><circle cx="94" cy="75" r="2" fill="#dfd4c4"/>
+ </g>
+</svg>
