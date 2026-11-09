@@ -1,5 +1,12 @@
 Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\Smash; find failed ChatGPT/GitHub WebGPU/WASM work and fix hammer/whirlwind destruction FPS collapse plus the recorded pending updates. Keep this source folder and project structure for future work.
 
+## Player camera, live map and boss gauntlet — 2026-11-09
+
+- Protected published baseline: main `5ea1f69`, v2026.11.09.1. Candidate v2026.11.09.2 uses the fixed port 8000 and no extra build. The player keeps the original orthographic angle and 1× zoom during all boss fights. Preserve the near-plane retreat that fixes clipped roofs.
+- Destruction and kills open the Siege Transformer at 45%, Hollow Marshal at 70%, and Colossus at 90% after the two escorts are cleared. The two leaders walk through the road rift before entering combat. The Transformer uses its four articulated track assemblies to change into a tank, with a dodgeable shell and frontal armor. The Marshal brings 12 troops with at most seven active, and his troops support his armor. Both fights award extra experience and material drops.
+- The map shows the player, living enemies, mini-bosses, and the final boss or arrival rift. Enemy markers move and disappear on death. The actual native WebGPU camera reproduction recorded a desktop retreat at 0.23× before the repair, 1× after; the desktop keyboard retreat covered 6.4 m. Browser evidence uses desktop and 430×932/932×430 mobile layouts, not a physical iPhone.
+- The user authorized publishing the verified camera, encounters, portals and map to main. Local browser evidence is kept in the stable `tests/battle-camera` output folder.
+
 ## Active road-rift boss revision — 2026-11-09
 - User approved the complete smaller-boss/portal/rear-counter/durability package, clarifying that the standing portal opens on the road. No new image generation, download, dependency, agent or main promotion is authorized by that approval.
 - Isolated branch `feature/beast-portal-balance`, based on tested PR11 head `a0144aa` (same product tree as published main `9b99b4f`, v2026.11.08.5). Canonical `E:/Smash` is protected and unchanged. Candidate v2026.11.09.1; port8000 `/candidate/`, owned preview PID66800. Recheck ownership on resumption.

@@ -1204,3 +1204,30 @@ body[data-touch-controls="true"] .boss-panel{
 /* Boss phase/HP labels remain readable with the new longer encounter states. */
 .boss-heading strong,body[data-touch-controls="true"] .boss-heading strong{font-size:12px;white-space:nowrap}
 .boss-heading{flex-wrap:wrap}
+
+/* The city stays in the background; shapes and colours identify live actors. */
+.map-legend,body[data-touch-controls="true"] .map-legend{
+ display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:4px 5px;
+ margin:5px 0 1px;color:#e1f0ee;font:700 12px/15px var(--body);letter-spacing:0
+}
+.map-legend>span{gap:4px;white-space:nowrap}
+.map-legend i{width:8px;height:8px;flex:none}
+.map-legend .player-dot{background:#83f4e7;clip-path:polygon(50% 0,100% 100%,50% 76%,0 100%)}
+.map-legend .enemy-dot{background:#ff8d83;border-radius:50%}
+.map-legend .miniboss-dot{background:#f4abff;transform:rotate(45deg);scale:.82}
+.map-legend .boss-dot{position:relative;background:#ffc568;border-radius:50%}
+.map-legend .boss-dot::after{content:'+';position:absolute;inset:0;color:#452919;font:700 9px/8px Arial;text-align:center}
+body[data-touch-controls="true"] .minimap-panel{width:120px}
+body[data-touch-controls="true"] #minimap{width:94px!important;height:94px!important}
+body[data-touch-controls="true"] .boss-panel{width:calc(100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - 130px)}
+.boss-panel .boss-subtitle,body[data-touch-controls="true"] .boss-panel .boss-subtitle{
+ font:700 12px/15px var(--body);letter-spacing:0
+}
+@media(orientation:portrait){
+ body[data-touch-controls="true"] .announcement{top:max(30%,260px)}
+}
+@media(orientation:landscape) and (max-height:500px){
+ body[data-touch-controls="true"] .minimap-panel{display:block}
+ body[data-touch-controls="true"] #minimap{width:72px!important;height:72px!important}
+ body[data-touch-controls="true"] .hud-top{grid-template-columns:var(--mobile-hero-width) minmax(0,1fr) 120px}
+}

@@ -1,5 +1,5 @@
 // Pure combat / movement rules. X/Z are world coordinates; Y is height.
-export const GOAL = 60;
+export const GOAL = 90;
 // One defeated enemy contributes one percentage point to this region's goal.
 export function battleProgress(destruction,kills){
   const area=Number.isFinite(destruction)?clamp(destruction,0,100):0;

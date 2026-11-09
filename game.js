@@ -19,21 +19,21 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261108-startup1';
-import {createForgeMenu} from './menu.js?v=20261109-beast1';
+import {createForgeMenu} from './menu.js?v=20261109-gauntlet1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-mount1';
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-workshop1';
-import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261107-forge9';
+import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261109-gauntlet1';
 import {createWorld} from './world.js?v=20261108-workshop1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
-import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261108-props1';
+import {GOAL,BOUNDS,clamp,lerp,normalize,screenMovement,nearestPoint,circleOverlaps,moveCircle,attackStats,destructionPercent,battleProgress,UPGRADE_DEFS,calculateStats} from './core.js?v=20261109-gauntlet1';
 import {segmentCircleHit,firstHammerHit,facingCoverage} from './combat.js?v=20261107-forge9';
-import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261106-feel1';
+import {wavePlan,waveBatch,enemyTypeForWave,enemyStatsForWave} from './waves.js?v=20261109-gauntlet1';
 import {createSwingSequence,resetSwingSequence,tickSwingSequence,selectHammerSwing,sampleSpinMotion,getHammerSwingDuration,sampleHammerSwing,SWING_CONTACT_START,SWING_CONTACT_END} from './hammer-motion.js?v=20261107-aim12';
 import {createThrowIndicator} from './throw-indicator.js?v=20261107-perf14-fix3';
 import {BARBED_DAMAGE_SCALE,BARBED_PULL_FORCE,sweptBarbedContact,barbedPullDirection,barbedPullLimit} from './barbed-contact.js?v=20261107-aim13';
@@ -86,6 +86,12 @@ let phase='menu', previousPhase='menu', elapsed=0, roundTime=0, round=1, sector=
 let enemies=[],enemyFalls=[],drops=[],bolts=[],rings=[],arcs=[],numbers=[],telegraphs=[];
 const freeWeaponTrails=[],weaponTrailRecords=new WeakMap(),trailSide=new THREE.Vector3(),trailCamera=new THREE.Vector3();
 let boss=null,bossSpawned=false,spawnCounter=0,lootCounter=0,announcementTimer=0;
+const BOSS_GATES=[
+  {threshold:45,type:'siegeTransformer',name:'ΠΟΛΙΟΡΚΗΤΗΣ',cue:'Όταν απομακρύνεσαι, διπλώνει τα πόδια του και σε κυνηγά ως tank.',escort:['robot','mech','robot','crawler']},
+  {threshold:70,type:'hollowMarshal',name:'ΝΕΚΡΟΣΤΡΑΤΗΓΟΣ',cue:'Οι στρατιώτες του ενισχύουν την άμυνά του. Σπάσε τη γραμμή τους.',escort:['marshalThrall','marshalThrall','crawler','marshalThrall','marshalThrall','brute','marshalThrall','crawler','robot','marshalThrall','marshalThrall','brute']},
+];
+const MINI_ENTRY={open:.85,walk:2.9,close:.65};
+let bossGate=0,encounter=null,encounterRetry=0;
 let battleKills=0,beastRig=null,beastCombat=null,beastPortal=null;
 const beastCollision=createGeometryCollision({nearObjects:(x,z)=>boss&&!boss.dead&&(boss.state!=='enter'||boss.entryPlane.distanceToPoint({x,y:0,z})>=0)?[boss]:[]});
 let wave=null,upgradeQueue=[],upgradePanelOpen=false,upgradeTab='powers',upgradeFeedback='';
@@ -123,27 +129,12 @@ const cameraTarget=new THREE.Vector3(0,0,0),cameraOffset=new THREE.Vector3(13,23
 // sliced foreground towers into diagonal roof fragments. Retreat on the same
 // axis; compensate fog and camera-dependent effects to keep the authored view.
 const CAMERA_DISTANCE_SCALE=3,CAMERA_FOG_SHIFT=cameraOffset.length()*(CAMERA_DISTANCE_SCALE-1),cameraShakeOffset=new THREE.Vector3();
-const beastCameraBox=new THREE.Box3(),beastCameraSize=new THREE.Vector3();
-const cameraRight=new THREE.Vector3(cameraOffset.z,0,-cameraOffset.x).normalize();
-const cameraBack=cameraOffset.clone().normalize(),cameraUp=new THREE.Vector3().crossVectors(cameraBack,cameraRight).normalize();
 function updateBattleCamera(dt,desired){
-  let zoom=1;const bossView=!!(boss&&!boss.dead),effectDistance=bossView?3:1;
-  if(bossView){
-    beastCameraBox.setFromObject(boss.mesh);const box=beastCameraBox,point=new THREE.Vector3();
-    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-    const include=p=>{const x=p.dot(cameraRight),y=p.dot(cameraUp);minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);};
-    for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])include(point.set(x,y,z));
-    include(point.set(player.x,player.y,player.z));include(point.set(player.x,player.y+2.2,player.z));
-    const center=box.getCenter(beastCameraSize),depth=center.dot(cameraBack);
-    desired.copy(cameraRight).multiplyScalar((minX+maxX)/2).addScaledVector(cameraUp,(minY+maxY)/2).addScaledVector(cameraBack,depth);
-    const usableHeight=touchLayout?.62:.69;
-    zoom=Math.min(1,(camera.top-camera.bottom)*usableHeight/(maxY-minY+3),(camera.right-camera.left)*.86/(maxX-minX+3));
-  }
-  const blend=1-Math.exp(-dt*3.5);camera.zoom=lerp(camera.zoom,zoom,blend);camera.updateProjectionMatrix();
+  if(camera.zoom!==1){camera.zoom=1;camera.updateProjectionMatrix();}
   cameraTarget.lerp(desired,1-Math.exp(-dt*5.6));camera.position.copy(cameraTarget).addScaledVector(cameraOffset,CAMERA_DISTANCE_SCALE);
-  (camera.userData.effectPosition??=new THREE.Vector3()).copy(cameraTarget).addScaledVector(cameraOffset,effectDistance);
-  camera.userData.shakeScale=CAMERA_DISTANCE_SCALE/effectDistance;
-  if(scene.fog){scene.fog.near=lerp(scene.fog.near,bossView?100:34+CAMERA_FOG_SHIFT,blend);scene.fog.far=lerp(scene.fog.far,bossView?210:88+CAMERA_FOG_SHIFT,blend);}
+  (camera.userData.effectPosition??=new THREE.Vector3()).copy(cameraTarget).add(cameraOffset);
+  camera.userData.shakeScale=CAMERA_DISTANCE_SCALE;
+  if(scene.fog){scene.fog.near=34+CAMERA_FOG_SHIFT;scene.fog.far=88+CAMERA_FOG_SHIFT;}
 }
 function shakeCamera(amount){
   cameraShakeOffset.set((Math.random()-.5)*amount,(Math.random()-.5)*amount*.5,(Math.random()-.5)*amount);
@@ -286,6 +277,17 @@ function updateBattleVisibility(dt){
     battleOccluders=phase==='menu'?new Set():findBattleOccluders(candidates,heroPoints,direction);
     const bossOccludes=boss&&!boss.dead&&boss.geometryHit&&heroPoints.some(point=>boss.geometryHit(point,{x:point.x+direction.x,y:point.y+direction.y,z:point.z+direction.z},.02));
     heroOccluded=battleOccluders.size>0||!!bossOccludes;
+    if(phase==='playing'&&encounter?.entry){
+      const {x,z}=encounter.entry.location,h=encounter.leader.height;
+      const projected=screenPoint(x,h*.6,z);
+      // Only protect an on-screen entrance. Off-screen portals are located
+      // through their map marker, so no unrelated buildings need to fade.
+      if(projected.inside&&projected.x>0&&projected.x<screenW&&projected.y>0&&projected.y<screenH){
+        const local=candidates.filter(o=>Math.hypot(o.x-x,o.z-z)<33);
+        const portalPoints=[{x,y:h*.4,z},{x,y:h*.78,z}];
+        for(const o of findBattleOccluders(local,portalPoints,direction))battleOccluders.add(o);
+      }
+    }
   }
   for(const o of world.objects)if(!o.dead&&(battleOccluders.has(o)||o.occlusionFade>0))applyOccluderFade(o,battleOccluders.has(o),dt);
   occlusionDepth?.sync(world.objects);
@@ -470,7 +472,8 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   swingSequences[0]=createSwingSequence();swingSequences[1]=createSwingSequence();landingPose=null;
   upgradePanelOpen=false;upgradeTab='powers';nearbyTargets=[];focusedTarget=null;
   battleOccluders.clear();occlusionTimer=0;heroOccluded=false;comicState=null;lastComicAt=-10;resetHitCombo(combatCombo);if(!keepUpgrades)comboXpCarry=0;
-  for(const e of enemies){if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);}enemies=[];if(boss)releaseBeast();boss=null;
+  if(encounter?.entry){finishMiniReveal(encounter);disposeInstance(encounter.leader);beastPortal.reset();}
+  for(const e of enemies){clearEncounterShell(e);if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);}enemies=[];if(boss)releaseBeast();boss=null;
   for(const e of enemyFalls)disposeInstance(e);enemyFalls=[];
   for(const d of drops){scene.remove(d.mesh);disposeModelGeometry(d.mesh);}drops=[];
   for(const b of bolts){scene.remove(b.mesh);b.mesh.geometry.dispose();b.mesh.material.dispose();}bolts=[];
@@ -496,7 +499,7 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   player.x=0;player.z=0;player.y=0;player.vy=0;player.vx=0;player.vz=0;player.invincible=2;player.hurtAgo=100;
   if(!keepUpgrades){round=1;elapsed=0;kills=0;relics=0;character=createCharacterProgression(startLevel);level=character.level;xp=character.xp;xpTarget=xpForNextLevel(level);score=0;levels={power:0,size:0,range:0,speed:0,vitality:0,quake:0,kick:0};forgeReadyAnnounced=false;checkpointTimer=0;}
   stats=calculateStats(levels);player.maxHp=stats.maxHp;player.hp=stats.maxHp;
-  roundTime=0;currentDistrict='';bossSpawned=false;battleKills=0;beginWave(round);spawnCounter=0;lootCounter=0;chargeHeld=false;chargeStarted=false;charge=0;swing=null;attackBuffer=null;spin=null;spinRecovery=null;holdElapsed=0;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
+  roundTime=0;currentDistrict='';bossSpawned=false;bossGate=0;encounter=null;encounterRetry=0;battleKills=0;beginWave(round);spawnCounter=0;lootCounter=0;chargeHeld=false;chargeStarted=false;charge=0;swing=null;attackBuffer=null;spin=null;spinRecovery=null;holdElapsed=0;hitStop=0;attackCooldown=0;dashCooldown=0;dashTime=0;
   $('bossHud').hidden=true;fragments?.clear();impactClouds?.clear();numbers=[];cameraTarget.set(0,.6,0);
   hero.position.set(0,0,0);facing={x:-.585491,z:-.810679};hero.rotation.y=Math.atan2(facing.x,facing.z);
   applyStats();stance=stanceTarget=characterStats.hasShield?0:1;hero.userData.setStance?.(stance);poseHero(0);player.hp=player.maxHp;renderUpgradePanel();updateHUD(true);
@@ -860,6 +863,12 @@ function followupDamage(target,damage,weapon){
 }
 function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
   if(e.dead||!Number.isFinite(damage)||damage<=0)return;
+  if(e.encounterLeader){
+    const front=-(dir?.x||0)*Math.sin(e.facingYaw||0)-(dir?.z||0)*Math.cos(e.facingYaw||0);
+    if(e.type==='siegeTransformer'&&e.fold>.7&&front>.38)damage=Math.max(1,Math.round(damage*.52));
+    if(e.type==='hollowMarshal'&&encounter?.leader===e&&encounter.escorts.size)damage=Math.max(1,Math.round(damage*.68));
+    response={...response,interrupt:false,grounded:true,preserveVelocity:false,maxImpulse:.25,stagger:0};
+  }
   damage=followupDamage(e,damage,response.weapon);
   if(response.combo!==false)recordCombatContact(e);
   const force=clamp(Number.isFinite(strength)?strength:0,0,18);
@@ -903,6 +912,8 @@ function killEnemy(e){
   if(e.dead)return;
   e.dead=true;guardHits.delete(e);enemies=enemies.filter(n=>n!==e);kills++;battleKills++;score+=Math.round((e.miniBoss?420:25*(e.xp||1))*comboMultiplier(combatCombo));
   if(e.waveNumber===wave?.number)wave.defeated++;
+  if(e.encounterEscort)encounter?.escorts.delete(e);
+  clearEncounterShell(e);
   nearbyTargets=nearbyTargets.filter(t=>t!==e);if(focusedTarget===e)focusedTarget=null;
   fragments.add(e.x,1,e.z,e.miniBoss?35:e.radius>.65?19:12,e.palette==='metal'?[0x6c91a0,0xa5bec3,0xff9864]:[0x679378,0x9eaf83,0x4a6265],5,e.miniBoss?.38:e.radius>.65?.24:.16,true);
   if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
@@ -917,6 +928,8 @@ function killEnemy(e){
   spawnDrop(e.x,e.z,e.palette==='metal'?'scrap':kills%3===0?'scrap':'wood');
   if(e.miniBoss||level>=6&&kills%8===0)spawnDrop(e.x+.35,e.z+.25,'crystal');
   if(e.miniBoss){spawnDrop(e.x,e.z,'relic');spawnDrop(e.x+.5,e.z,'heart');}
+  if(e.encounterLeader)for(const [x,z,kind] of [[-1,0,'scrap'],[1,0,'scrap'],[0,1,'crystal'],[0,-1,'gold']])spawnDrop(e.x+x,e.z+z,kind);
+  if(e.encounterEscort)spawnDrop(e.x+.28,e.z-.22,'gold');
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
 }
 function explodeVehicle(car){
@@ -979,7 +992,129 @@ function hitBoss(damage,dir,strength=5,response={}){
   flashMaterials(boss,1);impactClouds?.emit(foot.x,foot.y+1,foot.z,dir,1.8,response.weapon!=='explosion');showHitPoints(boss,damage);fragments.add(foot.x,foot.y+1,foot.z,12,[0xffbe75,0xff7546,0xb7cdd2],5,.1);
   if(boss.hp<=0)defeatBoss();
 }
-function checkGoal(){if(phase==='playing'&&!bossSpawned&&battleProgress(destructionPercent(world.objects),battleKills)>=GOAL)spawnBoss();}
+function checkGoal(){
+  if(phase!=='playing'||bossSpawned||encounter||encounterRetry>0)return;
+  const gate=BOSS_GATES[bossGate],total=battleProgress(destructionPercent(world.objects),battleKills);
+  if(total<(gate?.threshold??GOAL))return;
+  if(!gate){spawnBoss();return;}
+  const stats=enemyStatsForWave(gate.type,round),location=miniPortalLocation(stats.radius);
+  if(!location){encounterRetry=.6;return;}
+  const leader=spawnEnemy(gate.type,location,{encounterLeader:true,arriving:true});
+  if(!leader){encounterRetry=.6;return;}
+  leader.tankDelay=2.1;
+  encounter={leader,gate,escorts:new Set(),sent:0,timer:.65};
+  openMiniPortal(encounter,location);
+  announce('ΡΗΓΜΑ · '+gate.name,gate.cue,2.5);
+}
+function miniPortalLocation(radius){
+  const roads=world.layout?.roads||[0],candidates=[];
+  for(const x of roads)for(const z of roads){
+    const d=Math.hypot(player.x-x,player.z-z);if(d>=11&&d<=37)candidates.push({x,z,d});
+  }
+  let best=null,score=Infinity;
+  for(const p of candidates){
+    const dir=normalize(player.x-p.x,player.z-p.z);
+    if(!miniPortalExitFree(p,dir,radius)||enemies.some(e=>Math.hypot(e.x-p.x,e.z-p.z)<radius+e.radius))continue;
+    // Prefer a clear view down the road from the existing camera direction.
+    // A blocked site remains a fallback in a dense or damaged district.
+    const top={x:p.x,y:radius+1,z:p.z},eye={x:p.x+cameraOffset.x,y:top.y+cameraOffset.y,z:p.z+cameraOffset.z};
+    const occluded=firstHammerHit(top,eye,segmentObjects(top,eye,.3),.3);
+    const cameraFace=(dir.x*cameraOffset.x+dir.z*cameraOffset.z)/Math.hypot(cameraOffset.x,cameraOffset.z);
+    const rank=Math.abs(p.d-18)+(occluded?25:0)+(1-cameraFace)*4;
+    if(rank<score){score=rank;best={x:p.x,z:p.z,nx:dir.x,nz:dir.z,yaw:Math.atan2(dir.x,dir.z)};}
+  }
+  return best;
+}
+function miniPortalExitFree(p,dir,radius){
+  for(let i=0;i<=5;i++){
+    const x=p.x+dir.x*i,z=p.z+dir.z*i;
+    if(Math.max(Math.abs(x),Math.abs(z))>BOUNDS-radius||nearbyObjects(x,z,radius+.1).some(o=>circleOverlaps(x,z,radius,o)))return false;
+  }
+  return true;
+}
+function openMiniPortal(fight,location){
+  const leader=fight.leader,mesh=leader.mesh,original=new Map(),copies=new Map();
+  mesh.traverse(n=>{
+    if(!n.isMesh)return;
+    const m=n.material;original.set(n,m);
+    if(!copies.has(m))copies.set(m,m.clone());
+    n.material=copies.get(m);
+  });
+  const reveal=installBeastReveal(mesh,renderer.userData?.backend==='WebGPU');
+  const bounds=new THREE.Box3().setFromObject(mesh,true);
+  const leading=Math.max(.9,bounds.max.z-mesh.position.z+.45);
+  const trailing=Math.max(.9,mesh.position.z-bounds.min.z+.45);
+  fight.entry={location,reveal,original,leading,trailing,time:0,stage:'opening'};
+  leader.state='enter';mesh.visible=false;
+  beastPortal.open(location,mesh.userData.width*1.55,leader.height*1.55);
+}
+function finishMiniReveal(fight){
+  const {reveal,original}=fight.entry;
+  reveal.plane.constant=1e6;reveal.sync();
+  for(const [node,mat] of original)node.material=mat;
+  for(const m of reveal.materials)m.dispose();
+  fight.entry=null;
+}
+function updateMiniEntry(fight,dt){
+  const entry=fight.entry,{leader}=fight,{location}=entry,mesh=leader.mesh;
+  entry.time+=dt;
+  const elapsed=entry.time,progress=clamp((elapsed-MINI_ENTRY.open)/MINI_ENTRY.walk,0,1);
+  if(progress<1){
+    beastPortal.facePlayer(player,dt);const yaw=beastPortal.root.rotation.y;
+    if(Math.abs(yaw-location.yaw)>1e-4){
+      const next={x:Math.sin(yaw),z:Math.cos(yaw)};
+      // Turn the portal and the visible actor together, within the clear
+      // corridor, so tracking the player never turns the walker into a wall.
+      if(miniPortalExitFree(location,next,leader.radius))Object.assign(location,{yaw,nx:next.x,nz:next.z});
+      else beastPortal.root.rotation.y=location.yaw;
+    }
+  }
+  const offset=lerp(-entry.leading,entry.trailing,progress);
+  leader.x=location.x+location.nx*offset;leader.z=location.z+location.nz*offset;
+  leader.facingYaw=location.yaw;mesh.rotation.y=location.yaw;mesh.position.set(leader.x,0,leader.z);
+  mesh.visible=progress>0;leader.walk=progress*(entry.leading+entry.trailing)*4;
+  if(leader.type==='siegeTransformer')mesh.userData.animate({fold:0,walk:leader.walk,state:'walk',gait:progress<1?1:0});
+  else for(const [key,sign] of [['leftLeg',1],['rightLeg',-1],['leftArm',-1],['rightArm',1]]){
+    mesh.userData[key].rotation.x=progress<1?Math.sin(leader.walk)*sign*(key.endsWith('Leg')?.43:.27):0;
+  }
+  const plane=entry.reveal.plane;
+  plane.normal.set(location.nx,0,location.nz);
+  plane.constant=progress<1?-location.nx*location.x-location.nz*location.z:1e6;entry.reveal.sync();
+  const close=elapsed-MINI_ENTRY.open-MINI_ENTRY.walk;
+  beastPortal.update(dt,close>0?1-close/MINI_ENTRY.close:elapsed/MINI_ENTRY.open);
+  if(progress===1&&entry.stage!=='closing'){pulse(leader.x,leader.z,leader.radius+1,0x97dcff,.56);entry.stage='closing';}
+  else if(progress>0&&progress<1)entry.stage='walking';
+  if(close<MINI_ENTRY.close)return;
+  finishMiniReveal(fight);beastPortal.reset();
+  leader.state='walk';leader.timer=1.2;enemies.push(leader);
+}
+function updateEncounter(dt){
+  encounterRetry=Math.max(0,encounterRetry-dt);
+  if(!encounter)return;
+  const fight=encounter,{leader,gate,escorts}=fight;
+  if(fight.entry){updateMiniEntry(fight,dt);return;}
+  if(leader.dead&&fight.sent>=gate.escort.length&&!escorts.size){
+    encounter=null;bossGate++;encounterRetry=3;
+    toast('ΠΕΡΑΣΕΣ ΤΗΝ ΑΝΑΜΕΤΡΗΣΗ','Μάζεψε τα λάφυρα. Το επόμενο ορόσημο εμφανίζεται στον στόχο.');return;
+  }
+  fight.timer-=dt;
+  if(fight.timer>0||fight.sent>=gate.escort.length||escorts.size>=(bossGate===0?4:7))return;
+  const type=gate.escort[fight.sent];
+  // Rally near their leader on free terrain, with the road network as fallback.
+  let point=null;
+  for(let i=0;i<12&&!point;i++){
+    const a=(i+fight.sent*.618)*Math.PI/6,p={x:leader.x+Math.sin(a)*5.4,z:leader.z+Math.cos(a)*5.4};
+    if(Math.abs(p.x)<BOUNDS-2&&Math.abs(p.z)<BOUNDS-2&&Math.hypot(p.x-player.x,p.z-player.z)>2.5
+      &&!nearbyObjects(p.x,p.z,1.4).some(o=>circleOverlaps(p.x,p.z,1.05,o))
+      &&!enemies.some(e=>Math.hypot(p.x-e.x,p.z-e.z)<e.radius+1.15))point=p;
+  }
+  const escort=spawnEnemy(type,point,{encounterEscort:true});
+  if(escort){
+    escorts.add(escort);fight.sent++;fight.timer=fight.sent%4===0?5:.55;
+    if(type==='marshalThrall')pulse(escort.x,escort.z,1.25,0xc47af1,.42);
+  }
+  else fight.timer=.65;
+}
 function impact(from=headPrevious,to=headNow){
   const s=swing;if(!s||s.blocked)return;
   // The load behind a shoulder/crown is anticipation. Normal cuts deal
@@ -1439,7 +1574,7 @@ function updateWaves(dt){
   }
   wave.timer-=dt;
   if(wave.timer>0||wave.spawned>=wave.total)return;
-  const cap=Math.min(plan.aliveCap,settings.quality==='low'?36:48),slots=cap-enemies.length;
+  const cap=Math.min(plan.aliveCap,(settings.quality==='low'?36:48)-(encounter?8:1)),slots=cap-enemies.length;
   if(slots<=0){wave.timer=.6;return;}
   const batch=waveBatch(round,wave.spawned,wave.batch,slots);
   let created=0;
@@ -1453,14 +1588,14 @@ function updateWaves(dt){
   wave.timer=created?plan.interval:.6;
 }
 function spawnPosition(distance=17,radius=.8){
-  const free=p=>Math.hypot(p.x-player.x,p.z-player.z)>10&&!nearbyObjects(p.x,p.z,radius+.2).some(o=>circleOverlaps(p.x,p.z,radius,o));
+  const free=p=>Math.hypot(p.x-player.x,p.z-player.z)>10&&!nearbyObjects(p.x,p.z,radius+.2).some(o=>circleOverlaps(p.x,p.z,radius,o))&&!enemies.some(e=>Math.hypot(e.x-p.x,e.z-p.z)<e.radius+radius+.4);
   const roads=world.layout?.roads||[];
   for(let i=0;i<48;i++){
     const angle=Math.random()*Math.PI*2,r=distance+Math.random()*5;
     const p={x:clamp(player.x+Math.sin(angle)*r,-BOUNDS+2,BOUNDS-2),z:clamp(player.z+Math.cos(angle)*r,-BOUNDS+2,BOUNDS-2)};
     // Spawn on the connected road network, with arrivals distributed all around.
     if(roads.length){const axis=i%2?'x':'z';p[axis]=roads.reduce((best,v)=>Math.abs(v-p[axis])<Math.abs(best-p[axis])?v:best,roads[0]);}
-    if(free(p)&&!enemies.some(e=>Math.hypot(e.x-p.x,e.z-p.z)<e.radius+radius+.4))return p;
+    if(free(p))return p;
   }
   // Junctions are reserved by the city layout. Search closest valid junctions
   // instead of dropping a wave member into an inaccessible building footprint.
@@ -1470,10 +1605,12 @@ function spawnPosition(distance=17,radius=.8){
   fallback.sort((a,b)=>Math.abs(Math.hypot(a.x-player.x,a.z-player.z)-distance)-Math.abs(Math.hypot(b.x-player.x,b.z-player.z)-distance));
   return fallback[0]||null;
 }
-function spawnEnemy(forcedType=null,position=null,{waveNumber=null}={}){
+function spawnEnemy(forcedType=null,position=null,{waveNumber=null,encounterLeader=false,encounterEscort=false,arriving=false}={}){
   const qualityCap=settings.quality==='low'?36:48;if(enemies.length>=qualityCap)return null;
   const type=forcedType||enemyTypeForWave(round),base=enemyStatsForWave(type,round);
-  let pos=position||spawnPosition(17,base.radius);
+  if(encounterLeader){base.hp=Math.round(base.hp*(1+Math.max(0,level-5)*.085));base.damage+=Math.floor(Math.max(0,level-5)*1.2);}
+  if(encounterEscort){base.hp=Math.round(base.hp*1.18);base.xp+=1;}
+  let pos=position||spawnPosition(encounterLeader?13:17,base.radius);
   if(!pos)return null;
   if(nearbyObjects(pos.x,pos.z,base.radius+.1).some(o=>circleOverlaps(pos.x,pos.z,base.radius,o))){
     const origin={...pos};let found=false;
@@ -1486,7 +1623,9 @@ function spawnEnemy(forcedType=null,position=null,{waveNumber=null}={}){
   }
   const mesh=['zombie','robot','brute'].includes(type)?makeEnemy(type):makeCityEnemy(type);installEnemyHead(mesh,type);scene.add(mesh);
   const e={mesh,type,x:pos.x,z:pos.z,y:0,vx:0,vz:0,vy:0,...base,maxHp:base.hp,materials:prepareMaterials(mesh),flash:0,stagger:0,hurtTimer:0,walk:Math.random()*5,timer:randomBetween(1.1,2.6),state:'walk',dead:false,level:enemyLevel(type,waveNumber||round),slowTime:0,slowFactor:1,stunTime:0,kickFlight:null,telegraph:null,attackDir:{x:0,z:1},waveNumber,navTimer:0,navDirection:{x:0,z:1}};
-  initEnemyReaction(e,spawnCounter);mesh.position.set(e.x,0,e.z);enemies.push(e);spawnCounter++;
+  Object.assign(e,{encounterLeader,encounterEscort,fold:0,tankWanted:false,tankDelay:0,baseHeight:base.height});
+  initEnemyReaction(e,spawnCounter);mesh.position.set(e.x,0,e.z);if(!arriving)enemies.push(e);spawnCounter++;
+  if(arriving){audio.play('boss');return e;}
   if(roundTime>5)fragments.add(e.x,.1,e.z,e.miniBoss?18:4,e.palette==='metal'?[0x537b77,0xffac69]:[0x537b77,0x81958a],e.miniBoss?5:2,.09);
   if(e.miniBoss){pulse(e.x,e.z,4.4,0xff866b,1);audio.play('boss');}
   return e;
@@ -1550,6 +1689,38 @@ function shoot(e){
     const speed=e.boltSpeed||10.5;
     mesh.position.set(e.x,1,e.z);scene.add(mesh);bolts.push({mesh,x:e.x,z:e.z,vx:dx*speed,vz:dz*speed,life:3.5,damage:e.damage,owner:e});
   }
+}
+function clearEncounterShell(e){
+  if(!e.shell)return;
+  removeEffect(e.shell.mesh);e.shell=null;
+}
+function launchEncounterShell(e){
+  const muzzle=e.mesh.userData.muzzle;
+  const from=muzzle?muzzle.getWorldPosition(new THREE.Vector3()):new THREE.Vector3(e.x,3,e.z);
+  const to=new THREE.Vector3(e.attackPoint.x,e.attackPoint.y,e.attackPoint.z);
+  const mesh=new THREE.Mesh(new THREE.OctahedronGeometry(.24),new THREE.MeshBasicMaterial({color:0xffb357}));
+  mesh.scale.set(.83,2.4,.83);mesh.position.copy(from);scene.add(mesh);
+  e.shell={mesh,from,to,last:from.clone(),time:0,span:clamp(from.distanceTo(to)/26,.35,1.1)};
+  e.cannonRecoil=1;e.state='shellFlight';fragments.add(from.x,from.y,from.z,12,[0xff9c44,0xffdc96],5,.09);audio.play('hit',.72,{material:'metal'});
+}
+function updateEncounterShell(e,dt){
+  const s=e.shell;s.time+=dt;
+  const t=Math.min(1,s.time/s.span),p=s.mesh.position;
+  p.lerpVectors(s.from,s.to,t);p.y+=Math.sin(t*Math.PI)*2.8;
+  s.mesh.quaternion.setFromUnitVectors(shaftUp,poseDirection.subVectors(p,s.last).normalize());
+  const hit=firstHammerHit(s.last,p,segmentObjects(s.last,p,.18),.18);
+  if(!hit&&t<1){s.last.copy(p);return;}
+  const x=hit?.x??p.x,y=hit?.y??p.y,z=hit?.z??p.z,r=e.attackRadius*.63;
+  const dir=normalize(player.x-x,player.z-z);
+  if(Math.hypot(player.x-x,player.y+.65-y,player.z-z)<r+player.radius)hurtPlayer(e.damage,dir.x,dir.z,false);
+  for(const o of nearbyObjects(x,z,r+2)){
+    const q=nearestPoint(x,z,o),oy=clamp(y,o.baseY??0,(o.baseY??0)+o.h),dist=Math.hypot(q.x-x,oy-y,q.z-z);
+    if(dist<r)hurtObject(o,e.damage*3*(1-.5*dist/r),.55,{x:q.x,y:oy,z:q.z},'explosion');
+  }
+  pulse(x,z,r,0xff844a,.52);fragments.add(x,y,z,23,[0xff8e3d,0xffcf79,0x6c7a72],7,.14);
+  impactClouds?.emit(x,y,z,dir,1.45,true);audio.play('break',.65);shake=Math.max(shake,.12);
+  clearEncounterShell(e);if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
+  e.state='walk';e.timer=e.attackRecovery;
 }
 function updateEnemies(dt){
   function advanceBody(e){
@@ -1618,7 +1789,16 @@ function updateEnemies(dt){
     e.timer-=dt*movementScale;
     e.sightTimer=(e.sightTimer||0)-dt;
     if(e.sightTimer<=0){e.sightTimer=.13;e.seesPlayer=dist<13&&(world.hasLineOfSight?.(e.x,e.z,player.x,player.z,.16)??true);}
-    const afraid=updateEnemyThreat(e,player,dt,{airborne:!!leap,smashing:!!leap?.slam,canSee:e.seesPlayer,threatPower:.6+characterStats.weaponTier*.22});
+    const afraid=updateEnemyThreat(e,player,dt,{airborne:!!leap,smashing:!!leap?.slam,canSee:e.seesPlayer,threatPower:.6+characterStats.weaponTier*.22})&&!e.encounterLeader;
+    if(e.type==='siegeTransformer'){
+      e.tankDelay=Math.max(0,e.tankDelay-dt);
+      if(e.state==='walk'&&!e.tankWanted&&dist>13&&!e.tankDelay){e.tankWanted=true;e.timer=Math.max(.9,e.timer);audio.play('break',.32);}
+      else if(e.state==='walk'&&e.tankWanted&&dist<7.4){e.tankWanted=false;e.timer=Math.max(.9,e.timer);audio.play('break',.25);}
+      e.fold=clamp(e.fold+(e.tankWanted?1:-1)*dt/.94,0,1);
+      e.height=e.baseHeight-2.25*e.mesh.scale.y*smooth(e.fold);
+      e.cannonRecoil=Math.max(0,(e.cannonRecoil||0)-dt*4);
+      if(e.state==='shellFlight'){updateEncounterShell(e,dt);poseBody(e);continue;}
+    }
     if(afraid&&e.stagger<=0){
       const telegraph=interruptEnemyAttack(e,.45);if(telegraph)removeEffect(telegraph);
       const speed=e.speed*1.3*movementScale,delta=moveCircle(e,e.fearMoveX*speed*dt,e.fearMoveZ*speed*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
@@ -1632,17 +1812,26 @@ function updateEnemies(dt){
         const separation={x:0,z:0};
         for(const other of enemies){if(other===e)continue;const ox=e.x-other.x,oz=e.z-other.z,dd=ox*ox+oz*oz;if(dd>.01&&dd<1.65){const repel=(1.3-Math.sqrt(dd))*.55;separation.x+=ox/Math.sqrt(dd)*repel;separation.z+=oz/Math.sqrt(dd)*repel;}}
         const clearShot=e.attackKind==='ranged'&&dist<12&&(world.hasLineOfSight?.(e.x,e.z,player.x,player.z,.18)??true);
-        const stop=clearShot&&dist<6.5?0:1;
-        const delta=moveCircle(e,(mx*e.speed*movementScale*stop+separation.x)*dt,(mz*e.speed*movementScale*stop+separation.z)*dt,nearbyObjects(e.x,e.z,e.radius+e.speed*dt+1).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
-        e.walk+=Math.hypot(delta.x,delta.z)*6;
-        e.facingYaw=Math.atan2(dir.x,dir.z);
-        if(e.timer<=0&&((e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5))){
+        const tank=e.type==='siegeTransformer'&&e.fold>=1,transforming=e.fold>0&&e.fold<1;
+        const targetY=player.y+.35;
+        const tankShot=tank&&dist<23&&!firstHammerHit({x:e.x,y:e.y+2.8,z:e.z},{x:player.x,y:targetY,z:player.z},segmentObjects(e,player,.18),.18);
+        const stop=transforming?.18:clearShot&&dist<6.5?0:1;
+        const speed=e.speed*(tank?2.65:1)*(e.type==='hollowMarshal'&&e.hp<e.maxHp*.45?1.22:1);
+        const delta=moveCircle(e,(mx*speed*movementScale*stop+separation.x)*dt,(mz*speed*movementScale*stop+separation.z)*dt,nearbyObjects(e.x,e.z,e.radius+speed*dt+1).filter(o=>o.h>e.y+SUPPORT_EPSILON),e.radius);
+        const traveled=Math.hypot(delta.x,delta.z);e.walk+=traveled*6;e.gait=traveled/Math.max(dt,.001);
+        const yaw=Math.atan2(tank&&!tankShot?mx:dir.x,tank&&!tankShot?mz:dir.z);
+        if(e.type==='siegeTransformer')e.facingYaw+=clamp(Math.atan2(Math.sin(yaw-e.facingYaw),Math.cos(yaw-e.facingYaw)),-dt*3.2,dt*3.2);
+        else e.facingYaw=yaw;
+        if(e.timer<=0&&!transforming&&(tank?tankShot:((e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5)))){
           e.state='windup';e.timer=e.windup;e.attackDir=dir;
-          e.telegraph=makeTelegraph(e.x,e.z,e.attackKind==='slam'?e.attackRadius:e.attackKind==='ranged'?e.radius+.3:1.05,e.attackKind==='ranged'?0xff8d62:0xef6863);
+          e.attackPoint=tank?{x:player.x,y:targetY,z:player.z}:null;
+          e.telegraph=makeTelegraph(tank?player.x:e.x,tank?player.z:e.z,tank?e.attackRadius*.63:e.attackKind==='slam'?e.attackRadius:e.attackKind==='ranged'?e.radius+.3:1.05,e.type==='hollowMarshal'?0xc775ed:e.attackKind==='ranged'?0xff8d62:0xef6863);
+          if(tank){e.telegraph.position.y=targetY;e.facingYaw=Math.atan2(dir.x,dir.z);}
         }
       }else if(e.state==='windup'){
-        if(e.telegraph){e.telegraph.position.set(e.x,.09,e.z);e.telegraph.material.opacity=.35+Math.sin(visualTime*25)*.2;}
+        if(e.telegraph){if(!e.attackPoint)e.telegraph.position.set(e.x,.09,e.z);e.telegraph.material.opacity=.35+Math.sin(visualTime*25)*.2;}
         if(e.timer<=0){
+          if(e.attackPoint){launchEncounterShell(e);poseBody(e);continue;}
           if(e.telegraph){removeEffect(e.telegraph);e.telegraph=null;}
           if(e.attackKind==='ranged'){shoot(e);e.state='walk';e.timer=e.attackRecovery+Math.random()*.6;}
           else if(e.attackKind==='slam'){
@@ -1735,7 +1924,7 @@ function spawnBoss(){
   beastPortal.open(location,size.x*1.5,size.y*1.5);
   $('bossHud').hidden=false;
   announce('ΡΗΓΜΑ ΣΤΟΝ ΔΡΟΜΟ','Ο Κολοσσός πλησιάζει. Κράτα απόσταση από την πύλη!',3);audio.play('boss');
-  player.hp=Math.min(player.maxHp,player.hp+30);toast('ΣΥΝΟΛΙΚΗ ΚΑΤΑΣΤΡΟΦΗ · ΣΤΟΧΟΣ 60%','+30 ζωή · Ο boss σημειώνεται κόκκινος στον χάρτη.');
+  player.hp=Math.min(player.maxHp,player.hp+30);toast('Ο ΚΟΛΟΣΣΟΣ ΠΛΗΣΙΑΖΕΙ','+30 ζωή · Η πύλη και ο Κολοσσός σημειώνονται στον χάρτη.');
 }
 function updateBeastEntry(b,dt){
   const e=b.entry,u=b.mesh.userData;
@@ -2399,7 +2588,7 @@ function updateGame(dt){
   updateEnemies(dt);if(phase!=='playing')return;
   updateBoss(dt);if(phase!=='playing')return;
   mountWeapons?.update(dt,mountRide,{enemies:boss&&!boss.dead?[...enemies,boss]:enemies,world,camera,hero});if(phase!=='playing')return;
-  updateDrops(dt);checkGoal();
+  updateDrops(dt);updateEncounter(dt);checkGoal();
   updateWaves(dt);
   checkpointTimer+=dt;if(checkpointTimer>=8){checkpointTimer=0;persistCharacter();}
   const district=world.regionAt?.(player.x,player.z);
@@ -2412,9 +2601,14 @@ function updateHUD(force=false){
   if($('kickButton')){$('kickButton').classList.toggle('active',!!kick);$('kickButton').classList.toggle('cooldown',kickCooldown>0);}
   $('healthFill').style.width=(player.hp/player.maxHp*100)+'%';$('healthValue').textContent=Math.ceil(player.hp)+' / '+player.maxHp;
   $('healthFill').style.background=player.hp<player.maxHp*.3?'#ef7766':'';
-  const destructionValue=destructionPercent(world.objects),percent=battleProgress(destructionValue,battleKills);$('goalValue').textContent=Math.floor(percent)+'%';$('goalFill').style.width=Math.min(100,percent/GOAL*100)+'%';
+  const destructionValue=destructionPercent(world.objects),percent=battleProgress(destructionValue,battleKills);
+  const nextGate=BOSS_GATES[bossGate],target=nextGate?.threshold??GOAL;
+  $('goalValue').textContent=Math.floor(percent)+'%';$('goalTarget').textContent=' / '+target+'%';$('goalFill').style.width=Math.min(100,percent/target*100)+'%';
   $('goalDestruction').textContent=Math.floor(destructionValue)+'%';$('goalEnemies').textContent=battleKills+'%';
-  $('objectiveText').textContent=bossSpawned?boss&&!boss.dead?'Ο στόχος πέτυχε. Νίκησε τον Κολοσσό!':'Ο Κολοσσός έπεσε. Συνέχισε την εξέλιξή σου.':'Κτίρια και εχθροί μαζί στο 60% · κάθε εξουδετέρωση +1%.';
+  const outstanding=encounter?encounter.escorts.size+encounter.gate.escort.length-encounter.sent:0;
+  $('objectiveText').textContent=bossSpawned?boss&&!boss.dead?'ΝΙΚΗΣΕ ΤΟΝ ΚΟΛΟΣΣΟ':'Ο ΚΟΛΟΣΣΟΣ ΕΠΕΣΕ'
+    :encounter?encounter.entry?'ΑΝΟΙΓΕΙ ΠΥΛΗ':encounter.leader.dead?'ΣΥΝΟΔΕΙΑ: '+outstanding:encounter.gate.name+' · ΣΥΝΟΔΕΙΑ: '+outstanding
+    :target+'% · '+(nextGate?.name||'ΚΟΛΟΣΣΟΣ');
   $('sectorValue').textContent=String(sector).padStart(2,'0');$('killsValue').textContent=kills;$('relicValue').textContent=relics;$('roundValue').textContent=String(round).padStart(2,'0');
   $('waveEnemiesValue').textContent=boss&&!boss.dead?String(enemies.length):String(Math.max(0,(wave?.total||0)-(wave?.defeated||0)))+' / '+(wave?.total||10);
   $('waveStatus').textContent=boss&&!boss.dead?'ΤΕΛΙΚΟΣ BOSS':wave?.state==='break'?'ΚΥΜΑ ΚΑΘΑΡΟ · ΕΠΟΜΕΝΟ ΣΕ '+Math.ceil(wave.breakTimer)+'s':enemies.filter(e=>e.waveNumber===wave?.number).length+' ΕΝΕΡΓΟΙ · '+Math.max(0,(wave?.total||0)-(wave?.spawned||0))+' ΕΡΧΟΝΤΑΙ';
@@ -2423,7 +2617,17 @@ function updateHUD(force=false){
   $('chargeWrap').classList.toggle('spinning',!!spin);
   $('chargeText').textContent=throwFlight?'ΚΡΑΤΑ ΕΠΙΘΕΣΗ: ΓΡΟΘΙΕΣ':spin?'ΧΤΥΠΑ ΓΙΑ ΝΑ ΚΡΑΤΗΣΕΙΣ ΤΗΝ ΟΡΜΗ':chargeHeld?'ΧΤΥΠΑ ΓΙΑ ΟΡΜΗ':'ΚΡΑΤΑ ΕΠΙΘΕΣΗ · ΟΡΜΗ ΑΠΟ ΧΤΥΠΗΜΑΤΑ';
   document.querySelector('[data-key="ShiftLeft"]')?.classList.toggle('cooldown',dashCooldown>0);
-  if(boss){$('bossStatus').textContent=boss.state==='enter'?'ΕΞΟΔΟΣ ΑΠΟ ΤΗΝ ΠΥΛΗ':boss.state==='recover'?'ΑΝΟΙΓΜΑ · ΧΤΥΠΑ ΤΩΡΑ':boss.enraged?'ΚΟΛΟΣΣΟΣ · ΥΠΕΡΦΟΡΤΩΣΗ':'ΚΟΛΟΣΣΟΣ · ΘΩΡΑΚΙΣΗ';$('bossFill').style.backgroundColor=enemyHealthColor(boss.level);$('bossFill').style.width=Math.max(0,boss.hp/boss.maxHp*100)+'%';$('bossValue').textContent=(boss.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(boss.hp))+' / '+Math.ceil(boss.maxHp)+' HP';}
+  const activeBoss=boss??(encounter&&!encounter.leader.dead?encounter.leader:null);
+  $('bossHud').hidden=!activeBoss;
+  if(activeBoss){
+    $('bossStatus').textContent=boss?(boss.state==='enter'?'ΕΞΟΔΟΣ ΑΠΟ ΤΗΝ ΠΥΛΗ':boss.state==='recover'?'ΑΝΟΙΓΜΑ · ΧΤΥΠΑ ΤΩΡΑ':boss.enraged?'ΚΟΛΟΣΣΟΣ · ΥΠΕΡΦΟΡΤΩΣΗ':'ΚΟΛΟΣΣΟΣ · ΘΩΡΑΚΙΣΗ'):encounter.gate.name;
+    $('bossSubtitle').textContent=boss?'Ο ΦΥΛΑΚΑΣ ΤΟΥ ΧΥΤΗΡΙΟΥ':encounter.entry?'ΕΞΟΔΟΣ ΑΠΟ ΤΗΝ ΠΥΛΗ':activeBoss.type==='siegeTransformer'
+      ?(activeBoss.attackPoint&&['windup','shellFlight'].includes(activeBoss.state)?'ΒΓΕ ΑΠΟ ΤΟΝ ΚΥΚΛΟ ΒΟΛΗΣ':activeBoss.fold>=1?'TANK · ΕΥΑΛΩΤΟΣ ΠΙΣΩ':activeBoss.fold>0?'ΜΕΤΑΜΟΡΦΩΣΗ':'ΠΕΡΠΑΤΗΤΗΣ')
+      :(encounter.escorts.size?'ΘΩΡΑΚΙΣΗ ΑΠΟ ΣΤΡΑΤΙΩΤΕΣ':'ΕΚΤΕΘΕΙΜΕΝΟΣ');
+    $('bossFill').style.backgroundColor=boss?enemyHealthColor(boss.level):activeBoss.type==='hollowMarshal'?'#ce8bf3':'#ffb668';
+    $('bossFill').style.width=Math.max(0,activeBoss.hp/activeBoss.maxHp*100)+'%';
+    $('bossValue').textContent=(boss?.enraged?'ΙΙ · ':'')+Math.max(0,Math.ceil(activeBoss.hp))+' / '+Math.ceil(activeBoss.maxHp)+' HP';
+  }
   const stanceLabel=throwFlight?'ΑΟΠΛΟΣ · ΓΡΟΘΙΕΣ + ΚΛΩΤΣΙΑ':Math.abs(stance-stanceTarget)>.005?'ΑΛΛΑΓΗ ΛΑΒΗΣ…':stance>.95?'ΔΥΟ ΧΕΡΙΑ · +25% ΙΣΧΥΣ':characterStats.hasShield?'ΣΦΥΡΙ + ΑΣΠΙΔΑ':'ΛΑΒΗ ΜΕ ΕΝΑ ΧΕΡΙ';
   for(const id of ['stanceValue','mobileStanceValue'])if($(id))$(id).textContent=stanceLabel;
   for(const id of ['stanceButton','mobileStanceButton'])$(id)?.setAttribute('aria-pressed',String(stanceTarget===1));
@@ -2475,19 +2679,45 @@ function updateAttackFeedback(){
   button.setAttribute('aria-label',label);button.setAttribute('title',label);
 }
 function drawMinimap(){
-  const c=mapContext,w=140,h=140,extent=world.bounds||BOUNDS,scale=47/extent;
-  c.clearRect(0,0,w,h);c.fillStyle='#101e21';c.fillRect(0,0,w,h);
-  c.save();c.translate(70,70);c.rotate(.625);c.scale(scale,scale);
-  c.fillStyle='#253c3b';c.fillRect(-extent,-extent,extent*2,extent*2);c.fillStyle='#162b30';
+  const c=mapContext,w=map.width,h=map.height,extent=world.bounds||BOUNDS,scale=44/extent;
+  const angle=Math.atan2(cameraOffset.x,cameraOffset.z),cos=Math.cos(angle),sin=Math.sin(angle);
+  c.fillStyle='#0c181c';c.fillRect(0,0,w,h);
+  c.save();c.translate(w/2,h/2);c.rotate(angle);c.scale(scale,scale);
+  c.fillStyle='#24393d';c.fillRect(-extent,-extent,extent*2,extent*2);c.fillStyle='#14262c';
   for(const road of world.layout?.roads||[0]){c.fillRect(road-3.4,-extent,6.8,extent*2);c.fillRect(-extent,road-3.4,extent*2,6.8);}
-  c.strokeStyle='#466061';c.lineWidth=1/scale;c.strokeRect(-extent,-extent,extent*2,extent*2);
-  const civic={townhall:'#edc980',police:'#82baff',hospital:'#f6ada2',skyscraper:'#78bbc0',construction:'#d2a05b'};
-  for(const o of world.objects){if(!o.isBuilding&&o.w<1.5)continue;c.fillStyle=o.dead?'#30433e':civic[o.type]|| (o.isBuilding?'#9d9480':'#698e9a');c.fillRect(o.x-o.w/2,o.z-o.d/2,Math.max(o.w,2),Math.max(o.d,2));}
-  for(const h of world.hazards){c.fillStyle='#c66b42';c.beginPath();c.arc(h.x,h.z,h.r,0,Math.PI*2);c.fill();}
-  for(const d of drops)if(d.kind==='relic'){c.fillStyle='#ffd180';c.fillRect(d.x-2,d.z-2,4,4);}
-  for(const e of enemies){c.fillStyle=e.miniBoss?'#ff5265':e.palette==='metal'?'#ffab89':'#e37e73';c.beginPath();c.arc(e.x,e.z,e.miniBoss?5:2.7,0,Math.PI*2);c.fill();}
-  if(boss&&!boss.dead){c.fillStyle='#ff6558';c.beginPath();c.arc(boss.x,boss.z,6,0,Math.PI*2);c.fill();c.strokeStyle='#ffd080';c.stroke();}
-  c.translate(player.x,player.z);c.rotate(-Math.atan2(facing.x,facing.z));c.fillStyle='#fff1b7';c.beginPath();c.moveTo(0,7);c.lineTo(-4.2,-4);c.lineTo(4.2,-4);c.closePath();c.fill();c.restore();
+  c.strokeStyle='#53696c';c.lineWidth=1/scale;c.strokeRect(-extent,-extent,extent*2,extent*2);
+  c.fillStyle='#34484b';
+  for(const o of world.objects)if(o.isBuilding&&!o.dead)c.fillRect(o.x-o.w/2,o.z-o.d/2,o.w,o.d);
+  c.restore();
+  const px=e=>w/2+(cos*e.x-sin*e.z)*scale,pz=e=>h/2+(sin*e.x+cos*e.z)*scale;
+  const playerX=px(player),playerY=pz(player);
+  const marker=(entity,kind)=>{
+    const realX=clamp(px(entity),9,w-9),realY=clamp(pz(entity),9,h-9);
+    let x=realX,y=realY;
+    const dx=x-playerX,dy=y-playerY,d=Math.hypot(dx,dy);
+    if(kind!=='enemy'&&d<14){
+      const ox=d>.01?dx/d:0,oy=d>.01?dy/d:-1;
+      x=clamp(playerX+ox*14,9,w-9);y=clamp(playerY+oy*14,9,h-9);
+      if(Math.hypot(x-playerX,y-playerY)<11){x=clamp(playerX-ox*14,9,w-9);y=clamp(playerY-oy*14,9,h-9);}
+      c.beginPath();c.lineWidth=1;c.strokeStyle=kind==='mini'?'#f4abff':'#ffc568';c.moveTo(realX,realY);c.lineTo(x,y);c.stroke();
+    }
+    c.beginPath();c.lineJoin='round';c.lineWidth=kind==='enemy'?1.5:2.2;c.strokeStyle='#071418';
+    if(kind==='enemy'){c.arc(x,y,3.3,0,Math.PI*2);c.fillStyle='#ff8d83';}
+    else if(kind==='mini'){c.moveTo(x,y-6);c.lineTo(x+6,y);c.lineTo(x,y+6);c.lineTo(x-6,y);c.closePath();c.fillStyle='#f4abff';}
+    else{c.arc(x,y,7,0,Math.PI*2);c.fillStyle='#ffc568';}
+    c.fill();c.stroke();
+    if(kind==='boss'){c.strokeStyle='#452919';c.lineWidth=1.6;c.beginPath();c.moveTo(x-3,y);c.lineTo(x+3,y);c.moveTo(x,y-3);c.lineTo(x,y+3);c.stroke();}
+  };
+  let ordinary=0,minis=0;
+  for(const e of enemies)if(!e.dead&&!e.miniBoss){marker(e,'enemy');ordinary++;}
+  for(const e of enemies)if(!e.dead&&e.miniBoss){marker(e,'mini');minis++;}
+  if(encounter?.entry){marker(encounter.entry.location,'mini');minis++;}
+  const hasBoss=!!boss&&!boss.dead;
+  if(hasBoss)marker(boss.state==='enter'&&boss.entry?.stage!=='roar'?boss.entry.location:boss,'boss');
+  c.save();c.translate(playerX,playerY);c.rotate(angle-Math.atan2(facing.x,facing.z));
+  c.fillStyle='#83f4e7';c.strokeStyle='#071418';c.lineWidth=2;c.beginPath();c.moveTo(0,7);c.lineTo(-5,-4.5);c.lineTo(0,-2);c.lineTo(5,-4.5);c.closePath();c.fill();c.stroke();c.restore();
+  const label='Χάρτης: '+ordinary+' εχθροί, '+minis+' mini-boss, '+(hasBoss?'ο Κολοσσός είναι ενεργός':'ο Κολοσσός δεν έχει εμφανιστεί');
+  if(map.getAttribute('aria-label')!==label)map.setAttribute('aria-label',label);
 }
 function screenPoint(x,y,z){tempV.set(x,y,z).project(camera);return {x:(tempV.x*.5+.5)*screenW,y:(-.5*tempV.y+.5)*screenH,inside:tempV.z<1&&tempV.z>-1};}
 function drawHP(x,y,z,hp,maxHp,tint,alpha=1,label=''){
@@ -2971,7 +3201,7 @@ function frame(now){
   }
   if(menuBackground)menuBackdropReady=true;
   hudTimer-=realDt;if(hudTimer<=0){updateHUD();syncMountHud();hudTimer=.07;$('touchControls').hidden=!touchLayout||phase!=='playing';}
-  minimapTimer-=realDt;if(minimapTimer<=0){drawMinimap();minimapTimer=.18;}
+  minimapTimer-=realDt;if(minimapTimer<=0){if(phase==='playing')drawMinimap();minimapTimer=.12;}
 }
 
 async function init(){
@@ -3030,4 +3260,15 @@ init().catch(error=>{
   forgeMenu?.setReady(false);resize();requestAnimationFrame(frame);
 });
 
-window.render_game_to_text=()=>JSON.stringify({coordinates:'Metres; X/Z ground plane, Y height',phase,player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),armory:{weapon:hero?.userData.armoryWeaponId||'classic',shield:hero?.userData.armoryShieldId||'classic',weaponCore:armoryWeaponStats?.core||'none',shieldCore:armoryShieldStats?.core||'none',burning:armoryEffects.burning.size},progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL},boss:boss&&!boss.dead?{x:boss.x,y:boss.y,z:boss.z,hp:boss.hp,maxHp:boss.maxHp,height:boss.h,armor:beastDamageScale(boss.state),entrance:boss.state==='enter'?boss.entry?.stage:null,state:boss.state,warning:beastCombat?.attack?{kind:beastCombat.attack.kind,remaining:Math.max(0,beastCombat.attack.windup-beastCombat.attack.time)}:null}:null,enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp})),projectiles:beastCombat?.projectiles.map(p=>({kind:p.kind,x:p.position.x,y:p.position.y,z:p.position.z,target:{x:p.to.x,z:p.to.z}}))||[]});
+window.render_game_to_text=()=>JSON.stringify({
+  coordinates:'Metres; X/Z ground plane, Y height',phase,
+  player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),
+  armory:{weapon:hero?.userData.armoryWeaponId||'classic',shield:hero?.userData.armoryShieldId||'classic',weaponCore:armoryWeaponStats?.core||'none',shieldCore:armoryShieldStats?.core||'none',burning:armoryEffects.burning.size},
+  progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL,next:BOSS_GATES[bossGate]?.threshold??GOAL},
+  encounter:encounter?{type:encounter.leader.type,state:encounter.entry?.stage||encounter.leader.state,
+    x:encounter.entry?.location.x??encounter.leader.x,z:encounter.entry?.location.z??encounter.leader.z,
+    hp:encounter.leader.hp,escorts:encounter.escorts.size,pending:encounter.gate.escort.length-encounter.sent}:null,
+  boss:boss&&!boss.dead?{x:boss.x,y:boss.y,z:boss.z,hp:boss.hp,maxHp:boss.maxHp,height:boss.h,armor:beastDamageScale(boss.state),entrance:boss.state==='enter'?boss.entry?.stage:null,state:boss.state,warning:beastCombat?.attack?{kind:beastCombat.attack.kind,remaining:Math.max(0,beastCombat.attack.windup-beastCombat.attack.time)}:null}:null,
+  enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp})),
+  projectiles:beastCombat?.projectiles.map(p=>({kind:p.kind,x:p.position.x,y:p.position.y,z:p.position.z,target:{x:p.to.x,z:p.to.z}}))||[],
+});
