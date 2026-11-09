@@ -4358,7 +4358,7 @@ test('catalog ring gap, separate piston damage and two wrecking faces reach the 
 });
 
 test('every catalog weapon remains attached to real grips during swing, mount and throw',()=>{
- arena(30);for(const b of armoryRulesModule.WEAPON_BLUEPRINTS){api.garage.armory.weapon=b.id;api.applyStats();assert.equal(api.hero.userData.armoryWeaponId,b.id);api.setFacing(0,1);api.poseHero(.2);const u=api.hero.userData;close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)),0,.001);const thrown=u.createThrownHammer();assert.ok(thrown.getObjectByName('hammerHead'));assert.ok(thrown.userData.radius>.1);thrown.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of Array.isArray(n.material)?n.material:[n.material])m.dispose();});}
+ arena(30);for(const b of armoryRulesModule.WEAPON_BLUEPRINTS){if(b.bossReward)armoryRulesModule.awardBossWeapon(api.garage.armory,b.bossReward);api.garage.armory.weapon=b.id;api.applyStats();assert.equal(api.hero.userData.armoryWeaponId,b.id);api.setFacing(0,1);api.poseHero(.2);const u=api.hero.userData;close(worldPosition(u.rightGrip).distanceTo(worldPosition(u.rightGripAnchor)),0,.001);const thrown=u.createThrownHammer();assert.ok(thrown.getObjectByName('hammerHead'));assert.ok(thrown.userData.radius>.1);thrown.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of Array.isArray(n.material)?n.material:[n.material])m.dispose();});}
  api.garage.armory.weapon='auto';api.applyStats();
 });
 

@@ -1,13 +1,13 @@
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior} from './models.js?v=20261108-workshop1';
 import {createMountModel} from './mount-models.js?v=20261108-workshop1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
-import {applyArmoryCustomization} from './armory-customization.js';
-import {armoryArt} from './armory-art.js';
-import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint} from './armory-rules.js';
+import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
+import {armoryArt} from './armory-art.js?v=20261109-trophies1';
+import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-trophies1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {partArt,toolArt} from './workshop-art.js?v=20261108-workshop1';
 import {equipmentBuilder} from './equipment-shapes.js?v=20261108-workshop1';
-import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261108-workshop1';
+import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261109-trophies1';
 
 const names={hp:'ΖΩΗ',speed:'ΤΑΧΥΤΗΤΑ',power:'ΙΣΧΥΣ',defence:'ΑΜΥΝΑ',energy:'ΕΝΕΡΓΕΙΑ',regen:'ΑΝΑΠΛΗΡΩΣΗ',contact:'ΖΗΜΙΑ ΤΡΟΧΩΝ',frontContact:'ΕΜΒΟΛΙΣΜΟΣ',handling:'ΣΤΡΟΦΗ',riderProtection:'ΠΡΟΣΤΑΣΙΑ ΑΝΑΒΑΤΗ',mass:'ΒΑΡΟΣ'};
 const format=(key,v)=>['defence','riderProtection'].includes(key)?Math.round(v*100)+'%':Number.isInteger(v)?String(v):v.toFixed(2);
@@ -95,20 +95,27 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
  function armoryCommit(){dirty(onChange(context));}
  function renderArmory(){
   const a=context.garage.armory,list=view==='weapons'?WEAPON_BLUEPRINTS:SHIELD_BLUEPRINTS;if(!list.some(b=>b.id===armoryItem))armoryItem=list[0].id;
-  const b=blueprint(armoryItem),defs=armoryParts(armoryItem),field=view==='weapons'?'weapon':'shield',locked=!armoryAvailable(armoryItem,context.weaponTier);
+  const b=blueprint(armoryItem),defs=armoryParts(armoryItem),field=view==='weapons'?'weapon':'shield',locked=!armoryAvailable(armoryItem,context.weaponTier,a),trophy=BOSS_WEAPON_INFO[b.bossReward];
   $('workshopParts').replaceChildren(button('ΣΧΗΜΑ / ΣΧΕΔΙΟ',()=>{slot='shape';render();},slot==='shape',armoryArt(doc,armoryItem)),...defs.map(p=>button(p.name,()=>{slot=p.id;option=a.items[armoryItem].parts[p.id].selected;render();},slot===p.id,armoryArt(doc,armoryItem,p.id,a.items[armoryItem].parts[p.id].selected))));
   $('workshopFamilies').replaceChildren(button('ΑΡΧΙΚΟΣ ΕΞΟΠΛΙΣΜΟΣ',()=>{const reason=canModify({kind:'player',slot:field});if(reason){$('workshopFeedback').textContent=reason;return;}a[field]='auto';armoryCommit();render();},a[field]==='auto',toolArt(doc,'rotate')));
   $('workshopUse').hidden=$('workshopAuto').hidden=$('workshopRepair').hidden=true;
   $('workshopTestControls').hidden=!context.menu;$('workshopSave').disabled=context.test;root.dataset.view=view;
   $('workshopMode').textContent=(context.preview?'PREVIEW · ':'')+(context.test?'ΠΡΟΣΩΡΙΝΗ ΔΟΚΙΜΗ':'LV '+context.level)+' · '+b.name;
   previewGarage=restoreGarage(context.garage);previewGarage.armory[field]=armoryItem;
+  if(trophy)awardBossWeapon(previewGarage.armory,b.bossReward);
   const part=defs.find(p=>p.id===slot);if(slot!=='shape'&&!part){slot='shape';}
   $('workshopEquip').disabled=$('workshopUpgrade').disabled=true;
   $('workshopEquip').parentElement.hidden=slot==='shape';
   if(slot==='shape'){
-   $('workshopPartName').textContent=view==='weapons'?'12 ΠΡΑΓΜΑΤΙΚΑ ΟΠΛΑ':'6 ΠΡΑΓΜΑΤΙΚΕΣ ΑΣΠΙΔΕΣ';
-   $('workshopOptions').replaceChildren(...list.map(item=>{const available=armoryAvailable(item.id,context.weaponTier),card=button(item.id.slice(1)+' · '+item.name,()=>{armoryItem=item.id;const reason=canModify({kind:'player',slot:field});if(available&&!reason){equipBlueprint(a,item.id,{tier:context.weaponTier});armoryCommit();$('workshopFeedback').textContent='ΕΞΟΠΛΙΣΤΗΚΕ · '+item.name;}else $('workshopFeedback').textContent=reason||'Προεπισκόπηση: απαιτεί την αντίστοιχη βαθμίδα κατασκευής.';render();},armoryItem===item.id,armoryArt(doc,item.id));card.dataset.blueprint=item.id;card.dataset.equipped=a[field]===item.id;const state=doc.createElement('small');state.textContent=available?(a[field]===item.id?'ΕΞΟΠΛΙΣΜΕΝΟ':'ΠΑΤΑ ΓΙΑ ΕΞΟΠΛΙΣΜΟ'):'ΚΛΕΙΔΩΜΕΝΟ · ΚΑΤΑΣΚΕΥΗ '+item.tier;card.append(state);return card;}));
-   $('workshopDescription').textContent=b.name+(locked?' · Κλειδωμένη κατασκευή.':' · Η επιλογή εξοπλίζεται άμεσα. Τα εξαρτήματα αποθηκεύονται χωριστά σε κάθε σχέδιο.');$('workshopCost').textContent='Τα ξεκλειδωμένα σχέδια εξοπλίζονται δωρεάν. Τα λειτουργικά εξαρτήματα αναβαθμίζονται με υλικά.';
+   $('workshopPartName').textContent=list.length+(view==='weapons'?' ΟΠΛΑ':' ΑΣΠΙΔΕΣ');
+   $('workshopOptions').replaceChildren(...list.map(item=>{
+    const available=armoryAvailable(item.id,context.weaponTier,a),boss=BOSS_WEAPON_INFO[item.bossReward],requirement=boss?'ΝΙΚΗΣΕ: '+boss.boss:'ΚΛΕΙΔΩΜΕΝΟ · ΚΑΤΑΣΚΕΥΗ '+item.tier;
+    const card=button(item.id.slice(1)+' · '+item.name,()=>{armoryItem=item.id;const reason=canModify({kind:'player',slot:field});if(available&&!reason){equipBlueprint(a,item.id,{tier:context.weaponTier});armoryCommit();$('workshopFeedback').textContent='ΕΞΟΠΛΙΣΤΗΚΕ · '+item.name;}else $('workshopFeedback').textContent=reason||requirement;render();},armoryItem===item.id,armoryArt(doc,item.id));
+    card.dataset.blueprint=item.id;card.dataset.equipped=a[field]===item.id;card.dataset.locked=!available;
+    const state=doc.createElement('small');state.textContent=available?(a[field]===item.id?'ΕΞΟΠΛΙΣΜΕΝΟ':'ΠΑΤΑ ΓΙΑ ΕΞΟΠΛΙΣΜΟ'):requirement;card.append(state);return card;
+   }));
+   $('workshopDescription').textContent=trophy?trophy.effect:b.name+(locked?' · Κλειδωμένη κατασκευή.':' · Η επιλογή εξοπλίζεται άμεσα. Τα εξαρτήματα αποθηκεύονται χωριστά σε κάθε σχέδιο.');
+   $('workshopCost').textContent=trophy?(locked?'Ξεκλειδώνει όταν νικήσεις τον αντίστοιχο mini-boss.':'Τρόπαιο μάχης · διαθέσιμο σε κάθε γύρο.'):'Τα ξεκλειδωμένα σχέδια εξοπλίζονται δωρεάν. Τα λειτουργικά εξαρτήματα αναβαθμίζονται με υλικά.';
   }else{
    const entry=a.items[armoryItem].parts[slot];if(!part.options.some(o=>o.id===option))option=entry.selected;
    const chosen=part.options.find(o=>o.id===option),rank=entry.owned[option]||0,q=armoryQuote(a,armoryItem,slot,option);
@@ -124,7 +131,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   const current=armoryStats(a,armoryItem),after=armoryStats(previewGarage.armory,armoryItem),stats=$('workshopStats');stats.replaceChildren();
   const labels={power:'ΦΥΣΙΚΗ ΖΗΜΙΑ',reach:'ΕΜΒΕΛΕΙΑ',handling:'ΤΑΧΥΤΗΤΑ ΧΤΥΠΗΜΑΤΟΣ',force:'ΑΠΩΘΗΣΗ',protection:'ΑΠΟΡΡΟΦΗΣΗ',coverage:'ΚΑΛΥΨΗ',hp:'ΠΡΟΣΘΕΤΗ ΖΩΗ',defence:'ΑΜΥΝΑ',counter:'ΑΝΤΕΠΙΘΕΣΗ',speed:'ΤΑΧΥΤΗΤΑ ΚΙΝΗΣΗΣ'};
   for(const [key,label]of Object.entries(labels)){if(current[key]===undefined)continue;const row=doc.createElement('div'),name=doc.createElement('span'),value=doc.createElement('strong');name.textContent=label;const fmt=v=>key==='coverage'?Math.round(v*360/Math.PI)+'°':['protection','defence','counter'].includes(key)?Math.round(v*100)+'%':key==='hp'?String(v):v.toFixed(2)+'×';value.textContent=fmt(current[key])+(current[key]!==after[key]?' → '+fmt(after[key]):'');row.append(name,value);stats.append(row);}
-  const note=doc.createElement('p');note.textContent=armoryItem==='w08'?'Ζημιά ανά έμβολο: 60% · έως δύο πραγματικές επαφές.':armoryItem==='w11'?'Ακίδες: +18% ζημιά · επίπεδη όψη: +24% απώθηση.':armoryItem==='w12'?'Ανοικτό κέντρο · ARC: ένας πρόσθετος στόχος, +15% αποδοτικότητα.':'ΠΥΡΗΝΑΣ: '+after.core.toUpperCase()+' · '+after.coreRank+'/5';stats.append(note);
+  const note=doc.createElement('p');note.textContent=trophy&&slot!=='shape'?trophy.effect:armoryItem==='w08'?'Ζημιά ανά έμβολο: 60% · έως δύο πραγματικές επαφές.':armoryItem==='w11'?'Ακίδες: +18% ζημιά · επίπεδη όψη: +24% απώθηση.':armoryItem==='w12'?'Ανοικτό κέντρο · ARC: ένας πρόσθετος στόχος, +15% αποδοτικότητα.':'ΠΥΡΗΝΑΣ: '+after.core.toUpperCase()+' · '+after.coreRank+'/5';stats.append(note);
   rebuildPreview();
  }
  function transactArmory(upgrade){const field=view==='weapons'?'weapon':'shield',reason=canModify({kind:'player',slot:field});if(reason){$('workshopFeedback').textContent=reason;return;}const a=context.garage.armory,result=upgrade?purchaseArmoryPart(a,context.materials,armoryItem,slot,option,{tier:context.weaponTier,test:context.test}):{ok:equipArmoryPart(a,armoryItem,slot,option,{tier:context.weaponTier,test:context.test})};if(result.ok){equipBlueprint(a,armoryItem,{tier:context.weaponTier,test:context.test});armoryCommit();$('workshopFeedback').textContent=upgrade?'Το εξάρτημα αναβαθμίστηκε και εξοπλίστηκε.':'Το εξάρτημα εξοπλίστηκε.';render();}else $('workshopFeedback').textContent=result.reason||'Μη διαθέσιμο εξάρτημα.';}

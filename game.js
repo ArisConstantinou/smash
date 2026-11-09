@@ -1,14 +1,14 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261108-workshop1';
+import {createMountWorkshop} from './mount-workshop.js?v=20261109-trophies1';
 import {createSaveStore} from './save-store.js?v=20261108-armory1';
-import {applyArmoryCustomization} from './armory-customization.js?v=20261108-armory1';
-import {createWeaponModel} from './armory-models.js?v=20261108-armory1';
-import {ArmoryEffects} from './armory-effects.js?v=20261108-armory1';
-import {armoryHeadVolumes,sweepArmoryHead} from './armory-contacts.js?v=20261108-armory1';
-import {resolveArmory,armoryAvailable,armoryStats,blueprint} from './armory-rules.js?v=20261108-armory1';
+import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
+import {createWeaponModel} from './armory-models.js?v=20261109-trophies1';
+import {ArmoryEffects} from './armory-effects.js?v=20261109-trophies1';
+import {armoryHeadVolumes,sweepArmoryHead} from './armory-contacts.js?v=20261109-trophies1';
+import {resolveArmory,armoryAvailable,armoryStats,blueprint,awardBossWeapon} from './armory-rules.js?v=20261109-trophies1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {MountWeapons} from './mount-weapons.js?v=20261108-workshop1';
 import {MountRide} from './mount-ride.js?v=20261108-workshop1';
-import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261108-workshop1';
+import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261109-trophies1';
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
 import {LevelStorm,stormStats} from './level-storm.js?v=20261108-mount1';
@@ -19,7 +19,7 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261108-startup1';
-import {createForgeMenu} from './menu.js?v=20261109-gauntlet1';
+import {createForgeMenu} from './menu.js?v=20261109-trophies1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
@@ -541,8 +541,9 @@ function applyStats(){
   stats={...calculateStats(levels),power:characterStats.power*(1+(levels.power||0)*.25),size:characterStats.size*(1+(levels.size||0)*.18),
     range:characterStats.range*(1+(levels.range||0)*.22+(levels.size||0)*.08),speed:characterStats.speed*(1+(levels.speed||0)*.12),maxHp:characterStats.maxHp+(levels.vitality||0)*25};
   playerCustomization=playerCustomStats(garage,{hasShield:characterStats.hasShield});stats.power*=playerCustomization.power;stats.speed*=playerCustomization.speed;stats.maxHp+=playerCustomization.hp;
-  const selected=resolveArmory(garage.armory,characterStats.weaponTier),weaponActive=garage.armory.weapon!=='auto'&&armoryAvailable(selected.weapon,characterStats.weaponTier),shieldActive=garage.armory.shield!=='auto'&&armoryAvailable(selected.shield,characterStats.weaponTier);
+  const selected=resolveArmory(garage.armory,characterStats.weaponTier),weaponActive=garage.armory.weapon!=='auto'&&armoryAvailable(selected.weapon,characterStats.weaponTier,garage.armory),shieldActive=garage.armory.shield!=='auto'&&armoryAvailable(selected.shield,characterStats.weaponTier,garage.armory);
   armoryWeaponStats=weaponActive?armoryStats(garage.armory,selected.weapon):null;armoryShieldStats=shieldActive?armoryStats(garage.armory,selected.shield):null;
+  if(armoryWeaponStats)armoryWeaponStats.signature=blueprint(selected.weapon).signature;
   armoryVolumes=weaponActive?armoryHeadVolumes(selected.weapon,Object.fromEntries(Object.entries(garage.armory.items[selected.weapon].parts).map(([k,v])=>[k,v.selected]))):null;
   if(armoryWeaponStats){const family=blueprint(selected.weapon).family,reach=family==='club'?2.65:family==='hammer'?2.15:3.65;stats.power*=armoryWeaponStats.power;stats.range*=reach/characterStats.range*armoryWeaponStats.reach;stats.maxHp+=armoryWeaponStats.hp;}
   if(armoryShieldStats){stats.maxHp+=armoryShieldStats.hp;stats.speed*=armoryShieldStats.speed;}
@@ -806,9 +807,17 @@ function armoryImpact(s,from,to,spinning){
 }
 const armoryEffects=new ArmoryEffects({
  targets:()=>[...enemies,...(boss&&!boss.dead?[boss]:[])],
+ scenery:(point,radius)=>nearbyObjects(point.x,point.z,radius),
+ heal:()=>{if(phase!=='playing'||player.hp<=0||player.hp>=player.maxHp)return false;const restored=Math.min(Math.ceil(player.maxHp*.08),20,player.maxHp-player.hp);player.hp+=restored;floatText(player.x,player.y+2.4,player.z,'+'+Math.ceil(restored)+' HP','#c9a3ff',17);return true;},
  blocked:(from,to,target)=>{const h=firstHammerHit(from,to,segmentObjects(from,to,.02),.02);return !!h&&h.target!==target;},
- damage:(t,n,p,core)=>{const dir=normalize(t.x-player.x,t.z-player.z),response={weapon:'core-'+core,combo:false,interrupt:false,fear:false,grounded:true,preserveVelocity:true,stagger:0};if(t===boss)hitBoss(n,dir,0,response);else if(t.w!==undefined)hurtObject(t,n,0,p,'core-'+core);else hitEnemy(t,n,dir,0,0,p,response);},
- visual:(core,a,b)=>{if(core==='arc'&&a!==b){const mid=new THREE.Vector3((a.x+b.x)/2+.12,(a.y+b.y)/2+.18,(a.z+b.z)/2-.12);weaponTrail(new THREE.Vector3(a.x,a.y,a.z),mid,.045,0x72e5ff,false);weaponTrail(mid,new THREE.Vector3(b.x,b.y,b.z),.045,0x72e5ff,false);}else fragments.add(a.x,a.y,a.z,core==='fire'?3:4,core==='fire'?[0xffae39,0xe76025]:core==='frost'?[0x98dfff,0xd6ffff]:core==='arc'?[0x72e5ff]:[0xffdc83],core==='impact'?4:1.5,.045);}
+ damage:(t,n,p,core,origin=player)=>{const force=core==='siegeWave'?4:0,dir=normalize(t.x-origin.x,t.z-origin.z),response={weapon:'core-'+core,combo:false,interrupt:false,fear:false,grounded:true,preserveVelocity:!force,stagger:0};if(t===boss)hitBoss(n,dir,0,response);else if(t.w!==undefined)hurtObject(t,n,0,p,'core-'+core);else hitEnemy(t,n,dir,force,0,p,response);},
+ visual:(core,a,b)=>{
+  if(core==='siegeWave'){const ring=pulse(a.x,a.z,3.6,0xffaa57,.32);ring.position.y=Math.max(.09,a.y);fragments.add(a.x,a.y,a.z,14,[0xffa853,0xffdf9c,0x88705d],6,.10);audio.play('slam',.38,{material:'metal'});}
+  else if(core==='marshalBrand')fragments.add(a.x,a.y,a.z,7,[0xbc6dff,0xe2adff],2.4,.055);
+  else if(core==='marshalHeal'){weaponTrail(new THREE.Vector3(a.x,a.y,a.z),new THREE.Vector3(player.x,player.y+1.15,player.z),.085,0xc88aff,false);fragments.add(player.x,player.y+1,player.z,9,[0xc48bff,0xf0d6ff],3,.055);}
+  else if(core==='arc'&&a!==b){const mid=new THREE.Vector3((a.x+b.x)/2+.12,(a.y+b.y)/2+.18,(a.z+b.z)/2-.12);weaponTrail(new THREE.Vector3(a.x,a.y,a.z),mid,.045,0x72e5ff,false);weaponTrail(mid,new THREE.Vector3(b.x,b.y,b.z),.045,0x72e5ff,false);}
+  else fragments.add(a.x,a.y,a.z,core==='fire'?3:4,core==='fire'?[0xffae39,0xe76025]:core==='frost'?[0x98dfff,0xd6ffff]:core==='arc'?[0x72e5ff]:[0xffdc83],core==='impact'?4:1.5,.045);
+ }
 });
 function spinImpact(from,to){
   const s=spin;if(!s)return;
@@ -911,6 +920,7 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
 function killEnemy(e){
   if(e.dead)return;
   e.dead=true;guardHits.delete(e);enemies=enemies.filter(n=>n!==e);kills++;battleKills++;score+=Math.round((e.miniBoss?420:25*(e.xp||1))*comboMultiplier(combatCombo));
+  armoryEffects.defeat(e);
   if(e.waveNumber===wave?.number)wave.defeated++;
   if(e.encounterEscort)encounter?.escorts.delete(e);
   clearEncounterShell(e);
@@ -929,6 +939,10 @@ function killEnemy(e){
   if(e.miniBoss||level>=6&&kills%8===0)spawnDrop(e.x+.35,e.z+.25,'crystal');
   if(e.miniBoss){spawnDrop(e.x,e.z,'relic');spawnDrop(e.x+.5,e.z,'heart');}
   if(e.encounterLeader)for(const [x,z,kind] of [[-1,0,'scrap'],[1,0,'scrap'],[0,1,'crystal'],[0,-1,'gold']])spawnDrop(e.x+x,e.z+z,kind);
+  if(e.encounterLeader&&encounter?.leader===e){
+    const reward=awardBossWeapon(garage.armory,e.type);
+    if(reward){persistCharacter();toast('ΞΕΚΛΕΙΔΩΘΗΚΕ · '+reward.name,testRun?'Διαθέσιμο στο Workshop αυτής της δοκιμής.':'Διαθέσιμο στα Όπλα του Workshop (I).','#f2ca84');}
+  }
   if(e.encounterEscort)spawnDrop(e.x+.28,e.z-.22,'gold');
   if(Math.random()<.16)spawnDrop(e.x,e.z,player.hp<player.maxHp*.7&&Math.random()<.65?'heart':'gold');
 }
@@ -2797,8 +2811,8 @@ function drawFX(){
   drawAim();
   if(throwFlight?.grounded){const p=screenPoint(throwFlight.x,throwFlight.groundY+1.2,throwFlight.z);if(p.inside){c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#10201e';c.strokeText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);c.fillStyle='#ffe2a3';c.fillText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);}}
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
-    const label='LV '+e.level+((e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
-    drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,enemyHealthColor(e.level),1,label);
+    const branded=armoryEffects.branded.has(e),label='LV '+e.level+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
+    drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':enemyHealthColor(e.level),1,label);
   }
 
   const objectNames={townhouse:'ΚΑΤΟΙΚΙΑ',apartment:'ΠΟΛΥΚΑΤΟΙΚΙΑ',shop:'ΚΑΤΑΣΤΗΜΑ',office:'ΓΡΑΦΕΙΑ',townhall:'ΔΗΜΑΡΧΕΙΟ',police:'ΑΣΤΥΝΟΜΙΚΟ ΤΜΗΜΑ',hospital:'ΝΟΣΟΚΟΜΕΙΟ',skyscraper:'ΟΥΡΑΝΟΞΥΣΤΗΣ',construction:'ΕΡΓΟΤΑΞΙΟ',warehouse:'ΑΠΟΘΗΚΗ',policecar:'ΠΕΡΙΠΟΛΙΚΟ',ambulance:'ΑΣΘΕΝΟΦΟΡΟ',car:'ΑΥΤΟΚΙΝΗΤΟ',wall:'ΤΟΙΧΟΣ',tree:'ΔΕΝΤΡΟ',barrel:'ΒΑΡΕΛΙ',hydrant:'ΚΡΟΥΝΟΣ',crate:'ΚΙΒΩΤΙΟ',lamp:'ΦΑΝΑΡΙ',bench:'ΠΑΓΚΑΚΙ'};
@@ -3263,7 +3277,7 @@ init().catch(error=>{
 window.render_game_to_text=()=>JSON.stringify({
   coordinates:'Metres; X/Z ground plane, Y height',phase,
   player:{x:player.x,y:player.y,z:player.z,hp:player.hp},mount:mountRide?.snapshot(),
-  armory:{weapon:hero?.userData.armoryWeaponId||'classic',shield:hero?.userData.armoryShieldId||'classic',weaponCore:armoryWeaponStats?.core||'none',shieldCore:armoryShieldStats?.core||'none',burning:armoryEffects.burning.size},
+  armory:{weapon:hero?.userData.armoryWeaponId||'classic',shield:hero?.userData.armoryShieldId||'classic',weaponCore:armoryWeaponStats?.core||'none',shieldCore:armoryShieldStats?.core||'none',trophies:Object.keys(garage.armory.trophies),signature:armoryWeaponStats?.signature||null,branded:armoryEffects.branded.size,burning:armoryEffects.burning.size},
   progress:{destruction:world?destructionPercent(world.objects):0,enemies:battleKills,total:world?battleProgress(destructionPercent(world.objects),battleKills):0,goal:GOAL,next:BOSS_GATES[bossGate]?.threshold??GOAL},
   encounter:encounter?{type:encounter.leader.type,state:encounter.entry?.stage||encounter.leader.state,
     x:encounter.entry?.location.x??encounter.leader.x,z:encounter.entry?.location.z??encounter.leader.z,

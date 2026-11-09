@@ -1,5 +1,12 @@
 Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\Smash; find failed ChatGPT/GitHub WebGPU/WASM work and fix hammer/whirlwind destruction FPS collapse plus the recorded pending updates. Keep this source folder and project structure for future work.
 
+## Boss trophy weapons — 2026-11-09
+
+- Candidate `codex/boss-trophy-weapons` is based on published `8f70106`. The Siege Transformer's barrel hammer (w19) and Hollow Marshal's shock baton (w20) use the approved boss designs. Both have editable meshes, matching Workshop illustrations, physical hit volumes, and independently saved upgrades.
+- Each actual leader defeat unlocks its trophy without a forge-tier gate. Standard saves keep both trophies across rounds and reloads; temporary test rounds do not write to the persistent save.
+- Siege wave damages up to five nearby secondary enemies or props through the existing collision/health path. The Marshal brands enemies for four seconds and a branded defeat restores up to 20 HP with a cooldown. Signature effects coexist with the selectable core.
+- Browser evidence in the stable `tests/boss-trophies` directory verifies locked → defeat → equipped, different real health effects, retained equipment on reload, and Workshop portraits. Preview uses the existing fixed port 8000. No promotion of this feature has been authorized.
+
 ## Player camera, live map and boss gauntlet — 2026-11-09
 
 - Protected published baseline: main `5ea1f69`, v2026.11.09.1. Candidate v2026.11.09.2 uses the fixed port 8000 and no extra build. The player keeps the original orthographic angle and 1× zoom during all boss fights. Preserve the near-plane retreat that fixes clipped roofs.
