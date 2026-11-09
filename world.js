@@ -3,7 +3,7 @@ import { makeProp } from './models.js?v=20261108-workshop1';
 import { makeCityBuilding, makeCityVehicle } from './city-models.js?v=20261107-damage8';
 import { createCityLayout, cityRegionAt, CITY_BOUNDS, CITY_SPACING, CITY_ROAD_WIDTH } from './city-layout.js?v=20261107-cities10';
 import { createCityNavigation } from './city-navigation.js?v=20261107-forge9';
-import { createGeometryCollision } from './geometry-collision.js?v=20261108-startup1';
+import { createGeometryCollision } from './geometry-collision.js?v=20261109-readability1';
 
 // All solid buildings, vehicles and street furniture share the same damage and
 // collision registry. Only ground markings, weather and cloth are scenery.
@@ -353,6 +353,24 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   flushBatches();
   const navigation=createCityNavigation({objects,nearObjects,bounds:CITY_BOUNDS});
   const collision=createGeometryCollision({nearObjects,bounds:CITY_BOUNDS});
+  let warmX=Infinity,warmZ=Infinity,collisionPreparation=null;
+  function prepareNearbyCollision(x,z){
+    if((x-warmX)**2+(z-warmZ)**2>=16){
+      warmX=x;warmZ=z;
+      const nearby=nearObjects(x,z,23).filter(o=>o.isBuilding&&!o.destruction);
+      const distance=o=>Math.max(0,Math.abs(o.x-x)-o.w/2)**2+Math.max(0,Math.abs(o.z-z)-o.d/2)**2;
+      nearby.sort((a,b)=>distance(a)-distance(b));
+      collisionPreparation=collision.warmSteps(nearby);
+    }
+    if(!collisionPreparation)return;
+    const start=performance.now();
+    // Yield between meshes. Keep a bounded number of steps even when the
+    // clock has coarse resolution or all nearby meshes are already cached.
+    for(let i=0;i<6;i++){
+      if(collisionPreparation.next().done){collisionPreparation=null;break;}
+      if(performance.now()-start>=.75)break;
+    }
+  }
   function updateVisibility(player,camera) {
     const px=player?.x??player?.position?.x??0,pz=player?.z??player?.position?.z??0;
     // The camera looks over the player: keep enough skyline beyond the view.
@@ -494,7 +512,7 @@ export function createWorld(scene, { seed = 1, round = 1, city = null } = {}) {
   update(0,0,{x:0,z:0},'rain');
   return {
     city,group,objects,hazards,update,updateVisibility,nearObjects,rebuildSpatialIndex,relocateObject,
-    warmCollision:(x,z,radius=12)=>collision.warm(nearObjects(x,z,radius)),
+    warmCollision:(x,z,radius=12)=>collision.warm(nearObjects(x,z,radius)),prepareNearbyCollision,
     supportHeight:collision.supportHeight,supportSurface:collision.support,ceilingHeight:collision.ceilingHeight,
     moveBody:collision.moveBody,clearBody:collision.clearBody,collisionDiagnostics:collision.diagnostics,
     bounds:CITY_BOUNDS,regionAt,layout,districts:layout.districts,landmarks:layout.landmarks,

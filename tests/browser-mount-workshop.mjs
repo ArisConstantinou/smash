@@ -35,7 +35,14 @@ try{
  assert.ok(Math.abs(await page.evaluate(()=>__garageQA.ready&&document.querySelectorAll('#workshopOptions img').length)-4)<.1); // Four physical kit variants.
  await page.locator('#workshopTabs button').filter({hasText:'ΟΧΗΜΑ'}).click();await shot({path:resolve(out,'desktop-mount.png')});
  await page.locator('#workshopTestLevel').selectOption('1');await page.locator('#workshopTestStart').click();await page.waitForFunction(()=>__garageQA.phase==='playing');await page.waitForTimeout(700);await page.locator('#mountWorkshopButton').click();assert.equal(await page.evaluate(()=>__garageQA.phase),'paused');
- await page.locator('#workshopOptions button').filter({hasText:'ΑΚΙΔΕΣ'}).click();for(let n=0;n<5;n++)await page.locator('#workshopUpgrade').click();assert.ok(await page.locator('#workshopUpgrade').isDisabled());
+ await page.locator('#workshopOptions button').filter({hasText:'ΑΚΙΔΕΣ'}).click();
+ const upgradePreview=page.locator('#workshopUpgradePreview'),upgrade=page.locator('#workshopUpgrade');
+ assert.match(await upgradePreview.innerText(),/Κατασκευή · βαθμίδα 1.*ΖΗΜΙΑ ΤΡΟΧΩΝ 0 → /s);
+ assert.match(await page.locator('#workshopCost').innerText(),/δεν ξοδεύεις υλικά/);
+ await upgrade.click();
+ assert.match(await upgradePreview.innerText(),/Βαθμίδα 1 → 2.*ΖΗΜΙΑ ΤΡΟΧΩΝ/s);
+ for(let n=1;n<5;n++)await upgrade.click();
+ assert.ok(await upgrade.isDisabled());assert.ok(await upgradePreview.isHidden());
  assert.equal(await page.evaluate(()=>__garageQA.garage.mounts.bicycle.frontWheel.owned.spiked),5);assert.ok(await page.evaluate(()=>__garageQA.mount.stats.contact>40));
  await page.locator('#workshopParts button').filter({hasText:'ΕΜΠΡΟΣ MODULE'}).click();await page.locator('#workshopOptions button').filter({hasText:'ΠΟΛΥΒΟΛΟ'}).click();await page.locator('#workshopUpgrade').click();assert.equal(await page.evaluate(()=>__garageQA.mount.stats.weapons[0].id),'gun');
  await page.locator('#workshopTabs button').filter({hasText:'ΠΑΙΚΤΗΣ'}).click();await page.locator('#workshopOptions button').filter({hasText:'ΕΝΙΣΧΥΜΕΝΟ'}).click();const hp=await page.evaluate(()=>__garageQA.stats.maxHp);await page.locator('#workshopUpgrade').click();assert.ok(await page.evaluate(()=>__garageQA.stats.maxHp)>hp);
@@ -49,7 +56,9 @@ try{
  // An isolated browser context seeds a representative earned checkpoint. It
  // never touches the user's browser profile, and checks one atomic save payload.
  await page.evaluate(()=>{const character=__garageQA.createCharacterProgression(21);character.materials={wood:500,scrap:500,crystal:500};window.__protectedCheckpoint=JSON.stringify({character,levels:{power:2}});localStorage.setItem('ironfall.character',window.__protectedCheckpoint);__garageQA.setPhase('menu');});
- await page.setViewportSize({width:1440,height:1000});await page.locator('#menuMountWorkshopButton').click();await page.locator('#workshopOptions button').filter({hasText:'ΑΚΙΔΕΣ'}).click();await page.locator('#workshopUpgrade').click();
+ await page.setViewportSize({width:1440,height:1000});await page.locator('#menuMountWorkshopButton').click();await page.locator('#workshopOptions button').filter({hasText:'ΑΚΙΔΕΣ'}).click();
+ assert.match(await page.locator('#workshopCost').innerText(),/Μέταλλο 10 · έχεις 500/);
+ await upgrade.click();
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem(__garageQA.storage.key('ironfall.character'))));assert.equal(saved.garage.mounts.scifi.frontWheel.selected,'spiked');assert.equal(saved.character.materials.scrap,490);assert.equal(saved.levels.power,2);assert.ok(await page.evaluate(()=>!__garageQA.storage.isPreview||localStorage.getItem('ironfall.character')===window.__protectedCheckpoint));
  await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>__garageQA.ready,null,{timeout:90000});await page.locator('#menuMountWorkshopButton').click();assert.equal(await page.locator('#workshopOptions button').filter({hasText:'ΑΚΙΔΕΣ'}).getAttribute('aria-pressed'),'true');
  await page.locator('#workshopSave').click();assert.match(await page.locator('#workshopSaveState').innerText(),/ΑΠΟΘΗΚΕΥΤΗΚΕ/);
@@ -61,9 +70,41 @@ try{
  await shot({path:resolve(out,'persisted-scifi.png')});
  await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>__garageQA.ready,null,{timeout:90000});assert.ok(await page.evaluate(()=>Object.values(JSON.parse(localStorage.getItem(__garageQA.storage.key('ironfall.character'))).garage.player).every(p=>p.selected==='assault'&&p.owned.assault===1)));
  await page.setViewportSize({width:430,height:932});await page.locator('#resumeCharacterButton').click();await page.waitForFunction(()=>__garageQA.phase==='playing');await page.locator('#mountToggle').click();assert.ok(await page.evaluate(()=>__garageQA.mount.active));
- await page.waitForFunction(()=>{const i=document.getElementById('mountHudImage');return i.complete&&i.naturalWidth===160;});const mountHud=await page.locator('#mountControls').boundingBox(),joystick=await page.locator('#joystick').boundingBox();assert.ok(mountHud.x<30&&mountHud.y+mountHud.height<=joystick.y,'Pictorial mount/workshop controls stay bottom left, clear of steering');await shot({path:resolve(out,'phone-game-controls.png')});await page.keyboard.press('i');assert.equal(await page.evaluate(()=>__garageQA.phase),'paused');const playingHeight=await page.locator('.workshop-shell').evaluate(n=>n.getBoundingClientRect().height);await page.locator('#workshopTabs button').filter({hasText:'ΠΑΙΚΤΗΣ'}).click();assert.equal(await page.locator('.workshop-shell').evaluate(n=>n.getBoundingClientRect().height),playingHeight);await page.keyboard.press('i');assert.equal(await page.evaluate(()=>__garageQA.phase),'playing');assert.deepEqual(errors,[]);
+ await page.waitForFunction(()=>{const i=document.getElementById('mountHudImage');return i.complete&&i.naturalWidth===160;});
+ assert.equal(await page.locator('#combatDock #mountControls #upgradesToggle').count(),1,'The existing mount, workshop and upgrades controls share the touch dock');
+ const mountHud=await page.locator('#mountControls').boundingBox(),joystick=await page.locator('#joystick').boundingBox();
+ assert.ok(mountHud.x>=joystick.x+joystick.width+6,'Utility actions clear the joystick');
+ await shot({path:resolve(out,'phone-game-controls.png')});
+ await page.locator('#mountWorkshopButton').click();assert.equal(await page.evaluate(()=>__garageQA.phase),'paused');
+ const playingHeight=await page.locator('.workshop-shell').evaluate(n=>n.getBoundingClientRect().height);
+ await page.locator('#workshopTabs button').filter({hasText:'ΠΑΙΚΤΗΣ'}).click();
+ assert.equal(await page.locator('.workshop-shell').evaluate(n=>n.getBoundingClientRect().height),playingHeight);
+ await page.keyboard.press('i');assert.equal(await page.evaluate(()=>__garageQA.phase),'playing');assert.deepEqual(errors,[]);
  // Catalog choices must change actual live equipment, including in CI's software diagnostic renderer.
  await page.keyboard.press('i');await page.locator('#workshopTabs button').filter({hasText:'ΟΠΛΑ'}).click();for(const id of Array.from({length:12},(_,i)=>'w'+String(i+1).padStart(2,'0'))){await page.locator('[data-blueprint="'+id+'"]').click();assert.equal(await page.evaluate(()=>__garageQA.hero.userData.armoryWeaponId),id);}
+ await page.locator('#workshopParts button').filter({hasText:'ΠΥΡΗΝΑΣ'}).click();
+ await page.locator('[data-choice="fire"]').click();assert.match(await upgradePreview.innerText(),/Στο χτύπημα.*εγκαύματος/);
+ await upgrade.click();assert.match(await upgradePreview.innerText(),/Βαθμίδα 1 → 2.*Κάθε παλμός/s);
+ await upgradePreview.scrollIntoViewIfNeeded();await shot({path:resolve(out,'phone-upgrade-preview.png')});
+ for(const [width,height] of [[430,932],[320,568],[932,430],[667,313]]){
+  await page.setViewportSize({width,height});
+  const layout=await page.evaluate(()=>{
+   const box=selector=>document.querySelector(selector).getBoundingClientRect().toJSON();
+   const shell=document.querySelector('.workshop-shell');
+   return {overflow:shell.scrollWidth>shell.clientWidth+1,save:box('#workshopSave'),close:box('#workshopClose'),
+    parts:box('#workshopParts'),preview:box('.workshop-turntable'),tools:box('.workshop-preview-tools'),
+    preset:box('#workshopFamilies'),details:box('.workshop-details')};
+  });
+  assert.ok(!layout.overflow&&layout.save.right<=layout.close.x,`Workshop fits ${width}×${height}`);
+  assert.ok(Math.abs(layout.tools.top-layout.preset.top)<2,'Armory tools and preset share one row');
+  if(width<height){
+   assert.ok(Math.abs(layout.parts.left-layout.details.left)<1&&Math.abs(layout.preview.right-layout.details.right)<1);
+   assert.ok(layout.details.width>=width-34,'Portrait details use the full content width');
+  }else assert.ok(Math.abs(layout.preview.top-layout.details.top)<1&&layout.details.width>=240);
+  await upgrade.scrollIntoViewIfNeeded();
+  assert.ok(await upgrade.isEnabled(),'Next-rank purchase stays available after rotation');
+ }
+ await page.setViewportSize({width:430,height:932});
  await page.locator('#workshopTabs button').filter({hasText:'ΑΣΠΙΔΕΣ'}).click();for(const id of Array.from({length:6},(_,i)=>'s'+(i+13))){await page.locator('[data-blueprint="'+id+'"]').click();assert.equal(await page.evaluate(()=>__garageQA.hero.userData.armoryShieldId),id);}await page.locator('#workshopSave').click();assert.match(await page.locator('#workshopSaveState').innerText(),/ΑΠΟΘΗΚΕΥΤΗΚΕ/);await page.keyboard.press('i');assert.deepEqual(errors,[]);
  results.push({rotationChanged:before!==after,maxWheelRank:5,testPurchasesIsolated:true,savedMaterials:saved.character.materials,desktop:'1440x1000',phone:'390x844'});await writeFile(resolve(out,'results.json'),JSON.stringify({results,errors},null,2));console.log(JSON.stringify({results,errors}));
 }catch(error){console.error(error.stack);await writeFile(resolve(out,'results.json'),JSON.stringify({status:'failed',error:error.stack,results,errors},null,2));await context?.pages()[0]?.screenshot({path:resolve(out,'failure.png'),timeout:5000}).catch(()=>{});throw error;}finally{await context?.close();await managed.cleanup();if(server)await new Promise(done=>server.close(done));await new Promise(r=>setTimeout(r,1000));}

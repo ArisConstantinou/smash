@@ -26,6 +26,21 @@ function realObject(kind='shop',rotation=0) {
   return {object,collision,mesh};
 }
 
+test('preparation discards a partial collision cache when the building geometry changes',()=>{
+  const {object,collision,mesh}=realObject('office');
+  const warm=collision.warmSteps([object]);
+  assert.equal(warm.next().done,false);
+  assert.equal(collision.diagnostics.cacheBuilds,0);
+  mesh.traverse(node=>{
+    if(!node.isMesh)return;
+    node.geometry.dispose();
+    node.geometry=new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([],3));
+  });
+  for(const _ of warm){}
+  const from={x:-object.w,y:1.4,z:0},to={x:0,y:1.4,z:0};
+  assert.equal(collision.geometryHit(object,from,to,.14),null);
+});
+
 test('support follows the roof, sign and roof equipment instead of the enclosing box height',()=>{
   const {collision}=fixture(root=>{
     box(root,0,1.5,0,8,3,6);

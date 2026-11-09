@@ -39,7 +39,7 @@ function makePart(position, indices) {
   return {vertices,triangles,edges,bounds,closed,worldRevision:-1};
 }
 
-function buildGeometry(geometry, diagnostics, previous) {
+function* buildGeometrySteps(geometry, diagnostics, previous) {
   const position=geometry.attributes.position, index=geometry.index;
   if(!position)return {parts:[],cells:new Map(),bounds:new THREE.Box3()};
   const specs=geometry.userData.collisionParts||geometry.userData.fractureParts;
@@ -53,7 +53,8 @@ function buildGeometry(geometry, diagnostics, previous) {
   const localParts=reusable?previous.localParts:new Map();
   const add=indices=>{diagnostics.partBuilds++;const part=makePart(position,indices);if(part)parts.push(part);return part;};
   if(specs?.length) {
-    for(const spec of specs) {
+    for(const [i,spec] of specs.entries()) {
+      if(i&&i%8===0)yield;
       // A fracture removes whole pieces by rewriting the render index. The
       // collision cache reads that exact index, including an empty last batch.
       if(active&&!active.has(spec.start))continue;
@@ -72,10 +73,14 @@ function buildGeometry(geometry, diagnostics, previous) {
     // Ordinary Three primitives are convex. An unknown merged mesh falls back
     // to its individual triangle faces, never a hull over disconnected parts.
     if(/^(Box|Cylinder|Cone|Sphere|Icosahedron|Octahedron|Tetrahedron|Plane)Geometry$/.test(geometry.type))add(ids);
-    else for(let i=0;i+2<ids.length;i+=3)add(ids.slice(i,i+3));
+    else for(let i=0;i+2<ids.length;i+=3){
+      if(i&&i%24===0)yield;
+      add(ids.slice(i,i+3));
+    }
   }
   const cells=new Map(), bounds=new THREE.Box3();
   for(const [id,p] of parts.entries()) {
+    if(id&&id%24===0)yield;
     bounds.union(p.bounds);
     for(let z=Math.floor(p.bounds.min.z/CELL);z<=Math.floor(p.bounds.max.z/CELL);z++)
       for(let x=Math.floor(p.bounds.min.x/CELL);x<=Math.floor(p.bounds.max.x/CELL);x++) {
@@ -85,6 +90,12 @@ function buildGeometry(geometry, diagnostics, previous) {
   diagnostics.cacheBuilds++;
   return {geometry,position,positionVersion:position.version,specs,localParts,index,indexVersion:index?.version,drawStart:geometry.drawRange.start,drawCount:geometry.drawRange.count,parts,cells,bounds,
     matrix:new THREE.Matrix4().makeScale(0,0,0),inverse:new THREE.Matrix4(),worldBounds:new THREE.Box3(),revision:0};
+}
+
+function geometryIsCurrent(cache,geometry,position){
+  return cache?.geometry===geometry&&cache.position===position&&cache.positionVersion===position.version&&
+    cache.index===geometry.index&&cache.indexVersion===geometry.index?.version&&
+    cache.drawStart===geometry.drawRange.start&&cache.drawCount===geometry.drawRange.count;
 }
 
 function worldPart(part, cache) {
@@ -256,11 +267,36 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
   function cachedGeometry(node){
     const geometry=node.geometry,position=geometry?.attributes?.position;if(!position)return null;
     let cache=meshes.get(node);
-    if(!cache||cache.geometry!==geometry||cache.position!==position||cache.positionVersion!==position.version||cache.index!==geometry.index||cache.indexVersion!==geometry.index?.version||cache.drawStart!==geometry.drawRange.start||cache.drawCount!==geometry.drawRange.count){cache=buildGeometry(geometry,diagnostics,cache);meshes.set(node,cache);}
+    if(!geometryIsCurrent(cache,geometry,position)){
+      const steps=buildGeometrySteps(geometry,diagnostics,cache);
+      let step=steps.next();
+      while(!step.done)step=steps.next();
+      cache=step.value;meshes.set(node,cache);
+    }
     return cache;
   }
   function warm(objects){
     for(const object of objects){if(object.dead)continue;for(const node of entries(object))cachedGeometry(node);}
+  }
+  function* warmSteps(objects){
+    for(const object of objects){
+      if(object.dead)continue;
+      for(const node of entries(object)){
+        if(object.dead)break;
+        const geometry=node.geometry,position=geometry?.attributes?.position,existing=meshes.get(node);
+        if(position&&!geometryIsCurrent(existing,geometry,position)){
+          const source={geometry,position,positionVersion:position.version,index:geometry.index,
+            indexVersion:geometry.index?.version,drawStart:geometry.drawRange.start,drawCount:geometry.drawRange.count};
+          const steps=buildGeometrySteps(geometry,diagnostics,existing);
+          while(!object.dead&&node.geometry===geometry&&geometryIsCurrent(source,geometry,geometry.attributes.position)&&meshes.get(node)===existing){
+            const step=steps.next();
+            if(step.done){meshes.set(node,step.value);break;}
+            yield;
+          }
+        }
+        yield;
+      }
+    }
   }
 
   function entries(object) {
@@ -441,5 +477,5 @@ export function createGeometryCollision({nearObjects,bounds=117}={}) {
     return {x:entity.x-start.x,z:entity.z-start.z,y:entity.y-start.y,grounded:onGround,landed,ceilingHit,blocked};
   }
   function clear(){meshes=new WeakMap();objectMeshes=new WeakMap();fallbacks=new WeakMap();}
-  return {support,supportHeight,ceilingHeight,geometryHit,moveBody,clearBody,diagnostics,clear,warm};
+  return {support,supportHeight,ceilingHeight,geometryHit,moveBody,clearBody,diagnostics,clear,warm,warmSteps};
 }

@@ -9,8 +9,21 @@ import {partArt,toolArt} from './workshop-art.js?v=20261108-workshop1';
 import {equipmentBuilder} from './equipment-shapes.js?v=20261108-workshop1';
 import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261109-trophies1';
 
-const names={hp:'ΖΩΗ',speed:'ΤΑΧΥΤΗΤΑ',power:'ΙΣΧΥΣ',defence:'ΑΜΥΝΑ',energy:'ΕΝΕΡΓΕΙΑ',regen:'ΑΝΑΠΛΗΡΩΣΗ',contact:'ΖΗΜΙΑ ΤΡΟΧΩΝ',frontContact:'ΕΜΒΟΛΙΣΜΟΣ',handling:'ΣΤΡΟΦΗ',riderProtection:'ΠΡΟΣΤΑΣΙΑ ΑΝΑΒΑΤΗ',mass:'ΒΑΡΟΣ'};
+const names={hp:'ΖΩΗ',speed:'ΤΑΧΥΤΗΤΑ',acceleration:'ΕΠΙΤΑΧΥΝΣΗ',grip:'ΠΡΟΣΦΥΣΗ',power:'ΙΣΧΥΣ',defence:'ΑΜΥΝΑ',energy:'ΕΝΕΡΓΕΙΑ',regen:'ΑΝΑΠΛΗΡΩΣΗ',contact:'ΖΗΜΙΑ ΤΡΟΧΩΝ',frontContact:'ΕΜΒΟΛΙΣΜΟΣ',handling:'ΣΤΡΟΦΗ',riderProtection:'ΠΡΟΣΤΑΣΙΑ ΑΝΑΒΑΤΗ',mass:'ΒΑΡΟΣ'};
 const format=(key,v)=>['defence','riderProtection'].includes(key)?Math.round(v*100)+'%':Number.isInteger(v)?String(v):v.toFixed(2);
+const armoryLabels={power:'ΦΥΣΙΚΗ ΖΗΜΙΑ',reach:'ΕΜΒΕΛΕΙΑ',handling:'ΤΑΧΥΤΗΤΑ ΧΤΥΠΗΜΑΤΟΣ',force:'ΑΠΩΘΗΣΗ',protection:'ΑΠΟΡΡΟΦΗΣΗ',coverage:'ΚΑΛΥΨΗ',hp:'ΠΡΟΣΘΕΤΗ ΖΩΗ',defence:'ΑΜΥΝΑ',counter:'ΑΝΤΕΠΙΘΕΣΗ',speed:'ΤΑΧΥΤΗΤΑ ΚΙΝΗΣΗΣ',corePower:'ΙΣΧΥΣ ΠΥΡΗΝΑ'};
+const armoryValue=(key,v)=>key==='coverage'?Math.round(v*360/Math.PI)+'°':['protection','defence','counter'].includes(key)?Number((v*100).toFixed(1))+'%':key==='hp'?String(v):Number(v.toFixed(3))+'×';
+const coreUpgrade={impact:'Ο στόχος παραπατά για περισσότερη ώρα.',arc:'Η αλυσίδα φτάνει πιο μακριά και κάνει περισσότερη ζημιά.',fire:'Κάθε παλμός του εγκαύματος προκαλεί περισσότερη ζημιά.',frost:'Η επιβράδυνση γίνεται ισχυρότερη και διαρκεί περισσότερο.'};
+const materialNames={wood:'Ξύλο',scrap:'Μέταλλο',crystal:'Κρύσταλλοι'};
+
+function statChanges(labels,before,after,value){
+ return Object.entries(labels).flatMap(([key,label])=>{
+  if(before[key]===undefined||after[key]===undefined)return [];
+  const from=value(key,before[key]),to=value(key,after[key]);
+  return from===to?[]:[label+' '+from+' → '+to];
+ });
+}
+
 export function createMountWorkshop({document:doc=globalThis.document,getContext,onChange,onSave=()=>false,onOpen=()=>{},onClose=()=>{},onTestStart=()=>{},canModify=()=>'',onRepair=()=>({ok:false,reason:'Η επισκευή γίνεται στον γύρο.'})}){
  const $=id=>doc.getElementById(id),root=$('mountWorkshop');
  let armoryItem='w01';
@@ -39,6 +52,16 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
  function inArmory(){return view==='weapons'||view==='shields';}
  function currentKind(){return view==='player'||inArmory()?'player':kind;}
  function renderTabs(){$('workshopTabs').replaceChildren(...[['player','ΠΑΙΚΤΗΣ'],['mount','ΟΧΗΜΑ'],['together','ΜΑΖΙ'],['weapons','ΟΠΛΑ'],['shields','ΑΣΠΙΔΕΣ']].map(([id,label])=>button(label,()=>{view=id;if(inArmory()){const selected=resolveArmory(context.garage.armory,context.weaponTier);armoryItem=selected[id==='weapons'?'weapon':'shield'];slot='shape';}else{slot=id==='player'?'head':'frontWheel';option=garageParts(context.garage,currentKind())[slot].selected;}render();},view===id,id==='mount'?art(kind,'chassis'):id==='weapons'?armoryArt(doc,resolveArmory(context.garage.armory,context.weaponTier).weapon):id==='shields'?armoryArt(doc,'s14'):toolArt(doc,id))));}
+ function revealSelectedCards(){
+  for(const id of ['workshopParts','workshopOptions']){
+   const strip=$(id);
+   if(strip.scrollWidth<=strip.clientWidth)continue;
+   const selected=strip.querySelector('[aria-pressed="true"]');
+   if(!selected)continue;
+   const card=selected.getBoundingClientRect(),bounds=strip.getBoundingClientRect();
+   if(card.left<bounds.left||card.right>bounds.right)strip.scrollLeft+=card.left-bounds.left;
+  }
+ }
  function rebuildPreview(){
   drawKey='';
   ensurePreview();for(const {mesh,original,clone}of highlights){mesh.geometry=original;delete mesh.userData.workshopSelected;clone.dispose();}highlights=[];model?.userData.dispose();resetMountedRider(hero);
@@ -60,6 +83,30 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   const g=restoreGarage(context.garage),entry=garageParts(g,currentKind())[slot];
   const rank=entry.owned[option]||1;entry.owned[option]=rank;entry.selected=option;return g;
  }
+ function showUpgrade(quote,changes=[],effect='',locked=false){
+  const panel=$('workshopUpgradePreview'),cost=$('workshopCost');
+  panel.replaceChildren();cost.replaceChildren();panel.hidden=!quote.ok;
+  if(!quote.ok){cost.textContent=quote.reason;return;}
+  const title=doc.createElement('strong'),text=doc.createElement('p');
+  title.textContent=quote.rank?'Βαθμίδα '+quote.rank+' → '+quote.nextRank:'Κατασκευή · βαθμίδα '+quote.nextRank;
+  text.textContent=locked?'Ξεκλείδωσε πρώτα τον εξοπλισμό.':'Η αγορά εξοπλίζει το εξάρτημα.';
+  panel.append(title,text);
+  if(changes.length){
+   const list=doc.createElement('ul');
+   for(const change of changes){const item=doc.createElement('li');item.textContent=change;list.append(item);}
+   panel.append(list);
+  }
+  const detail=doc.createElement('p');
+  detail.textContent=effect||(!changes.length?'Οι εμφανιζόμενες επιδόσεις μένουν ίδιες σε αυτή τη βαθμίδα.':'');
+  if(detail.textContent)panel.append(detail);
+  const materials=Object.entries(quote.cost).filter(([,required])=>required>0);
+  if(context.test||!materials.length){cost.textContent=context.test?'Δοκιμή · δεν ξοδεύεις υλικά.':'Χωρίς κόστος υλικών.';return;}
+  for(const [key,required]of materials){
+   const available=context.materials[key]||0,cell=doc.createElement('span');
+   cell.dataset.insufficient=String(available<required);
+   cell.append(toolArt(doc,key),doc.createTextNode(materialNames[key]+' '+required+' · έχεις '+available));cost.append(cell);
+  }
+ }
  function render(){
   if(!open)return;context=getContext();renderTabs();if(inArmory()){renderArmory();return;}$('workshopEquip').parentElement.hidden=false;const target=currentKind(),defs=partDefinitions(target);
   if(!defs.some(p=>p.id===slot))slot=defs[0].id;
@@ -74,14 +121,21 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   previewGarage=candidate();const before=statsFor(context.garage),after=statsFor(previewGarage),upgraded=restoreGarage(previewGarage);
   if(quote.ok)garageParts(upgraded,target)[slot].owned[option]=quote.nextRank;
   const next=statsFor(upgraded),valueText=(key,value)=>key==='mass'||target==='player'&&['power','speed'].includes(key)?value.toFixed(2)+'×':format(key,value);
-  const stats=$('workshopStats');stats.replaceChildren();const legend=doc.createElement('p');legend.textContent='ΤΩΡΑ → ΕΠΙΛΟΓΗ · ↑ ΜΕΤΑ ΤΗΝ ΑΝΑΒΑΘΜΙΣΗ';stats.appendChild(legend);for(const key of Object.keys(names)){
+  const stats=$('workshopStats');stats.replaceChildren();const legend=doc.createElement('p');legend.textContent='ΕΞΟΠΛΙΣΜΕΝΟ → ΕΠΙΛΟΓΗ';stats.appendChild(legend);for(const key of Object.keys(names)){
    if(before[key]===undefined||after[key]===undefined)continue;
-   const row=doc.createElement('div'),label=doc.createElement('span'),value=doc.createElement('strong');label.textContent=names[key];value.textContent=valueText(key,before[key])+(before[key]!==after[key]?' → '+valueText(key,after[key]):'')+(quote.ok&&next[key]!==after[key]?' · ↑ '+valueText(key,next[key]):'');row.appendChild(label);row.appendChild(value);stats.appendChild(row);
+   const row=doc.createElement('div'),label=doc.createElement('span'),value=doc.createElement('strong');label.textContent=names[key];value.textContent=valueText(key,before[key])+(before[key]!==after[key]?' → '+valueText(key,after[key]):'');row.appendChild(label);row.appendChild(value);stats.appendChild(row);
   }
-  if(after.weapons?.length){const row=doc.createElement('p');row.textContent=after.weapons.map(w=>{const name=partDefinitions(kind).find(p=>p.id===w.slot)?.options.find(o=>o.id===w.id)?.name||w.id,n=next.weapons.find(v=>v.slot===w.slot);return name+' · '+w.damage+(n?.damage!==w.damage?' → ↑ '+n.damage:'')+' ΖΗΜΙΑ / '+w.interval.toFixed(2)+(n?.interval!==w.interval?' → ↑ '+n.interval.toFixed(2):'')+' s · '+w.cost+' ⚡';}).join(' | ');stats.appendChild(row);}
-  $('workshopCost').replaceChildren();if(quote.ok)for(const [k,v]of Object.entries(quote.cost)){const cell=doc.createElement('span');cell.append(toolArt(doc,k));const label=doc.createElement('span');label.textContent=({wood:'ΞΥΛΟ',scrap:'ΜΕΤΑΛΛΟ',crystal:'ΚΡΥΣΤΑΛΛΟΙ'}[k])+' '+(context.materials[k]||0)+' / '+v;cell.append(label);$('workshopCost').append(cell);}else $('workshopCost').textContent=quote.reason;
-  $('workshopMode').textContent=context.test?'ΔΟΚΙΜΗ · οι αγορές δεν δαπανούν ή αποθηκεύουν υλικά':'LV '+context.level+' · οι αναβαθμίσεις αλλάζουν πραγματικές επιδόσεις';
+  if(after.weapons?.length){const row=doc.createElement('p');row.textContent=after.weapons.map(w=>partDefinitions(kind).find(p=>p.id===w.slot)?.options.find(o=>o.id===w.id)?.name+' · '+w.damage+' ΖΗΜΙΑ / '+w.interval.toFixed(2)+' s · '+w.cost+' ⚡').join(' | ');stats.appendChild(row);}
+  const subject=target==='player'?'ΠΑΙΚΤΗΣ':MOUNT_FAMILIES.find(f=>f.id===kind).name;
+  $('workshopMode').textContent='LV '+context.level+' · '+subject;
   const locked=target!=='player'&&!familyUnlocked(kind,context.level)||target==='player'&&slot==='shield'&&context.weaponTier<2;
+  const changes=statChanges(names,rank?after:before,next,valueText),nextWeapon=next.weapons?.find(w=>w.slot===slot);
+  if(nextWeapon){
+   const previous=(rank?after:before).weapons?.find(w=>w.slot===slot);
+   if(previous)changes.push(...statChanges({damage:'ΖΗΜΙΑ ΒΟΛΗΣ',range:'ΕΜΒΕΛΕΙΑ',interval:'ΧΡΟΝΟΣ ΜΕΤΑΞΥ ΒΟΛΩΝ'},previous,nextWeapon,(key,v)=>format(key,v)+({range:' m',interval:' s'}[key]||'')));
+   else changes.push('Νέο όπλο · '+nextWeapon.damage+' ζημιά ανά βολή · '+nextWeapon.range+' m εμβέλεια · '+nextWeapon.cost+' ⚡ ανά βολή');
+  }
+  showUpgrade(quote,changes,'',locked);
   $('workshopEquip').disabled=locked||!rank||entry.selected===option;
   $('workshopUpgrade').disabled=locked||!quote.ok||(!context.test&&Object.entries(quote.cost).some(([k,n])=>(context.materials[k]||0)<n));
   $('workshopUpgradeLabel').textContent=rank?'ΑΝΑΒΑΘΜΙΣΗ → '+(quote.nextRank||5):'ΚΑΤΑΣΚΕΥΗ';
@@ -90,7 +144,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   const repair=context.actualMount?.repairCost||0;$('workshopRepair').hidden=context.menu||target==='player';$('workshopRepair').disabled=locked||context.actualMountKind!==kind||!repair||!context.test&&(context.materials.scrap||0)<repair;$('workshopRepairLabel').textContent=repair?'ΕΠΙΣΚΕΥΗ · '+repair+' ΜΕΤΑΛΛΟ':'ΠΛΗΡΗΣ ΖΩΗ ΟΧΗΜΑΤΟΣ';
   $('workshopTestControls').hidden=!context.menu;
   $('workshopSave').disabled=context.test;$('workshopSave').title=context.test?'Οι δοκιμαστικές αγορές δεν αποθηκεύονται.':'Αποθήκευση εξοπλισμού, βαθμίδων και υλικών στη συσκευή.';root.dataset.view=view;
-  rebuildPreview();
+  revealSelectedCards();rebuildPreview();
  }
  function armoryCommit(){dirty(onChange(context));}
  function renderArmory(){
@@ -100,13 +154,14 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
   $('workshopFamilies').replaceChildren(button('ΑΡΧΙΚΟΣ ΕΞΟΠΛΙΣΜΟΣ',()=>{const reason=canModify({kind:'player',slot:field});if(reason){$('workshopFeedback').textContent=reason;return;}a[field]='auto';armoryCommit();render();},a[field]==='auto',toolArt(doc,'rotate')));
   $('workshopUse').hidden=$('workshopAuto').hidden=$('workshopRepair').hidden=true;
   $('workshopTestControls').hidden=!context.menu;$('workshopSave').disabled=context.test;root.dataset.view=view;
-  $('workshopMode').textContent=(context.preview?'PREVIEW · ':'')+(context.test?'ΠΡΟΣΩΡΙΝΗ ΔΟΚΙΜΗ':'LV '+context.level)+' · '+b.name;
+  $('workshopMode').textContent=(context.preview?'PREVIEW · ':'')+'LV '+context.level+' · '+b.name;
   previewGarage=restoreGarage(context.garage);previewGarage.armory[field]=armoryItem;
   if(trophy)awardBossWeapon(previewGarage.armory,b.bossReward);
   const part=defs.find(p=>p.id===slot);if(slot!=='shape'&&!part){slot='shape';}
   $('workshopEquip').disabled=$('workshopUpgrade').disabled=true;
   $('workshopEquip').parentElement.hidden=slot==='shape';
   if(slot==='shape'){
+   $('workshopUpgradePreview').hidden=true;
    $('workshopPartName').textContent=list.length+(view==='weapons'?' ΟΠΛΑ':' ΑΣΠΙΔΕΣ');
    $('workshopOptions').replaceChildren(...list.map(item=>{
     const available=armoryAvailable(item.id,context.weaponTier,a),boss=BOSS_WEAPON_INFO[item.bossReward],requirement=boss?'ΝΙΚΗΣΕ: '+boss.boss:'ΚΛΕΙΔΩΜΕΝΟ · ΚΑΤΑΣΚΕΥΗ '+item.tier;
@@ -120,19 +175,24 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
    const entry=a.items[armoryItem].parts[slot];if(!part.options.some(o=>o.id===option))option=entry.selected;
    const chosen=part.options.find(o=>o.id===option),rank=entry.owned[option]||0,q=armoryQuote(a,armoryItem,slot,option);
    $('workshopPartName').textContent=b.name+' · '+part.name;
-   $('workshopOptions').replaceChildren(...part.options.map(o=>{const r=entry.owned[o.id]||0,card=button(o.name,()=>{option=o.id;render();},option===o.id,armoryArt(doc,armoryItem,slot,o.id));card.dataset.armoryPart=slot;card.dataset.choice=o.id;card.dataset.equipped=entry.selected===o.id;const state=doc.createElement('small');state.textContent=part.cosmetic?'ΚΟΣΜΗΤΙΚΟ':o.id==='none'?'ΧΩΡΙΣ ΠΥΡΗΝΑ':r?'◆'.repeat(r)+'◇'.repeat(5-r):'ΚΑΤΑΣΚΕΥΗ';card.append(state);return card;}));
+   $('workshopOptions').replaceChildren(...part.options.map(o=>{const r=entry.owned[o.id]||0,card=button(o.name,()=>{option=o.id;render();},option===o.id,armoryArt(doc,armoryItem,slot,o.id));card.dataset.armoryPart=slot;card.dataset.choice=o.id;card.dataset.equipped=entry.selected===o.id;const state=doc.createElement('small');state.textContent=part.cosmetic?'ΚΟΣΜΗΤΙΚΟ':r?'◆'.repeat(r)+'◇'.repeat(5-r):'ΚΑΤΑΣΚΕΥΗ';if(o.id!=='none')card.append(state);return card;}));
    const preview=previewGarage.armory.items[armoryItem].parts[slot];preview.selected=option;preview.owned[option]=rank||1;
    $('workshopDescription').textContent=chosen.description+(part.cosmetic?' · Μόνο εμφάνιση, χωρίς κρυφά στατιστικά.':'');
    $('workshopEquip').disabled=locked||!rank||entry.selected===option&&a[field]===armoryItem;
    $('workshopUpgrade').disabled=locked||!q.ok||!context.test&&Object.entries(q.cost).some(([k,n])=>(context.materials[k]||0)<n);
    $('workshopUpgradeLabel').textContent=rank?'ΑΝΑΒΑΘΜΙΣΗ → '+(q.nextRank||5):'ΚΑΤΑΣΚΕΥΗ';
-   $('workshopCost').replaceChildren();if(q.ok)for(const[k,n]of Object.entries(q.cost)){const cell=doc.createElement('span');cell.append(toolArt(doc,k),doc.createTextNode((context.materials[k]||0)+' / '+n));$('workshopCost').append(cell);}else $('workshopCost').textContent=q.reason;
+   const selected=armoryStats(previewGarage.armory,armoryItem),upgraded=restoreGarage(previewGarage);
+   if(q.ok)upgraded.armory.items[armoryItem].parts[slot].owned[option]=q.nextRank;
+   const next=armoryStats(upgraded.armory,armoryItem);
+   const before=rank?selected:armoryStats(a,armoryItem);
+   let effect=slot==='core'&&q.ok?(view==='weapons'?'Στο χτύπημα: ':'Στην απόκρουση: ')+(rank?coreUpgrade[option]:chosen.description):'';
+   if(view==='shields'&&slot==='core'&&rank&&['arc','impact'].includes(option))effect+=' Αυξάνεται και η ζημιά στον επιτιθέμενο.';
+   showUpgrade(q,statChanges(armoryLabels,before,next,armoryValue),effect,locked);
   }
   const current=armoryStats(a,armoryItem),after=armoryStats(previewGarage.armory,armoryItem),stats=$('workshopStats');stats.replaceChildren();
-  const labels={power:'ΦΥΣΙΚΗ ΖΗΜΙΑ',reach:'ΕΜΒΕΛΕΙΑ',handling:'ΤΑΧΥΤΗΤΑ ΧΤΥΠΗΜΑΤΟΣ',force:'ΑΠΩΘΗΣΗ',protection:'ΑΠΟΡΡΟΦΗΣΗ',coverage:'ΚΑΛΥΨΗ',hp:'ΠΡΟΣΘΕΤΗ ΖΩΗ',defence:'ΑΜΥΝΑ',counter:'ΑΝΤΕΠΙΘΕΣΗ',speed:'ΤΑΧΥΤΗΤΑ ΚΙΝΗΣΗΣ'};
-  for(const [key,label]of Object.entries(labels)){if(current[key]===undefined)continue;const row=doc.createElement('div'),name=doc.createElement('span'),value=doc.createElement('strong');name.textContent=label;const fmt=v=>key==='coverage'?Math.round(v*360/Math.PI)+'°':['protection','defence','counter'].includes(key)?Math.round(v*100)+'%':key==='hp'?String(v):v.toFixed(2)+'×';value.textContent=fmt(current[key])+(current[key]!==after[key]?' → '+fmt(after[key]):'');row.append(name,value);stats.append(row);}
+  for(const [key,label]of Object.entries(armoryLabels)){if(current[key]===undefined)continue;const row=doc.createElement('div'),name=doc.createElement('span'),value=doc.createElement('strong');name.textContent=label;value.textContent=armoryValue(key,current[key])+(current[key]!==after[key]?' → '+armoryValue(key,after[key]):'');row.append(name,value);stats.append(row);}
   const note=doc.createElement('p');note.textContent=trophy&&slot!=='shape'?trophy.effect:armoryItem==='w08'?'Ζημιά ανά έμβολο: 60% · έως δύο πραγματικές επαφές.':armoryItem==='w11'?'Ακίδες: +18% ζημιά · επίπεδη όψη: +24% απώθηση.':armoryItem==='w12'?'Ανοικτό κέντρο · ARC: ένας πρόσθετος στόχος, +15% αποδοτικότητα.':'ΠΥΡΗΝΑΣ: '+after.core.toUpperCase()+' · '+after.coreRank+'/5';stats.append(note);
-  rebuildPreview();
+  revealSelectedCards();rebuildPreview();
  }
  function transactArmory(upgrade){const field=view==='weapons'?'weapon':'shield',reason=canModify({kind:'player',slot:field});if(reason){$('workshopFeedback').textContent=reason;return;}const a=context.garage.armory,result=upgrade?purchaseArmoryPart(a,context.materials,armoryItem,slot,option,{tier:context.weaponTier,test:context.test}):{ok:equipArmoryPart(a,armoryItem,slot,option,{tier:context.weaponTier,test:context.test})};if(result.ok){equipBlueprint(a,armoryItem,{tier:context.weaponTier,test:context.test});armoryCommit();$('workshopFeedback').textContent=upgrade?'Το εξάρτημα αναβαθμίστηκε και εξοπλίστηκε.':'Το εξάρτημα εξοπλίστηκε.';render();}else $('workshopFeedback').textContent=result.reason||'Μη διαθέσιμο εξάρτημα.';}
  function transact(upgrade){
@@ -145,7 +205,7 @@ export function createMountWorkshop({document:doc=globalThis.document,getContext
  for(let n=1;n<=30;n++){const o=doc.createElement('option');o.value=String(n);o.textContent='LV '+n;$('workshopTestLevel').appendChild(o);}
  $('workshopTestStart').onclick=()=>{const level=Number($('workshopTestLevel').value);close();onTestStart(level);};
  $('workshopClose').onclick=close;$('workshopEquip').onclick=()=>transact(false);$('workshopUpgrade').onclick=()=>transact(true);
- $('workshopSave').onclick=()=>{if(context.test)return;const ok=onSave(context);$('workshopSaveState').textContent=ok?'ΑΠΟΘΗΚΕΥΤΗΚΕ ✓':'ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ';$('workshopFeedback').textContent=ok?'Ο εξοπλισμός και τα υλικά αποθηκεύτηκαν σε αυτή τη συσκευή.':'Δεν ήταν δυνατή η αποθήκευση. Έλεγξε τον διαθέσιμο χώρο του browser.';};
+ $('workshopSave').onclick=()=>{if(context.test)return;const ok=onSave(context);$('workshopSaveState').textContent=ok?'ΑΠΟΘΗΚΕΥΤΗΚΕ\u00a0✓':'ΑΠΟΤΥΧΙΑ ΑΠΟΘΗΚΕΥΣΗΣ';$('workshopFeedback').textContent=ok?'Ο εξοπλισμός και τα υλικά αποθηκεύτηκαν σε αυτή τη συσκευή.':'Δεν ήταν δυνατή η αποθήκευση. Έλεγξε τον διαθέσιμο χώρο του browser.';};
  for(const [id,icon]of [['workshopSave','save'],['workshopClose','close'],['workshopReset','rotate'],['workshopZoomOut','zoom-out'],['workshopZoomIn','zoom-in'],['workshopEquip','equip'],['workshopUpgrade','upgrade'],['workshopTestStart','play'],['workshopAuto','rotate'],['workshopUse','equip'],['workshopRepair','repair']])$(id).prepend(toolArt(doc,icon));
  $('workshopUse').onclick=()=>{const reason=canModify({kind,slot:'chassis'});if(reason){$('workshopFeedback').textContent=reason;return;}context.garage.selectedMount=kind;dirty(onChange(context));render();};
  $('workshopAuto').onclick=()=>{const reason=canModify({kind,slot:'chassis'});if(reason){$('workshopFeedback').textContent=reason;return;}context.garage.selectedMount='auto';dirty(onChange(context));kind=resolveMount(context.garage,context.level);render();};

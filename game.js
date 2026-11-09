@@ -1,4 +1,4 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261109-trophies1';
+import {createMountWorkshop} from './mount-workshop.js?v=20261109-inventory-layout';
 import {createSaveStore} from './save-store.js?v=20261108-armory1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
 import {createWeaponModel} from './armory-models.js?v=20261109-trophies1';
@@ -18,8 +18,8 @@ import {loadCollisionWasm,collisionWasmStatus} from './collision-wasm.js?v=20261
 import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './performance-hud.js?v=20261107-perf14';
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
-import {DestructionSystem} from './destruction.js?v=20261108-startup1';
-import {createForgeMenu} from './menu.js?v=20261109-trophies1';
+import {DestructionSystem} from './destruction.js?v=20261109-readability1';
+import {createForgeMenu} from './menu.js?v=20261109-readability1';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
@@ -27,7 +27,7 @@ import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,tr
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-workshop1';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261109-gauntlet1';
-import {createWorld} from './world.js?v=20261108-workshop1';
+import {createWorld} from './world.js?v=20261109-readability1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
 import {COMBO_WINDOW,createHitCombo,resetHitCombo,tickHitCombo,registerComboHit,comboMultiplier,scaleComboReward,impactMaterial} from './combat-feedback.js?v=20261106-feel1';
 import {findBattleOccluders,applyOccluderFade,OcclusionDepth} from './occlusion.js?v=20261108-shell1';
@@ -46,7 +46,7 @@ import {BeastCombat,distanceToBeam} from './beast-combat.js?v=20261109-beast1';
 import {BeastPortal} from './beast-portal.js?v=20261109-beast1';
 import {installBeastReveal} from './beast-reveal.js?v=20261109-beast1';
 import {BEAST_ENTRY,beastHealth,beastDamageScale,beastPortalLocation,chooseBeastAttack} from './beast-rules.js?v=20261109-beast1';
-import {createGeometryCollision} from './geometry-collision.js?v=20261108-startup1';
+import {createGeometryCollision} from './geometry-collision.js?v=20261109-readability1';
 
 const $ = id => document.getElementById(id);
 const saveStore=createSaveStore(localStorage,{preview:globalThis.location?.pathname?.startsWith('/candidate/')||false});
@@ -102,6 +102,8 @@ let shake=0,hitStop=0,redFlash=0,best=read('ironfall.best',0),visualTime=0,hudTi
 const combatCombo=createHitCombo();
 let comboXpCarry=0,comicState=null,lastComicAt=-10,occlusionTimer=0,heroOccluded=false,heroSilhouette=null;
 let battleOccluders=new Set(),silhouetteParts=[];
+const rubbleHiddenEnemies=new Set(),rubbleSightPoint=new THREE.Vector3();
+let heroHiddenByRubble=false;
 let chargeHeld=false,chargeStarted=false,charge=0,swing=null,attackCooldown=0,dashTime=0,dashCooldown=0;
 const swingSequences=[createSwingSequence(),createSwingSequence()];
 function resetAttackChain(){for(const sequence of swingSequences)resetSwingSequence(sequence);}
@@ -254,7 +256,7 @@ function rebuildHeroSilhouette(){
   root.material=material;silhouetteParts=[];
   // The shaft supplies the wire's silhouette. An instanced coil needs its
   // instance transforms; drawing its unit geometry as one Mesh is a ghost.
-  hero.traverse(source=>{if(!source.isMesh||source.isInstancedMesh)return;const proxy=new THREE.Mesh(source.geometry,material);proxy.matrixAutoUpdate=false;proxy.frustumCulled=false;proxy.renderOrder=45;root.add(proxy);silhouetteParts.push({source,proxy});});
+  hero.traverse(source=>{if(!source.isMesh||source.isInstancedMesh)return;const proxy=new THREE.Mesh(source.geometry,material);proxy.matrixAutoUpdate=false;proxy.frustumCulled=false;proxy.renderOrder=110;root.add(proxy);silhouetteParts.push({source,proxy});});
   scene.add(root);heroSilhouette=root;
 }
 function updateBattleVisibility(dt){
@@ -276,7 +278,19 @@ function updateBattleVisibility(dt){
     const candidates=world.objects.filter(o=>!o.dead&&o.h>1.7&&o.renderActive!==false&&Math.hypot(o.x-player.x,o.z-player.z)<65);
     battleOccluders=phase==='menu'?new Set():findBattleOccluders(candidates,heroPoints,direction);
     const bossOccludes=boss&&!boss.dead&&boss.geometryHit&&heroPoints.some(point=>boss.geometryHit(point,{x:point.x+direction.x,y:point.y+direction.y,z:point.z+direction.z},.02));
-    heroOccluded=battleOccluders.size>0||!!bossOccludes;
+    rubbleHiddenEnemies.clear();heroHiddenByRubble=false;
+    if(phase==='playing'&&destruction?.debris.length){
+      destruction.prepareOcclusion();
+      direction.normalize();
+      heroHiddenByRubble=destruction.occludes(rubbleSightPoint.set(player.x,player.y+1.15,player.z),direction);
+      for(const enemy of enemies){
+        if(enemy.dead||Math.hypot(enemy.x-player.x,enemy.z-player.z)>=27)continue;
+        const y=enemy.y+enemy.height*.58,p=screenPoint(enemy.x,y,enemy.z);
+        if(!p.inside||p.x<0||p.x>screenW||p.y<0||p.y>screenH)continue;
+        if(destruction.occludes(rubbleSightPoint.set(enemy.x,y,enemy.z),direction))rubbleHiddenEnemies.add(enemy);
+      }
+    }
+    heroOccluded=battleOccluders.size>0||!!bossOccludes||heroHiddenByRubble;
     if(phase==='playing'&&encounter?.entry){
       const {x,z}=encounter.entry.location,h=encounter.leader.height;
       const projected=screenPoint(x,h*.6,z);
@@ -471,7 +485,7 @@ function resetWorld(keepUpgrades=false,startLevel=1,reusePreparedWorld=false){
   punch=null;punchSequence=0;throwLock=null;throwPreviewTargets=[];dashFollowup=0;spinCharge=null;aimPreviewTimer=0;meleeHint=null;meleeHintTargets=[];hero.userData.setUnarmedPose?.(null);
   swingSequences[0]=createSwingSequence();swingSequences[1]=createSwingSequence();landingPose=null;
   upgradePanelOpen=false;upgradeTab='powers';nearbyTargets=[];focusedTarget=null;
-  battleOccluders.clear();occlusionTimer=0;heroOccluded=false;comicState=null;lastComicAt=-10;resetHitCombo(combatCombo);if(!keepUpgrades)comboXpCarry=0;
+  battleOccluders.clear();rubbleHiddenEnemies.clear();occlusionTimer=0;heroOccluded=heroHiddenByRubble=false;comicState=null;lastComicAt=-10;resetHitCombo(combatCombo);if(!keepUpgrades)comboXpCarry=0;
   if(encounter?.entry){finishMiniReveal(encounter);disposeInstance(encounter.leader);beastPortal.reset();}
   for(const e of enemies){clearEncounterShell(e);if(e.telegraph)removeEffect(e.telegraph);disposeInstance(e);}enemies=[];if(boss)releaseBeast();boss=null;
   for(const e of enemyFalls)disposeInstance(e);enemyFalls=[];
@@ -1231,7 +1245,10 @@ function syncMountHud(){
   const v=mountRide?.snapshot();if(!v)return;
   panel.classList.toggle('hover-flight',v.active&&v.hover);
   $('mountToggleLabel').textContent=v.active?'ΚΑΤΕΒΑ':'ΑΝΕΒΑ';$('mountToggle').setAttribute('aria-pressed',String(v.active));const mountImage=$('mountHudImage');if(mountImage.dataset.kind!==v.kind){mountImage.src='./assets/workshop/chassis-'+v.kind+'.png';mountImage.dataset.kind=v.kind;}
-  $('mountReadout').textContent=(v.kind==='bicycle'?'ΠΟΔΗΛΑΤΟ':v.kind==='motorcycle'?'ΜΟΤΟΣΙΚΛΕΤΑ':'SCI-FI')+' · '+v.hp+'/'+v.maxHp+' HP · '+v.energy+'/'+v.maxEnergy+' ⚡'+(v.hover?' · '+v.altitude+' m':'');
+  const kind=v.kind==='bicycle'?'ΠΟΔΗΛΑΤΟ':v.kind==='motorcycle'?'ΜΟΤΟΣΙΚΛΕΤΑ':'SCI-FI';
+  const separator=touchLayout?'\n':' · ';
+  const condition=v.hp+'/'+v.maxHp+' HP'+separator+v.energy+'/'+v.maxEnergy+'\u00a0⚡'+(v.hover?separator+v.altitude+' m':'');
+  $('mountReadout').textContent=touchLayout?condition:kind+' · '+condition;
   $('mountFlight').hidden=!v.active||!v.hover;
   $('dashName').textContent=v.active?'BOOST':'ΑΠΟΦΥΓΗ';
   $('leapDesktopName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΨΗΛΟ ΑΛΜΑ';$('leapTouchName').textContent=v.active&&v.hover?'ΠΤΗΣΗ':'ΑΛΜΑ';
@@ -2803,6 +2820,15 @@ function drawAim(){
   }
   c.globalAlpha=1;
 }
+function drawRubbleCue(x,y,z,tint,playerCue=false){
+  const p=screenPoint(x,y,z);
+  if(!p.inside||p.x<0||p.x>screenW||p.y<0||p.y>screenH)return;
+  const c=fxContext,r=playerCue?8:6;
+  c.beginPath();
+  c.moveTo(p.x,p.y-r);c.lineTo(p.x+r,p.y);
+  c.lineTo(p.x,p.y+r);c.lineTo(p.x-r,p.y);c.closePath();
+  c.lineWidth=3;c.strokeStyle='#112125';c.stroke();c.fillStyle=tint;c.fill();
+}
 function drawFX(){
   const c=fxContext;c.clearRect(0,0,screenW,screenH);
   if(redFlash>0){const grad=c.createRadialGradient(screenW/2,screenH/2,screenH*.22,screenW/2,screenH/2,screenW*.66);grad.addColorStop(0,'rgba(201,62,42,0)');grad.addColorStop(1,'rgba(201,62,42,'+(redFlash*.5)+')');c.fillStyle=grad;c.fillRect(0,0,screenW,screenH);}
@@ -2812,8 +2838,10 @@ function drawFX(){
   if(throwFlight?.grounded){const p=screenPoint(throwFlight.x,throwFlight.groundY+1.2,throwFlight.z);if(p.inside){c.textAlign='center';c.font='bold 12px Arial';c.lineWidth=4;c.strokeStyle='#10201e';c.strokeText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);c.fillStyle='#ffe2a3';c.fillText('ΜΑΖΕΨΕ ΤΟ ΟΠΛΟ',p.x,p.y);}}
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
     const branded=armoryEffects.branded.has(e),label='LV '+e.level+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
+    if(rubbleHiddenEnemies.has(e)&&!e.dead)drawRubbleCue(e.x,e.y+e.height*.58,e.z,'#ff8d83');
     drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':enemyHealthColor(e.level),1,label);
   }
+  if(heroHiddenByRubble&&phase==='playing')drawRubbleCue(player.x,player.y+1.15,player.z,'#83f4e7',true);
 
   const objectNames={townhouse:'ΚΑΤΟΙΚΙΑ',apartment:'ΠΟΛΥΚΑΤΟΙΚΙΑ',shop:'ΚΑΤΑΣΤΗΜΑ',office:'ΓΡΑΦΕΙΑ',townhall:'ΔΗΜΑΡΧΕΙΟ',police:'ΑΣΤΥΝΟΜΙΚΟ ΤΜΗΜΑ',hospital:'ΝΟΣΟΚΟΜΕΙΟ',skyscraper:'ΟΥΡΑΝΟΞΥΣΤΗΣ',construction:'ΕΡΓΟΤΑΞΙΟ',warehouse:'ΑΠΟΘΗΚΗ',policecar:'ΠΕΡΙΠΟΛΙΚΟ',ambulance:'ΑΣΘΕΝΟΦΟΡΟ',car:'ΑΥΤΟΚΙΝΗΤΟ',wall:'ΤΟΙΧΟΣ',tree:'ΔΕΝΤΡΟ',barrel:'ΒΑΡΕΛΙ',hydrant:'ΚΡΟΥΝΟΣ',crate:'ΚΙΒΩΤΙΟ',lamp:'ΦΑΝΑΡΙ',bench:'ΠΑΓΚΑΚΙ'};
   for(const o of world.objects)if(!o.dead&&(o.hurtTimer>0||aimPreview?.contact?.target===o)){
@@ -2835,6 +2863,18 @@ function syncTouchControls(){
   touchLayout=matchMedia('(pointer:coarse)').matches||matchMedia('(any-pointer:coarse)').matches||screenW<=750||(screenW<=1100&&screenH<=500);
   document.body.dataset.touchControls=String(touchLayout);
   $('touchControls').hidden=!touchLayout||phase!=='playing';
+  const slot=$('touchUtilitySlot');
+  if(slot){
+    const mount=$('mountControls'),upgrade=$('upgradesToggle');
+    const mountHome=$('mountControlsHome'),upgradeHome=$('upgradeDock');
+    const parent=touchLayout?slot:mountHome;
+    if(mount.parentNode!==parent)parent.append(mount);
+    const upgradeParent=touchLayout?mount:upgradeHome;
+    if(upgrade.parentNode!==upgradeParent){
+      if(touchLayout)upgradeParent.append(upgrade);
+      else upgradeParent.prepend(upgrade);
+    }
+  }
   for(const button of document.querySelectorAll('[data-touch-label]')){
     const label=touchLayout?button.dataset.touchLabel:button.dataset.desktopLabel;
     if(label){button.setAttribute('aria-label',label);button.setAttribute('title',label);}
@@ -3001,6 +3041,17 @@ function cancelTouchThrow(){
   if($('throwAimStatus'))$('throwAimStatus').hidden=true;
 }
 function initInput(){
+  // Safari also exposes page pinch gestures outside the Pointer Events API.
+  function blockBattleGesture(event){
+    if(!touchLayout||phase!=='playing')return;
+    if(event.type==='touchstart'&&event.touches.length<2)return;
+    if(event.type==='touchmove'&&event.touches.length<2&&event.target.closest?.('#upgradePanel'))return;
+    if(event.type==='wheel'&&!event.ctrlKey&&!event.metaKey)return;
+    if(event.cancelable)event.preventDefault();
+  }
+  for(const name of ['gesturestart','gesturechange','touchstart','touchmove','wheel','selectstart','contextmenu']){
+    document.addEventListener(name,blockBattleGesture,{passive:false});
+  }
   $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?activeStartingLevel:1,{test:testRun,resume:!testRun,city:activeCity});
   $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};
   $('resumeCharacterButton').onclick=()=>startGame(1,{resume:true});
@@ -3189,6 +3240,7 @@ function frame(now){
   if(settings.shake&&shake>0)shakeCamera(shake);
   camera.lookAt(cameraTarget);
   camera.updateMatrixWorld(true);world.updateVisibility?.(player,camera);updateBattleVisibility(realDt);
+  if(phase==='playing'&&performance.now()-frameStart<8)world.prepareNearbyCollision?.(player.x,player.z);
   sun.position.set(player.x-15,28,player.z+8);sun.target.position.set(player.x,0,player.z);sun.target.updateMatrixWorld();
   // Subtle moving storm illumination, kept bright enough for readable combat.
   const lightning=weather==='rain'&&Math.sin(visualTime*.47)> .998?Math.sin(visualTime*70)**8*.35:0;
