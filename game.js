@@ -1,4 +1,4 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261109.7';
+import {createMountWorkshop} from './mount-workshop.js?v=20261109.8';
 import {createSaveStore} from './save-store.js?v=20261108-armory1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
 import {createWeaponModel} from './armory-models.js?v=20261109-trophies1';
@@ -19,7 +19,7 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261109-readability1';
-import {createForgeMenu} from './menu.js?v=20261109.7';
+import {createForgeMenu} from './menu.js?v=20261109.8';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
@@ -3052,21 +3052,41 @@ function cancelTouchThrow(){
   if($('throwAimStatus'))$('throwAimStatus').hidden=true;
 }
 function initInput(){
-  // Safari can ignore viewport scale limits. Cancel its pinch events on every screen.
-  function blockPageZoom(event){
-    if((event.type==='touchstart'||event.type==='touchmove')&&event.touches.length<2)return;
-    if(event.type==='wheel'&&!event.ctrlKey&&!event.metaKey)return;
-    if(event.cancelable)event.preventDefault();
-  }
-  for(const name of ['gesturestart','gesturechange','touchstart','touchmove','wheel']){
-    document.addEventListener(name,blockPageZoom,{capture:true,passive:false});
-  }
-  function blockBattleGesture(event){
-    if(!touchLayout||phase!=='playing')return;
-    if(event.cancelable)event.preventDefault();
-  }
-  for(const name of ['selectstart','contextmenu']){
-    document.addEventListener(name,blockBattleGesture,{passive:false});
+  const viewport=$('gameViewport'),cancelGesture=event=>{if(event.cancelable)event.preventDefault();};
+  const gestureOptions={capture:true,passive:false};
+  let pageTouch=null;
+  document.addEventListener('touchstart',event=>{
+    pageTouch=null;
+    if(event.touches.length>1){cancelGesture(event);return;}
+    if(!viewport.contains(event.target)||!event.touches.length)return;
+    const touch=event.touches[0],scrollers=[];
+    for(let node=event.target;node&&node!==viewport;node=node.parentElement){
+      const wide=node.scrollWidth>node.clientWidth,tall=node.scrollHeight>node.clientHeight;
+      if(!wide&&!tall)continue;
+      const css=getComputedStyle(node),x=wide&&/auto|scroll/.test(css.overflowX),y=tall&&/auto|scroll/.test(css.overflowY);
+      if(x||y)scrollers.push({node,x,y});
+    }
+    pageTouch={x:touch.clientX,y:touch.clientY,scrollers};
+  },gestureOptions);
+  document.addEventListener('touchmove',event=>{
+    if(event.touches.length>1){cancelGesture(event);return;}
+    if(!viewport.contains(event.target))return;
+    if(!pageTouch||!event.touches.length){cancelGesture(event);return;}
+    const touch=event.touches[0],dx=pageTouch.x-touch.clientX,dy=pageTouch.y-touch.clientY;
+    pageTouch.x=touch.clientX;pageTouch.y=touch.clientY;
+    const horizontal=Math.abs(dx)>Math.abs(dy),delta=horizontal?dx:dy;
+    const canScroll=pageTouch.scrollers.some(({node,x,y})=>{
+      if(!(horizontal?x:y))return false;
+      const position=horizontal?node.scrollLeft:node.scrollTop;
+      const limit=horizontal?node.scrollWidth-node.clientWidth:node.scrollHeight-node.clientHeight;
+      return delta>0?position<limit-1:delta<0&&position>0;
+    });
+    if(!canScroll)cancelGesture(event);
+  },gestureOptions);
+  for(const name of ['gesturestart','gesturechange'])document.addEventListener(name,cancelGesture,gestureOptions);
+  document.addEventListener('wheel',event=>{if(event.ctrlKey||event.metaKey)cancelGesture(event);},gestureOptions);
+  for(const name of ['contextmenu','selectstart','dragstart']){
+    viewport.addEventListener(name,cancelGesture,gestureOptions);
   }
   $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?activeStartingLevel:1,{test:testRun,resume:!testRun,city:activeCity});
   $('restartButton').onclick=()=>{persistCharacter();setPhase('menu');updateSavedCharacter();};

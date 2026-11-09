@@ -1292,7 +1292,7 @@ body[data-touch-controls="true"][data-state="playing"] :is(#gameCanvas,#combatDo
 }
 
 /* Permit panel scrolling in both directions while excluding browser zoom. */
-html,
+html{touch-action:none}
 #mountWorkshop :is(.workshop-content,.workshop-parts,.workshop-turntable,.workshop-details,.workshop-options){
  touch-action:pan-x pan-y;
 }
@@ -1311,3 +1311,5 @@ html[data-page-scaled] #gameViewport{
 /* Scrollable panels retain their input and omit the browser scrollbar chrome. */
 *{scrollbar-width:none}
 *::-webkit-scrollbar{display:none}
+body{position:fixed;inset:0;-webkit-touch-callout:none}
+#gameViewport,#gameViewport *{overscroll-behavior:none}

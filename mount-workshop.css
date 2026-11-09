@@ -87,11 +87,7 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
 .workshop-visuals{display:flex;flex-direction:column;min-width:0;min-height:0;gap:6px;padding-right:8px;border-right:1px solid #70909577}
 .workshop-visuals h3,.workshop-visuals h4{margin:0;color:#efd49a;font-size:13px}
 .workshop-catalog{display:grid;align-content:start;gap:4px;min-height:44px;flex:1;overflow:auto}
-.workshop-catalog button,.workshop-finishes button{min-width:0;min-height:44px;gap:4px;padding:3px;font-size:12px}
-.workshop-finishes .card-label{overflow-wrap:anywhere}
-.workshop-finishes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
-.workshop-finishes button{flex-direction:column;text-align:center}
-.workshop-swatch{width:22px;height:13px;border:1px solid #ecdaa4;border-radius:2px}
+.workshop-catalog button{min-width:0;min-height:44px;gap:4px;padding:3px;font-size:12px}
 .workshop-details #workshopPerformanceTitle{font-size:14px;margin-bottom:4px}
 .workshop-details #workshopPerformanceTitle:not([hidden])~#workshopPartName{font-size:14px;margin-top:6px}
 .workshop-details .workshop-parts{position:static;flex-direction:row;overflow:auto;padding:4px 0;touch-action:pan-x pan-y}
@@ -124,8 +120,15 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
 .workshop-catalog button[data-equipped=true]::after{
  content:'✓';position:absolute;top:4px;right:6px;color:#a7efce
 }
-.workshop-finishes button{line-height:1.2}
 .workshop-sections,#workshopUpgradeInfo{display:none}
+.workshop-paint{display:flex;flex-wrap:wrap;align-items:center;gap:5px;font:700 12px/1.2 Arial,sans-serif}
+.workshop-paint label{flex:1 0 100%}
+#workshopPaint{width:66px;height:40px;padding:2px;background:#244d5a;border:1px solid #678790;border-radius:5px;cursor:pointer}
+#workshopPaintReset{min-height:40px;padding:3px 5px}
+#workshopPaintReset .tool-art{width:25px;height:25px}
+.workshop-section-art{display:grid;place-items:center;width:44px;height:44px;flex:none}
+.workshop-section-art :is(.part-art,svg){width:44px;height:44px}
+
 .workshop-details #workshopPerformanceTitle:not([hidden])~.workshop-options{
  grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(70px,1fr);overflow-x:auto
 }
@@ -237,7 +240,6 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
  .workshop-visuals{border-right:0;border-bottom:1px solid #70909577;padding:0 0 6px}
  .workshop-catalog{grid-auto-flow:column;grid-auto-columns:132px;overflow-x:auto;scroll-snap-type:x proximity}
  .workshop-catalog button{scroll-snap-align:start}
- .workshop-finishes{grid-template-columns:repeat(4,minmax(0,1fr))}
  .workshop-footer{flex-direction:column;align-items:stretch}
  #workshopTestControls{justify-content:space-between}
  #workshopTestControls label{max-width:65px}
@@ -257,7 +259,7 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
 
 @media(max-width:700px),(orientation:landscape) and (max-height:550px){
  .workshop-sections{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:0 var(--workshop-gutter) 5px}
- .workshop-sections button{min-width:0;min-height:36px;padding:3px;font-size:12px}
+ .workshop-sections button{min-width:0;min-height:50px;flex-direction:column;gap:1px;padding:3px;font-size:12px}
  #mountWorkshop[data-armory-pane] .workshop-content{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);overflow:hidden}
  #mountWorkshop[data-armory-pane="visual"] .workshop-content{grid-template-rows:auto minmax(0,1fr)}
  #mountWorkshop[data-armory-pane="visual"] .workshop-details,
@@ -279,8 +281,6 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
   overflow-x:auto;scroll-snap-type:x proximity
  }
  #mountWorkshop[data-armory-pane] .workshop-catalog button{min-height:92px}
- #mountWorkshop[data-armory-pane] .workshop-finishes{grid-template-columns:repeat(4,minmax(0,1fr))}
- #mountWorkshop[data-armory-pane] .workshop-finishes button{min-height:38px;font-size:11px}
  #mountWorkshop[data-armory-pane="visual"] .workshop-turntable{grid-template-rows:minmax(80px,1fr) auto}
  #mountWorkshop[data-armory-pane="visual"] #mountPreview{min-height:80px;height:100%}
 }
@@ -311,6 +311,10 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
  #mountWorkshop[data-armory-pane="parts"] .workshop-options .part-art{width:38px}
  #mountWorkshop[data-armory-pane="parts"] .workshop-purchase button{min-height:38px;padding:3px}
 }
+@media(orientation:landscape) and (max-height:550px){
+ .workshop-sections button{flex-direction:row;gap:6px;min-height:36px}
+ .workshop-section-art,.workshop-section-art :is(.part-art,svg){width:28px;height:28px}
+}
 @media(orientation:landscape) and (max-height:380px){
  .workshop-heading h2{font-size:17px}
  .workshop-heading :is(#workshopSave,#workshopClose){min-height:34px}
@@ -319,14 +323,15 @@ body[data-touch-controls=true] #mountFlight button{white-space:normal}
  .workshop-context{margin-block:2px}
  #workshopSaveState{max-width:none;white-space:nowrap;font-size:11px}
  .workshop-sections button{min-height:30px}
+ #mountWorkshop[data-armory-pane="visual"] .workshop-paint label{flex:0 1 auto}
+ #workshopPaint,#workshopPaintReset{height:30px;min-height:30px}
+ #workshopPaintReset .tool-art{width:21px;height:21px}
  #mountWorkshop[data-armory-pane="visual"] .workshop-visuals h3{display:none}
  #mountWorkshop[data-armory-pane="visual"] .workshop-visuals{gap:3px}
  #mountWorkshop[data-armory-pane="visual"] .workshop-catalog{grid-auto-columns:96px}
  #mountWorkshop[data-armory-pane="visual"] .workshop-catalog button{min-height:60px;padding:2px;gap:1px}
  #mountWorkshop[data-armory-pane="visual"] .workshop-catalog .card-label{max-width:100%;overflow-wrap:anywhere}
  #mountWorkshop[data-armory-pane="visual"] .workshop-catalog .part-art{width:28px;height:28px}
- #mountWorkshop[data-armory-pane="visual"] .workshop-finishes button{min-height:28px;flex-direction:row;font-size:10px;gap:3px}
- #mountWorkshop[data-armory-pane="visual"] .workshop-swatch{width:12px;flex-shrink:0}
  #mountWorkshop[data-armory-pane="visual"] .workshop-turntable{grid-template-rows:minmax(0,1fr) auto}
  #mountWorkshop[data-armory-pane="visual"] #mountPreview{min-height:0}
  #mountWorkshop[data-armory-pane="parts"] .workshop-parts{padding-block:2px}

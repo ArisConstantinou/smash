@@ -1,7 +1,14 @@
 import * as THREE from './vendor/three.module.js';
 const Y=new THREE.Vector3(0,1,0),raw=new THREE.MeshBasicMaterial(),unitBox=new THREE.BoxGeometry(1,1,1);
 export const ARMORY_PALETTE={paint:0x315d70,light:0x6c919d,steel:0xaab8b8,dark:0x19272e,gold:0xcba35c,wood:0x8e542c,woodLight:0xc2894c,leather:0x4c3024,cyan:0x67dbea};
-export function armoryPalette(finish='navy'){return {...ARMORY_PALETTE,...({oxide:{paint:0x874539,light:0xbb7561},ivory:{paint:0xbfc5ad,light:0xe3e5cb},bronze:{paint:0x8a623c,light:0xc09557}}[finish]||{})};}
+export function armoryPalette(finish='navy',customColor){
+ if(customColor){
+  const paint=Number.parseInt(customColor.slice(1),16);
+  const light=new THREE.Color(paint).lerp(new THREE.Color(0xffffff),.30).getHex();
+  return {...ARMORY_PALETTE,paint,light};
+ }
+ return {...ARMORY_PALETTE,...({oxide:{paint:0x874539,light:0xbb7561},ivory:{paint:0xbfc5ad,light:0xe3e5cb},bronze:{paint:0x8a623c,light:0xc09557}}[finish]||{})};
+}
 export function armoryBuilder(){
  const root=new THREE.Group();
  function add(geometry,color,x=0,y=0,z=0,rotation=[0,0,0],scale=[1,1,1],grain=false,shared=false){const mesh=new THREE.Mesh(geometry,raw);mesh.position.set(x,y,z);mesh.rotation.set(...rotation);mesh.scale.set(...scale);mesh.userData={color,grain,shared};root.add(mesh);return mesh;}

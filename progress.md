@@ -282,3 +282,9 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 - A single weapon or shield selection keeps its appearance catalogue, paint, 3D preview, attachments and stats together. The existing shared hammer and shield kits now live in their corresponding category and retain the original save keys.
 - Equipment cards use square art rendered from the original models, with separate labels and CSS borders. Mobile uses sections of the same item, tablet adapts its grid to orientation, and the game hides native scrollbars while preserving scrolling for overflow.
 - Verified all 18 catalogue entries, finish and attachment saves across reload, and seven desktop, phone and tablet viewports. Primary upgrade controls fit without vertical scrolling on the tested phone and tablet layouts. The gameplay suite passed all 602 tests and the browser mount suite passed.
+
+## Workshop paint picker and touch boundaries — 2026-11-09
+
+- Mobile Workshop sections show the selected item, current attachment and power artwork. The single native color picker saves an optional per-blueprint paint color and preserves existing preset saves and gameplay stats. Re-rendered all 18 atlases and verified identical images.
+- Fixed the page root and contained touch movement within scrollable panels, cancelling gestures at their bounds and blocking long-press callouts within the game. Chromium touch automation passed the catalogue swipe, hold-and-drag without reload and ordinary gameplay controls in portrait and landscape. Desktop WebKit passed the synthetic touch checks and paint selection. Physical iPhone gesture behavior remains unverified.
+- Passed 603 automated tests, the seven-view Workshop browser flow and the gameplay smoke run.

@@ -41,18 +41,18 @@ async function verifyMenuZoom(page){
   const target=page.locator(selector);
   await target.waitFor({state:'visible'});
   const gestures=await target.evaluate(el=>{
-   const blocked=(type,count=0)=>{
+   const blocked=(type,count=0,y=0)=>{
     const event=type.startsWith('touch')
-     ?new TouchEvent(type,{bubbles:true,cancelable:true,touches:Array.from({length:count},(_,identifier)=>new Touch({identifier,target:el}))})
+     ?new TouchEvent(type,{bubbles:true,cancelable:true,touches:Array.from({length:count},(_,identifier)=>new Touch({identifier,target:el,clientY:y}))})
      :new Event(type,{bubbles:true,cancelable:true});
     return !el.dispatchEvent(event);
    };
    return {pinchStart:blocked('gesturestart'),pinchChange:blocked('gesturechange'),
     twoFingerStart:blocked('touchstart',2),twoFingerMove:blocked('touchmove',2),
-    singleTap:blocked('touchstart',1),singleScroll:blocked('touchmove',1)};
+    singleTap:blocked('touchstart',1),singleScroll:blocked('touchmove',1,24),callout:blocked('contextmenu')};
   });
   assert.deepEqual(gestures,{pinchStart:true,pinchChange:true,twoFingerStart:true,twoFingerMove:true,
-   singleTap:false,singleScroll:false},selector);
+   singleTap:false,singleScroll:true,callout:true},selector);
  };
  await checkSurface('#menuAudioButton');
  const box=await page.locator('#menuAudioButton').boundingBox();
@@ -90,6 +90,36 @@ async function verifyMenuZoom(page){
  await page.locator('#closeSettingsButton').tap();
  await page.locator('#menuMountWorkshopButton').tap();
  await checkSurface('#workshopClose');
+ await page.locator('#workshopTabs button').filter({hasText:'ΟΠΛΑ'}).tap();
+ const strip=page.locator('#workshopCatalog');
+ const scroll=await strip.evaluate(el=>{
+  el.scrollLeft=0;
+  const card=el.querySelector('button');
+  const gesture=(type,x)=>card.dispatchEvent(new TouchEvent(type,{bubbles:true,cancelable:true,
+   touches:[new Touch({identifier:0,target:card,clientX:x})]}));
+  gesture('touchstart',50);
+  const inward=gesture('touchmove',20);
+  gesture('touchstart',50);
+  const outward=gesture('touchmove',80);
+  return {inward,outward};
+ });
+ assert.deepEqual(scroll,{inward:true,outward:false},'Catalogue scrolling stays within its own horizontal bounds');
+ const touchSession=await page.context().newCDPSession(page);
+ try{
+  const dispatch=(type,x,y)=>touchSession.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y,id:0}]});
+  const catalog=await strip.boundingBox(),cx=catalog.x+catalog.width*.7,cy=catalog.y+catalog.height/2;
+  await dispatch('touchStart',cx,cy);
+  for(const distance of [20,45,75,100])await dispatch('touchMove',cx-distance,cy);
+  await dispatch('touchEnd',0,0);
+  await page.waitForFunction(()=>document.querySelector('#workshopCatalog').scrollLeft>20);
+  const openedAt=await page.evaluate(()=>performance.timeOrigin),close=await page.locator('#workshopClose').boundingBox();
+  const x=close.x+close.width/2,y=close.y+close.height/2;
+  await dispatch('touchStart',x,y);await page.waitForTimeout(550);
+  for(const distance of [30,60,100,140])await dispatch('touchMove',x,y+distance);
+  await dispatch('touchEnd',0,0);
+  assert.deepEqual(await page.evaluate(()=>[performance.timeOrigin,scrollX,scrollY,visualViewport.offsetTop]),[openedAt,0,0,0]);
+  assert.ok(await page.locator('#mountWorkshop').isVisible());
+ }finally{await touchSession.detach();}
  await page.locator('#workshopClose').tap();
 }
 async function verifyBattleGestures(page){

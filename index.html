@@ -27,12 +27,12 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261109.7">
+  <link rel="stylesheet" href="./style.css?v=20261109.8">
   <link rel="stylesheet" href="./controls.css?v=20261107-aim11">
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
   <link rel="stylesheet" href="./level-picker.css?v=20261108-readable1">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
-  <link rel="stylesheet" href="./mount-workshop.css?v=20261109.7">
+  <link rel="stylesheet" href="./mount-workshop.css?v=20261109.8">
 </head>
 <body>
   <div id="gameViewport">
@@ -505,9 +505,9 @@
       <nav id="workshopTabs" class="workshop-tabs" aria-label="Προεπισκόπηση"></nav>
       <div class="workshop-context"><p id="workshopMode" class="workshop-mode"></p><span id="workshopSaveState" role="status"></span></div>
       <nav id="workshopSections" class="workshop-sections" aria-label="Ρυθμίσεις επιλεγμένου αντικειμένου" hidden>
-        <button type="button" data-armory-pane="visual" aria-pressed="true">ΕΜΦΑΝΙΣΗ</button>
-        <button type="button" data-armory-pane="parts" aria-pressed="false">ΕΞΑΡΤΗΜΑΤΑ</button>
-        <button type="button" data-armory-pane="stats" aria-pressed="false">ΕΠΙΔΟΣΕΙΣ</button>
+        <button type="button" data-armory-pane="visual" aria-pressed="true"><span id="workshopVisualArt" class="workshop-section-art" aria-hidden="true"></span><span>ΕΜΦΑΝΙΣΗ</span></button>
+        <button type="button" data-armory-pane="parts" aria-pressed="false"><span id="workshopPartsArt" class="workshop-section-art" aria-hidden="true"></span><span>ΕΞΑΡΤΗΜΑΤΑ</span></button>
+        <button type="button" data-armory-pane="stats" aria-pressed="false"><span class="workshop-section-art" aria-hidden="true"><svg viewBox="0 0 96 80"><use href="#upgrade-power"/></svg></span><span>ΕΠΙΔΟΣΕΙΣ</span></button>
       </nav>
       <div class="workshop-content">
         <nav id="workshopParts" class="workshop-parts" aria-label="Εξαρτήματα"></nav>
@@ -515,7 +515,11 @@
           <h3 id="workshopVisualTitle">ΕΜΦΑΝΙΣΗ</h3>
           <div id="workshopCatalog" class="workshop-catalog" role="group" aria-label="Κατάλογος σχεδίων"></div>
           <h4>ΥΛΙΚΑ / ΒΑΦΗ</h4>
-          <div id="workshopFinishes" class="workshop-finishes" role="group" aria-label="Υλικά και βαφή"></div>
+          <div class="workshop-paint">
+            <label for="workshopPaint">Επίλεξε χρώμα</label>
+            <input id="workshopPaint" type="color" value="#315d70">
+            <button id="workshopPaintReset" type="button" title="Αρχική βαφή" aria-label="Αρχική βαφή"></button>
+          </div>
         </section>
         <section class="workshop-turntable" aria-label="Περιστρεφόμενη προεπισκόπηση 3D">
           <canvas id="mountPreview" tabindex="0" aria-label="Σύρε για περιστροφή του παίκτη και οχήματος"></canvas>
@@ -538,8 +542,13 @@
   </div>
   </div>
   <script type="importmap">
-    {"imports":{"./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3"}}
+    {"imports":{
+      "./vendor/three.module.js":"./vendor/three.module.js?v=20261107-perf14-fix3",
+      "./armory-rules.js?v=20261109-trophies1":"./armory-rules.js?v=20261109.8",
+      "./armory-models.js?v=20261109-trophies1":"./armory-models.js?v=20261109.8",
+      "./armory-geometry.js":"./armory-geometry.js?v=20261109.8"
+    }}
   </script>
-  <script type="module" src="./game.js?v=20261109.7"></script>
+  <script type="module" src="./game.js?v=20261109.8"></script>
 </body>
 </html>

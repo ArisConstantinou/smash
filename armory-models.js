@@ -10,7 +10,7 @@ function radialStud(b,P,angle,y,r,length=.032){const normal=[Math.sin(angle),0,M
 /** Four organic/metal clubs and eight individually constructed hammer heads.
  * Local Y is the shaft; hammer faces run along X, preserving existing grips. */
 function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}}){
- const b=armoryBuilder(),P=armoryPalette(parts.finish.selected),number=blueprint(id).number;
+ const b=armoryBuilder(),P=armoryPalette(parts.finish.selected,parts.finish.color),number=blueprint(id).number;
  if(id==='w01'){
   b.add(sculptedWoodGeometry('knotted'),P.wood,0,0,0,[0,0,0],[1,1,1],true);
   for(const [x,y,r]of [[-.08,.41,.08],[.12,.21,.055]]){b.ring(0x60371f,x,y,.25,r,.012);b.ring(P.woodLight,x,y,.257,r*.50,.008);}
@@ -39,7 +39,7 @@ function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}})
   b.bevel(P.dark,0,0,0,1.10,.65,.59,.035);b.bevel(P.paint,.10,0,0,.80,.66,.60,.04);b.bevel(P.steel,-.51,0,0,.18,.71,.66,.035);b.bevel(P.steel,.55,0,0,.15,.69,.63,.03);b.bevel(P.light,.635,0,0,.035,.53,.48,.009);for(const y of [-.22,0,.22])for(const z of [-.22,0,.22])b.cone(P.steel,-.67,y,z,.066,.17,[-1,0,0]);for(const side of [-1,1])for(const y of [-.22,.22])b.bolt(P.gold,side*.30,y,.326,.027);b.bevel(P.gold,.13,0,.33,.08,.59,.035,.012);
  }else if(id==='w19'){
   // The Transformer's offset siege barrel, shortened and mounted on a haft.
-  const amber=parts.finish.selected==='navy'?0xc48738:P.paint;
+  const amber=!parts.finish.color&&parts.finish.selected==='navy'?0xc48738:P.paint;
   b.bevel(P.dark,-.29,0,0,.70,.58,.56,.045);b.bevel(amber,-.36,0,0,.52,.56,.60,.038);
   b.cylinder(P.steel,.19,0,0,.225,.78,'x',10);b.cylinder(P.dark,.03,0,0,.269,.24,'x',10);
   b.bevel(amber,.57,0,0,.29,.53,.53,.032);
@@ -49,7 +49,7 @@ function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}})
   for(const side of [-1,1]){for(const x of [-.51,-.34,-.17]){const mark=b.bevel(P.pale??P.light,x,.025,side*.313,.045,.28,.019,.006);mark.rotation.z=-.36;}for(const y of [-.18,.18])b.bolt(P.gold,.55,y,side*.273,.03);}
  }else if(id==='w20'){
   // The Marshal's armored shock baton, including its three exposed pulse coils.
-  const violet=0xb674ef,plate=parts.finish.selected==='navy'?0x574a65:P.paint;
+  const violet=0xb674ef,plate=!parts.finish.color&&parts.finish.selected==='navy'?0x574a65:P.paint;
   b.cylinder(P.dark,0,.11,0,.121,.83,'y',10);
   b.cylinder(P.steel,0,-.31,0,.155,.14,'y',8);b.cylinder(plate,0,.50,0,.175,.17,'y',8);
   for(const y of [-.11,.08,.27]){b.cylinder(violet,0,y,0,.153,.065,'y',12);b.ring(P.steel,0,y+.038,0,.152,.013,'y',12);}
@@ -75,7 +75,7 @@ function headGeometry(id,parts,mat,kit={selected:'standard',owned:{standard:1}})
  const mesh=b.finish(mat);mesh.name='Armory head '+id;mesh.userData.part='head';mesh.userData.corePosition={x:0,y:coreY,z:coreZ};mesh.userData.compoundRing=id==='w12'?{x:0,y:.25,z:0,inner:.30,outer:.53,depth:.38}:null;return mesh;
 }
 export function createWeaponModel(id='w01',armory=createArmory(),{material:sharedMaterial,kit}={}){
- const parts=partConfig(armory,id),P=armoryPalette(parts.finish.selected),mat=sharedMaterial||createArmoryMaterials(parts.core.selected),root=new THREE.Group();root.name='Armory '+id;
+ const parts=partConfig(armory,id),P=armoryPalette(parts.finish.selected,parts.finish.color),mat=sharedMaterial||createArmoryMaterials(parts.core.selected),root=new THREE.Group();root.name='Armory '+id;
  const head=headGeometry(id,parts,mat,kit),shaftBuilder=armoryBuilder(),handleBuilder=armoryBuilder(),collarBuilder=armoryBuilder(),guardBuilder=armoryBuilder();
  const shaftChoice=parts.haft.selected,metal=shaftChoice==='steel'||shaftChoice==='spring';shaftBuilder.cylinder(metal?P.steel:P.wood,0,0,0,.064,1,'y',12,.072);
  if(metal){for(const y of [-.41,.35])shaftBuilder.cylinder(P.gold,0,y,0,.077,.07,'y',12);shaftBuilder.bevel(P.paint,0,.04,.066,.055,.64,.022,.006);}else{const m=shaftBuilder.bevel(P.woodLight,0,0,.066,.028,.94,.012,.003);m.userData.grain=true;}
@@ -104,7 +104,7 @@ function shieldFace(b,P,id,parts,points,kit){
  if(rim==='absorber')for(const [x,y]of [[-.35,.30],[.35,.30],[-.28,-.35],[.28,-.35]]){b.cylinder(P.steel,x,y,.15,.047,.055,'z',10);b.ring(P.dark,x,y,.185,.032,.009);}
 }
 export function createShieldModel(id='s14',armory=createArmory(),{material:sharedMaterial,kit}={}){
- const parts=partConfig(armory,id),mat=sharedMaterial||createArmoryMaterials(parts.core.selected),P=armoryPalette(parts.finish.selected),root=new THREE.Group(),panels=[];root.name='Armory '+id;const b=armoryBuilder();
+ const parts=partConfig(armory,id),mat=sharedMaterial||createArmoryMaterials(parts.core.selected),P=armoryPalette(parts.finish.selected,parts.finish.color),root=new THREE.Group(),panels=[];root.name='Armory '+id;const b=armoryBuilder();
  if(id==='s17'){
   for(const side of [-1,0,1]){const pb=armoryBuilder(),points=[[-.205,.55],[.205,.55],[.205,-.56],[-.205,-.56]];shieldFace(pb,P,id,parts,points,kit);for(const x of [-.16,.16])for(const y of [-.44,0,.44])pb.bolt(P.gold,x,y,.14,.021);const m=pb.finish(mat),pivot=new THREE.Group();pivot.position.set(side*.20,0,.14);m.position.set(side*.20,0,-.14);pivot.rotation.y=side*-.17;pivot.add(m);root.add(pivot);panels.push({pivot,side});}
   for(const side of [-1,1])for(const y of [-.38,0,.38]){b.cylinder(P.gold,side*.20,y,.14,.035,.18,'y',10);b.ring(P.dark,side*.20,y,.14,.038,.007,'y',10);}
