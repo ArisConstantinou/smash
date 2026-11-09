@@ -265,3 +265,14 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 
 - Version 2026.11.09.4 allowed pinch zoom in the forge because gesture cancellation only ran during battle. Version 2026.11.09.5 applies the page zoom lock to the menu, panels and battle. Single-finger panel scrolling and in-game zoom controls remain available.
 - The renderer uses dimensions at 1× page scale. Mobile browser chrome can change the available height without releasing a held joystick or action. A saved level-15 run passed the resume, movement, height-change and two-finger guard checks in Chromium at 393×682 and 932×313. Desktop WebKit also passed pinch event cancellation, touch mount and pause. Physical iPhone verification remains open.
+
+## Close hits with enlarged weapons — 2026-11-09
+
+- Enlarged or extended catalog weapons reuse the existing fitted barbed wire. Swings and spins sweep the visible wire as well as the head. A wire contact cuts at 55% damage and pulls inward. The bare grip and occluded contacts are excluded.
+- At size upgrade 10 and 1.7 m, five catalog weapons missed before the fix. All 14 connect after it. With range rank 30 and Extended Shaft rank 5, each weapon renders wire and cuts at 1.7 m and 6 m. The legacy wire also passes at both distances with one and two hands. Matched 430×932 Chromium touch captures show the extended Storm Ring cutting a brute from 240 to 154 HP at 6 m, versus 240 HP before. Evidence is under `tests/close-contact` in staging. The isolated preview uses port 8000.
+
+## Browser-restored page zoom — 2026-11-09
+
+- On the public baseline, startup at 1.65× browser scale crops the menu and battle controls even with the existing gesture lock. The preview fits the entire game shell to the visual viewport before the game module loads and updates it on resize, pan and page restoration. The transform is removed at 1×.
+- Matched 393×682 and 932×313 Chromium captures cover both menu and battle. Touch start, joystick movement, pause, reload and saved-run resume passed with restored zoom. The HUD suite also checks restored pan offsets and ordinary layouts. Evidence is under `tests/hud-layout` in staging. Physical iPhone verification remains open.
+- All 602 automated tests passed with the wire and viewport fixes together. The installed Chromium game client passed, as did desktop WebKit with simulated restored viewport metrics. Re-rendered Workshop atlas image hashes matched all 11 shipped files.

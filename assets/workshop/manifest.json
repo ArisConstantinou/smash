@@ -6,7 +6,7 @@
   "rank": 1,
   "chassisCell": 63,
   "inputs": {
-    "models.js": "ff343c9aebe1221a9e9895ae206449e5ec532cb61f8b5cf9b7b4bd48724bbb4a",
+    "models.js": "1150e0f70bdac8c3953dd6bba25f63de3a8a5cf87a9077bb2b8ea7dc1b2d84eb",
     "mount-models.js": "6c6d90d7de33116979f3129b1c123703fe3d9117efcc2518fc662e7b2bc2c674",
     "player-customization.js": "b7bdb8fc62ff1afc59b4f5ccf1ad6e54993aa7ecd0254684e5157a5493df5170",
     "equipment-shapes.js": "651f26789f7beb1d34439facdab33db3d6a99762fc2cd8a4523050c88d5a532b",

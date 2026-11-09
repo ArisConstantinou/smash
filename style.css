@@ -1299,3 +1299,11 @@ html,
 body[data-touch-controls="true"] :is(#qualitySelect,#throwModeSelect,#workshopTestLevel){
  font-size:16px;
 }
+
+/* Keep the app at its normal apparent size if the browser restores page zoom. */
+html[data-page-scaled] #gameViewport{
+ position:absolute;top:0;left:0;
+ width:var(--game-viewport-width);height:var(--game-viewport-height);
+ --app-height:var(--game-viewport-height);
+ transform-origin:top left;transform:var(--game-viewport-transform);
+}

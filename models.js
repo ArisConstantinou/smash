@@ -716,7 +716,8 @@ export function makeWarrior() {
   const getHeadHalfExtents = () => headContactDimensions().halfExtents;
   const barbedInstance = new THREE.Matrix4();
   function barbedCoilCount(reach = reachScale) {
-    if (equipmentTier < 2 || root.userData.armoryWeaponId) return 0;
+    const hasWire = root.userData.armoryWeaponId ? root.userData.armoryBarbed : equipmentTier >= 2;
+    if (!hasWire) return 0;
     measureContactGeometry();
     const headY = .43 + reach;
     // Stop before the actual head underside and the retaining collar. Large

@@ -19,13 +19,13 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261109-readability1';
-import {createForgeMenu} from './menu.js?v=20261109-zoom-lock';
+import {createForgeMenu} from './menu.js?v=20261109.6';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-mount1';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261108-workshop1';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261109-armory-wire';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261109-gauntlet1';
 import {createWorld} from './world.js?v=20261109-readability1';
 import {GameAudio} from './audio.js?v=20261108-storm1';
@@ -559,6 +559,7 @@ function applyStats(){
   armoryWeaponStats=weaponActive?armoryStats(garage.armory,selected.weapon):null;armoryShieldStats=shieldActive?armoryStats(garage.armory,selected.shield):null;
   if(armoryWeaponStats)armoryWeaponStats.signature=blueprint(selected.weapon).signature;
   armoryVolumes=weaponActive?armoryHeadVolumes(selected.weapon,Object.fromEntries(Object.entries(garage.armory.items[selected.weapon].parts).map(([k,v])=>[k,v.selected]))):null;
+  hero.userData.armoryBarbed=weaponActive&&!!(levels.size||levels.range||garage.armory.items[selected.weapon].parts.haft.selected==='extended');
   if(armoryWeaponStats){const family=blueprint(selected.weapon).family,reach=family==='club'?2.65:family==='hammer'?2.15:3.65;stats.power*=armoryWeaponStats.power;stats.range*=reach/characterStats.range*armoryWeaponStats.reach;stats.maxHp+=armoryWeaponStats.hp;}
   if(armoryShieldStats){stats.maxHp+=armoryShieldStats.hp;stats.speed*=armoryShieldStats.speed;}
   player.maxHp=stats.maxHp;player.hp=Math.min(player.hp,player.maxHp);syncCharacterModel();
@@ -794,15 +795,22 @@ function catalogHeadHits(from,to,targets){return sweepArmoryHead(armoryVolumes,h
 function armoryImpact(s,from,to,spinning){
  const objects=nearbyObjects(player.x,player.z,stats.range+stats.size+2).filter(o=>spinning||!s.hits.has(o));
  const walls=catalogHeadHits(from,to,objects),wall=walls[0],grip=hero.userData.hammerPivot.getWorldPosition(new THREE.Vector3());
+ const barbed=readBarbedSegment(s);
  const touching=new Set();let hits=0,breaks=0;
  s.materialHits??=new Map();s.coreHits??=new Set();
  for(const target of [...enemies,...(boss&&!boss.dead?[boss]:[]),...(wall?[wall.target]:[])]){
   if(target.dead||target.exploding||!spinning&&s.hits.has(target))continue;
   if(!spinning&&(target.x-player.x)*s.fx+(target.z-player.z)*s.fz<0)continue;
-  let contacts=target===wall?.target?walls.filter(c=>c.target===target):catalogHeadHits(from,to,[target]);
-  contacts=contacts.filter(c=>(!wall||target===wall.target||c.t<=wall.t)&&!firstHammerHit(grip,c,objects.filter(o=>o!==target),.015));
-  if(!contacts.length)continue;touching.add(target);
+  const isWall=target===wall?.target;
+  const occluders=isWall?objects.filter(o=>o!==target):objects;
+  const headContacts=isWall?walls.filter(c=>c.target===target):catalogHeadHits(from,to,[target]);
+  const contacts=headContacts.filter(c=>(!wall||isWall||c.t<=wall.t)&&!firstHammerHit(grip,c,occluders,.015));
+  // Close contact comes from the visible wire beyond the grip.
+  const wire=!isWall&&!contacts.length&&(spinning||!s.materialHits.has(target))?wireContact(s,barbed,target):null;
+  const wireHit=wire&&(!wall||wire.sweepTime<=wall.t)&&!firstHammerHit(grip,wire,occluders,barbed.radius);
+  if(!contacts.length&&!wireHit)continue;touching.add(target);
   if(spinning){if(!eligibleSpinContact(s,target))continue;renewSpinMomentum(s,target);s.materialHits.delete(target);s.coreHits.delete(target);}
+  if(wireHit){hitBarbedTarget(target,s,wire);if(!spinning)s.hits.add(target);hits++;continue;}
   const used=s.materialHits.get(target)||new Set(),dir=normalize(target.x-player.x,target.z-player.z);
   for(const contact of contacts){
    if(target.dead||used.has(contact.armoryPart)||used.size>=armoryWeaponStats.maxContacts||used.has('bridge')||contact.armoryPart==='bridge'&&used.size>0)continue;
@@ -3158,7 +3166,7 @@ function initInput(){
   function moveStick(e){
     const rect=stick.getBoundingClientRect(),r=Math.max(1,Math.min(rect.width,rect.height)*.34);
     const dx=e.clientX-rect.left-rect.width/2,dy=e.clientY-rect.top-rect.height/2,d=Math.hypot(dx,dy);
-    const visual=Math.min(d,r),sample=sampleMoveStick(dx,dy,r);
+    const visual=Math.min(d,r)*(stick.offsetWidth||rect.width)/Math.max(1,rect.width),sample=sampleMoveStick(dx,dy,r);
     Object.assign(touch,sample);stick.classList.toggle('turn-only',sample.turnOnly);
     stick.dataset.intent=sample.turnOnly?'turn':sample.x||sample.y?'walk':'idle';
     if((sample.aimX||sample.aimY)&&!swing&&!spin&&!punch&&!kick&&!leap&&!throwWindup){facing=screenMovement(sample.aimX,sample.aimY);updateAim(false);}

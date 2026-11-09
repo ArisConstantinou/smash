@@ -3859,12 +3859,35 @@ function contactProbe(point,radius=.025){
   e.mesh.position.set(e.x,e.y,e.z);e.mesh.updateMatrixWorld(true);return e;
 }
 
+test('enlarged catalog weapons can hit a close enemy during a normal swing',()=>{
+  const missed=[];
+  for(const [range,distance] of [[0,1.7],[30,1.7],[30,6]]){
+    for(const blueprint of armoryRulesModule.WEAPON_BLUEPRINTS){
+      arena(30);
+      const armory=api.garage.armory;
+      if(blueprint.bossReward)armoryRulesModule.awardBossWeapon(armory,blueprint.bossReward);
+      armory.weapon=blueprint.id;
+      if(range)for(let rank=0;rank<5;rank++){
+        assert.equal(armoryRulesModule.purchaseArmoryPart(armory,{},blueprint.id,'haft','extended',{tier:4,test:true}).ok,true);
+      }
+      api.levels.range=range;api.levels.size=10;
+      api.applyStats();api.poseHero(1);
+      if(range)assert.ok(api.hero.userData.barbedWrap.visible,`${blueprint.id} renders the wire`);
+      const enemy=stationaryEnemy('brute',0,distance),hp=enemy.hp;
+      mouseAttack(true);mouseAttack(false);playerSteps(.5,1/240);
+      if(enemy.hp===hp)missed.push({weapon:blueprint.id,range,distance});
+      if(range)assert.equal(enemy.impact?.reaction,'slash',`${blueprint.id} cuts at ${distance} m`);
+    }
+  }
+  assert.deepEqual(missed,[]);
+});
+
 test('aim13: long metal shafts slash close enemies with reduced damage, a grounded inward tug and immediate impact',()=>{
-  for(const level of [6,10,15])for(const twoHanded of [false,true]){
-    arena(level);api.levels.range=5;api.applyStats();
+  for(const [level,range,distance] of [[6,5,1.7],[10,5,1.7],[15,5,1.7],[15,30,1.7],[15,30,6]])for(const twoHanded of [false,true]){
+    arena(level);api.levels.range=range;api.applyStats();
     if(twoHanded){key('KeyZ',true);key('KeyZ',false);playerSteps(1.1);}
     api.poseHero(1);
-    const enemy=stationaryEnemy('brute',0,1.7),hp=enemy.hp,rotation=enemy.mesh.quaternion.clone();
+    const enemy=stationaryEnemy('brute',0,distance),hp=enemy.hp,rotation=enemy.mesh.quaternion.clone();
     mouseAttack(true);mouseAttack(false);const strike=api.swing;
     let contact=false;
     playerSteps(.5,1/240,()=>{

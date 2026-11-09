@@ -71,6 +71,20 @@ async function verifyMenuZoom(page){
   await touch('touchEnd',[]);
   assert.equal(await page.evaluate(()=>visualViewport.scale),1);
  }finally{await session.detach();}
+ const fit=await page.locator('#menu').evaluate(menu=>{
+  const v=visualViewport,restored={scale:2,width:v.width/2,height:v.height/2,pageLeft:32,pageTop:48};
+  try{
+   for(const [key,value] of Object.entries(restored))Object.defineProperty(v,key,{value,configurable:true});
+   window.dispatchEvent(new Event('pageshow'));
+   const {left,top,width,height}=menu.getBoundingClientRect();
+   return Math.abs(left-restored.pageLeft)<1&&Math.abs(top-restored.pageTop)<1&&
+     Math.abs(width-v.width)<1&&Math.abs(height-v.height)<1;
+  }finally{
+   for(const key of Object.keys(restored))delete v[key];
+   v.dispatchEvent(new Event('resize'));
+  }
+ });
+ assert.ok(fit,'Restored scale and pan must fit the menu to the visual viewport');
  await page.locator('#menuSettingsButton').tap();
  await checkSurface('#closeSettingsButton');
  await page.locator('#closeSettingsButton').tap();
