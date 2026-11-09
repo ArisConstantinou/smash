@@ -4174,6 +4174,34 @@ test('transformer folds its existing treads, fires at a locked target, and unfol
  assert.equal(e.fold,0);assert.equal(e.height,e.baseHeight);
 });
 
+test('Marshal soldiers sustain his armor, and his telegraphed slam can be dodged',()=>{
+ arena(1);
+ for(const o of api.world.objects){o.dead=true;o.hp=0;}
+ api.world.rebuildSpatialIndex();
+ api.checkGoal();clearEncounter();api.checkGoal();api.updateEncounter(5);
+ const fight=api.encounter,leader=fight.leader;
+ assert.equal(leader.type,'hollowMarshal');
+ api.updateEncounter(.66);
+ assert.equal(fight.escorts.size,1);
+ const soldier=[...fight.escorts][0];
+ assert.equal(soldier.type,'marshalThrall');assert.ok(soldier.xp>waves.enemyStatsForWave('zombie',1).xp);
+ const armored=leader.hp;
+ api.hitEnemy(leader,100,{x:0,z:1},0,0,null,{combo:false});
+ assert.equal(armored-leader.hp,68);
+ api.killEnemy(soldier);
+ const exposed=leader.hp;
+ api.hitEnemy(leader,100,{x:0,z:1},0,0,null,{combo:false});
+ assert.equal(exposed-leader.hp,100);
+ Object.assign(leader,{x:0,z:0,speed:0,timer:0});
+ Object.assign(api.player,{x:0,y:0,z:4,invincible:0});
+ api.updateEnemies(.01);assert.equal(leader.state,'windup');
+ const hp=api.player.hp;
+ api.player.z=9;api.updateEnemies(leader.windup+.01);
+ assert.equal(api.player.hp,hp);
+ api.player.z=4;leader.timer=0;api.updateEnemies(.01);assert.equal(leader.state,'windup');
+ api.updateEnemies(leader.windup+.01);assert.ok(api.player.hp<hp);
+});
+
 test('long hammer guard preserves the complete shaft beside the player with reachable wrists',()=>{
  for(const twoHanded of [false,true]){
   arena(15,{test:true});api.levels.range=14;api.levels.size=12;api.applyStats();api.poseHero(0);
