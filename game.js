@@ -593,7 +593,7 @@ function startGame(startLevel=1,options={}){
 }
 function persistCharacter(){
   if(!gameReady||testRun||phase==='menu'||phase==='settings'&&previousPhase==='menu')return;
-  const tank=siegeTank?.snapshot();
+  const tank=campaignMap===RAVINE_ID?null:siegeTank?.snapshot();
   const saved=save('ironfall.character',{character,levels,garage,...(tank?{siegeTank:tank}:{}),...(campaignMap?{map:campaignMap}:{})});updateSavedCharacter();return saved;
 }
 function updateSavedCharacter(){
