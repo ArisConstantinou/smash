@@ -260,3 +260,8 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 
 - On phones, the compact header aligns title, save and close, with status alongside the current equipment context. The portrait parts strip scrolls horizontally and leaves the 3D preview and upgrade details full width. Landscape aligns the parts, preview and details in three columns. The armory preset shares the preview controls row and the empty feedback footer collapses.
 - Matched browser captures and layout measurements are under `tests/mount-workshop` in staging. Portrait upgrade details grew from 308 to 402 px at 430×932. At 932×430, the details column grew from 280 to 362 px and the armory canvas from 166 to about 219 px high. Purchase access and alignment were also checked at 320×568 and 667×313. The isolated preview stays at `http://127.0.0.1:8000/candidate/`.
+
+## Page zoom and held touch controls — 2026-11-09
+
+- Version 2026.11.09.4 allowed pinch zoom in the forge because gesture cancellation only ran during battle. Version 2026.11.09.5 applies the page zoom lock to the menu, panels and battle. Single-finger panel scrolling and in-game zoom controls remain available.
+- The renderer uses dimensions at 1× page scale. Mobile browser chrome can change the available height without releasing a held joystick or action. A saved level-15 run passed the resume, movement, height-change and two-finger guard checks in Chromium at 393×682 and 932×313. Desktop WebKit also passed pinch event cancellation, touch mount and pause. Physical iPhone verification remains open.

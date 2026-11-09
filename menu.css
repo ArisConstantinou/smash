@@ -5,7 +5,7 @@
   --forge-ink:#0a171c; --forge-edge:#68888a; --forge-width:560px;
   position:fixed; inset:0; z-index:10; display:flex; flex-direction:column;
   height:var(--app-height,100dvh); overflow:hidden; padding:0;
-  color:var(--forge-cream); isolation:isolate; touch-action:manipulation;
+  color:var(--forge-cream); isolation:isolate; touch-action:pan-x pan-y;
   background:radial-gradient(ellipse at 73% 43%,#16444c38 0%,transparent 42%),
     linear-gradient(110deg,#061117f5 0%,#0c2026e8 42%,#0b2428d9 68%,#071318ec 100%);
 }
@@ -375,4 +375,7 @@ body[data-touch-controls="true"] .throw-aim-status {left:auto;right:var(--mobile
   #menu .forge-loading {margin-top:6px;}
   #menu .forge-footer {min-height:50px;padding-bottom:4px;}
   #menu #menuAudioStatus {font-size:12px;}
+}
+@media (orientation:landscape) and (max-height:360px) {
+  #menu .forge-layout{align-content:start;overflow:auto;touch-action:pan-y}
 }

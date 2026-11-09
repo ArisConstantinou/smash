@@ -15,6 +15,8 @@ const hook=`
 const hudQAFrame=frame;let hudQAFrozen=false;
 frame=function(t){if(hudQAFrozen){renderer.render(scene,camera);requestAnimationFrame(frame);}else hudQAFrame(t);};
 window.__hudQA={get ready(){return gameReady},
+ seedResume(){saveStore.write('ironfall.character',{character:createCharacterProgression(15)});updateSavedCharacter();},
+ input(){return {phase,guardHeld,width:screenW,height:screenH,zoom:camera.zoom};},
  prepare(){startGame(15,{test:true});hudQAFrozen=true;const total=world.objects.reduce((n,o)=>n+o.weight,0);let done=0;
   for(const o of world.objects){if(Math.hypot(o.x,o.z)<25)continue;if(done/total*100>=35)break;hurtObject(o,o.hp+1);done+=o.weight;}
   for(let i=0;i<7;i++){spawnEnemy('zombie',{x:45+i,z:45});const e=enemies.at(-1);hitEnemy(e,e.hp+1,{x:0,z:1},0,0);}
@@ -34,6 +36,48 @@ const cases=[
  {name:'desktop',width:1440,height:900,safe:0},
 ].filter(c=>!process.env.SMASH_HUD_CASE||process.env.SMASH_HUD_CASE.split(',').includes(c.name));
 let context;const results=[],errors=[];
+async function verifyMenuZoom(page){
+ const checkSurface=async selector=>{
+  const target=page.locator(selector);
+  await target.waitFor({state:'visible'});
+  const gestures=await target.evaluate(el=>{
+   const blocked=(type,count=0)=>{
+    const event=type.startsWith('touch')
+     ?new TouchEvent(type,{bubbles:true,cancelable:true,touches:Array.from({length:count},(_,identifier)=>new Touch({identifier,target:el}))})
+     :new Event(type,{bubbles:true,cancelable:true});
+    return !el.dispatchEvent(event);
+   };
+   return {pinchStart:blocked('gesturestart'),pinchChange:blocked('gesturechange'),
+    twoFingerStart:blocked('touchstart',2),twoFingerMove:blocked('touchmove',2),
+    singleTap:blocked('touchstart',1),singleScroll:blocked('touchmove',1)};
+  });
+  assert.deepEqual(gestures,{pinchStart:true,pinchChange:true,twoFingerStart:true,twoFingerMove:true,
+   singleTap:false,singleScroll:false},selector);
+ };
+ await checkSurface('#menuAudioButton');
+ const box=await page.locator('#menuAudioButton').boundingBox();
+ const x=box.x+box.width/2,y=box.y+box.height/2;
+ await page.touchscreen.tap(x,y);
+ await page.touchscreen.tap(x,y);
+ const session=await page.context().newCDPSession(page);
+ try{
+  const touch=(type,points)=>session.send('Input.dispatchTouchEvent',{
+   type,touchPoints:points.map(([x,y],id)=>({x,y,id}))
+  });
+  const middle=page.viewportSize();
+  const pinchX=middle.width/2,pinchY=middle.height/2;
+  await touch('touchStart',[[pinchX-20,pinchY],[pinchX+20,pinchY]]);
+  for(const distance of [28,40,55,70])await touch('touchMove',[[pinchX-distance,pinchY],[pinchX+distance,pinchY]]);
+  await touch('touchEnd',[]);
+  assert.equal(await page.evaluate(()=>visualViewport.scale),1);
+ }finally{await session.detach();}
+ await page.locator('#menuSettingsButton').tap();
+ await checkSurface('#closeSettingsButton');
+ await page.locator('#closeSettingsButton').tap();
+ await page.locator('#menuMountWorkshopButton').tap();
+ await checkSurface('#workshopClose');
+ await page.locator('#workshopClose').tap();
+}
 async function verifyBattleGestures(page){
  const session=await page.context().newCDPSession(page);
  const {width,height}=page.viewportSize(),x=Math.round(width*.5),y=Math.round(height*.42);
@@ -70,6 +114,54 @@ async function verifyBattleGestures(page){
  await session.detach();
  return gestures;
 }
+async function verifyResumedControls(page){
+ await page.evaluate(()=>window.__hudQA.seedResume());
+ await page.locator('#resumeCharacterButton').tap();
+ await page.waitForFunction(()=>window.__hudQA.input().phase==='playing');
+ const initial=await page.evaluate(()=>window.__hudQA.input());
+ assert.equal(initial.zoom,1);
+ const scaled=await page.evaluate(()=>{
+  const viewport=visualViewport,width=viewport.width,height=viewport.height;
+  try{
+   for(const [name,value]of Object.entries({width:width/2,height:height/2,scale:2})){
+    Object.defineProperty(viewport,name,{value,configurable:true});
+   }
+   viewport.dispatchEvent(new Event('resize'));
+   return window.__hudQA.input();
+  }finally{
+   for(const name of ['width','height','scale'])delete viewport[name];
+   viewport.dispatchEvent(new Event('resize'));
+  }
+ });
+ assert.deepEqual(scaled,initial,'Page scale does not resize the game camera');
+ const session=await page.context().newCDPSession(page);
+ const center=async id=>{
+  const b=await page.locator(id).boundingBox();
+  return {x:Math.round(b.x+b.width/2),y:Math.round(b.y+b.height/2)};
+ };
+ const stick={...await center('#joystick'),id:0},guard={...await center('#guardButton'),id:1};
+ const touch=(type,touchPoints)=>session.send('Input.dispatchTouchEvent',{type,touchPoints});
+ try{
+  await touch('touchStart',[stick]);
+  await touch('touchMove',[{...stick,x:stick.x+30}]);
+  await page.waitForFunction(()=>document.querySelector('#joystick').dataset.intent==='walk');
+  const player=await page.evaluate(()=>JSON.parse(render_game_to_text()).player);
+  await page.evaluate(()=>{
+   const viewport=visualViewport,height=viewport.height;
+   Object.defineProperty(viewport,'height',{value:height-20,configurable:true});
+   try{viewport.dispatchEvent(new Event('resize'));}finally{delete viewport.height;}
+  });
+  await page.waitForFunction(player=>{
+   const next=JSON.parse(render_game_to_text()).player;
+   return Math.hypot(next.x-player.x,next.z-player.z)>.15;
+  },player,{timeout:4000});
+  await page.evaluate(()=>visualViewport.dispatchEvent(new Event('resize')));
+  await touch('touchStart',[{...stick,x:stick.x+30},guard]);
+  await page.waitForFunction(()=>window.__hudQA.input().guardHeld,{},{timeout:4000});
+  await touch('touchEnd',[]);
+  await page.waitForFunction(()=>!window.__hudQA.input().guardHeld);
+ }finally{await session.detach();}
+}
 try{
  for(const c of cases){
   const mobile=c.name!=='desktop';
@@ -82,7 +174,11 @@ try{
    await r.fulfill({response,body:css});});
   const page=await context.newPage();page.on('pageerror',e=>errors.push({case:c.name,error:e.message}));
   await page.setViewportSize({width:c.width,height:c.height});await page.goto(origin,{waitUntil:'networkidle'});
-  await page.waitForFunction(()=>window.__hudQA?.ready,null,{timeout:120000});await page.locator('#startButton').click();
+  await page.waitForFunction(()=>window.__hudQA?.ready,null,{timeout:120000});
+  if(label.startsWith('after')&&['iphone-browser','iphone-landscape'].includes(c.name)){
+   await verifyMenuZoom(page);
+   await verifyResumedControls(page);
+  }else await page.locator('#startButton').click();
   await page.waitForFunction(()=>/\d+ FPS/.test(document.querySelector('#performanceHud').textContent));await page.waitForTimeout(3000);
   const state=await page.evaluate(()=>__hudQA.prepare());await page.waitForTimeout(150);
   const layout=await page.evaluate(()=>{

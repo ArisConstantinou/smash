@@ -19,7 +19,7 @@ import {FrameTelemetry,MAX_FRAME_SIMULATION,MAX_SIMULATION_CPU_MS} from './perfo
 import {constrainLargeWeaponPose} from './weapon-pose.js?v=20261107-perf14';
 import {sampleMoveStick,SPIN_TURN_SECONDS,SPIN_DAMAGE_SCALE,advanceSpinMomentum,eligibleSpinContact,renewSpinMomentum,meleeAimSpec,inMeleeEnvelope} from './manual-combat.js?v=20261107-aim11';
 import {DestructionSystem} from './destruction.js?v=20261109-readability1';
-import {createForgeMenu} from './menu.js?v=20261109-readability1';
+import {createForgeMenu} from './menu.js?v=20261109-zoom-lock';
 import {getLevelCity} from './city-levels.js?v=20261107-cities10';
 import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPickupPoint} from './combat-tools.js?v=20261108-mount1';
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
@@ -2880,10 +2880,13 @@ function syncTouchControls(){
     if(label){button.setAttribute('aria-label',label);button.setAttribute('title',label);}
   }
 }
-function resize(){
+function resize({preserveHeldTouch=false}={}){
   menuBackdropReady=false;
-  const viewport=window.visualViewport,nextWidth=Math.round(viewport?.width||innerWidth),nextHeight=Math.round(viewport?.height||innerHeight);
-  if(screenW!==nextWidth||screenH!==nextHeight)clearInput();
+  const viewport=window.visualViewport,scale=viewport?.scale||1;
+  const nextWidth=Math.round(viewport?.width*scale||innerWidth);
+  const nextHeight=Math.round(viewport?.height*scale||innerHeight);
+  // Mobile browser bars can change the height while a finger holds a control.
+  if(screenW!==nextWidth||screenH!==nextHeight&&!(preserveHeldTouch&&touchLayout))clearInput();
   screenW=nextWidth;screenH=nextHeight;syncTouchControls();
   document.body.style.setProperty('--app-height',screenH+'px');
   if(!renderer||!camera)return;
@@ -3041,15 +3044,20 @@ function cancelTouchThrow(){
   if($('throwAimStatus'))$('throwAimStatus').hidden=true;
 }
 function initInput(){
-  // Safari also exposes page pinch gestures outside the Pointer Events API.
-  function blockBattleGesture(event){
-    if(!touchLayout||phase!=='playing')return;
-    if(event.type==='touchstart'&&event.touches.length<2)return;
-    if(event.type==='touchmove'&&event.touches.length<2&&event.target.closest?.('#upgradePanel'))return;
+  // Safari can ignore viewport scale limits. Cancel its pinch events on every screen.
+  function blockPageZoom(event){
+    if((event.type==='touchstart'||event.type==='touchmove')&&event.touches.length<2)return;
     if(event.type==='wheel'&&!event.ctrlKey&&!event.metaKey)return;
     if(event.cancelable)event.preventDefault();
   }
-  for(const name of ['gesturestart','gesturechange','touchstart','touchmove','wheel','selectstart','contextmenu']){
+  for(const name of ['gesturestart','gesturechange','touchstart','touchmove','wheel']){
+    document.addEventListener(name,blockPageZoom,{capture:true,passive:false});
+  }
+  function blockBattleGesture(event){
+    if(!touchLayout||phase!=='playing')return;
+    if(event.cancelable)event.preventDefault();
+  }
+  for(const name of ['selectstart','contextmenu']){
     document.addEventListener(name,blockBattleGesture,{passive:false});
   }
   $('startButton').onclick=()=>startGame();$('retryButton').onclick=()=>startGame(testRun?activeStartingLevel:1,{test:testRun,resume:!testRun,city:activeCity});
@@ -3194,7 +3202,7 @@ function initInput(){
     bindAction(id,()=>{pointer.active=false;keys.add(code);},()=>keys.delete(code));
   }
   window.addEventListener('resize',resize);
-  window.visualViewport?.addEventListener('resize',resize);
+  window.visualViewport?.addEventListener('resize',()=>resize({preserveHeldTouch:true}));
   for(const query of ['(pointer:coarse)','(any-pointer:coarse)'])matchMedia(query).addEventListener?.('change',syncTouchControls);
   for(const element of [stick,$('combatDock')])element?.addEventListener('contextmenu',e=>e.preventDefault());
 }

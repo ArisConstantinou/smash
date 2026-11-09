@@ -1315,7 +1315,7 @@ test('pause, blur and a changed mobile viewport clear gesture ownership without 
   }
 });
 
-test('an unchanged resize keeps a gesture active while Safari viewport changes resize the real renderer and camera', () => {
+test('a Safari browser bar resize preserves held controls while rotation resets them', () => {
   touchArena(() => {
     moveStick('pointerdown', 1, 0, 101);
     pointerEvent('guardButton', 'pointerdown', { pointerId: 202 }); playerSteps(.05);
@@ -1327,8 +1327,9 @@ test('an unchanged resize keeps a gesture active while Safari viewport changes r
     close((api.camera.right - api.camera.left) / (api.camera.top - api.camera.bottom), 390 / 700);
     assert.equal(elements.get('fxCanvas').height, 700);
     assert.equal(document.body.style['--app-height'], '700px');
-    close(api.touch.x, 0); close(api.touch.y, 0); assert.equal(api.guarding, false);
+    assert.ok(api.touch.x > .99 && api.guarding, 'A change in visible height must not drop either thumb');
     setViewport(844, 390, { coarse: true });
+    close(api.touch.x, 0); close(api.touch.y, 0); assert.equal(api.guarding, false);
     assert.equal(api.renderer.width, 844); assert.equal(api.renderer.height, 390);
     close((api.camera.right - api.camera.left) / (api.camera.top - api.camera.bottom), 844 / 390);
     assert.equal(document.body.dataset.touchControls, 'true');
