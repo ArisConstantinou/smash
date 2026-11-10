@@ -27,7 +27,7 @@
   <meta name="description" content="IRONFALL: Ένα retro 3D παιχνίδι καταστροφής και επιβίωσης. Σήκωσε το σφυρί, σπάσε την πόλη και αντιμετώπισε την ορδή.">
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="./style.css?v=20261109.8">
+  <link rel="stylesheet" href="./style.css?v=20261110-tank-marker">
   <link rel="stylesheet" href="./controls.css?v=20261109-recovery">
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
   <link rel="stylesheet" href="./level-picker.css?v=20261109-jungle-select">
@@ -400,6 +400,7 @@
       </div>
       <canvas id="minimap" width="140" height="140" aria-label="Χάρτης με τον παίκτη και τους εχθρούς"></canvas>
       <div class="map-legend"><span><i class="player-dot"></i> Εσύ</span><span><i class="enemy-dot"></i> Εχθρός</span><span><i class="miniboss-dot"></i> Mini</span><span><i class="boss-dot"></i> Boss</span></div>
+      <div id="tankMapKey" class="tank-map-key" hidden><span><i aria-hidden="true"></i><span id="tankMapDistance"></span></span><span id="chipMapKey" hidden><i aria-hidden="true"></i>Chip</span></div>
     </aside>
 
     <div id="throwAimStatus" class="throw-aim-status" role="status" aria-live="polite" hidden></div>
@@ -582,6 +583,6 @@
       "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261110-shield-trees"></script>
+  <script type="module" src="./game.js?v=20261110-tank-shield"></script>
 </body>
 </html>

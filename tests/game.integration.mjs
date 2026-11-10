@@ -4564,10 +4564,15 @@ test('recovered siege tank saves its charge, earns pilot XP and ejects before de
     const recovery=()=>api.siegeTank.updateRecovery(1/60,{world:api.world,player:api.player,camera:api.camera});
     let tank=api.siegeTank;
     assert.equal(tank.state,'broken');
+    assert.equal(tank.discovered,false);
     assert.equal(tank.dropChip(api.world,{x:0,z:0}),true);
     assert.equal(tank.dropChip(api.world,{x:0,z:0}),false);
+    api.persistCharacter();api.startGame(1,{resume:true,camps:false,civilians:false});
+    tank=api.siegeTank;
+    assert.equal(tank.discovered,true);
+    assert.ok(tank.chip);
     Object.assign(api.player,{x:tank.chip.position.x,z:tank.chip.position.z,y:0});
-    recovery();assert.equal(tank.hasChip,true);
+    recovery();assert.equal(tank.hasChip,true);assert.equal(tank.discovered,true);
     Object.assign(api.player,{x:tank.body.x,z:tank.body.z+4.6,y:0});
     key('KeyC',true);key('KeyC',false);
     assert.equal(tank.state,'charging');assert.equal(tank.timer,5);
@@ -4606,7 +4611,7 @@ test('recovered siege tank saves its charge, earns pilot XP and ejects before de
     recovery();assert.equal(tank.state,'destroyed');assert.equal(api.player.hp,pilotHP);
     assert.equal(api.mountWeapons.bursts.length,1);
     api.startGame(1,{resume:true,camps:false,civilians:false});
-    assert.equal(api.siegeTank.state,'destroyed');assert.equal(api.siegeTank.model,null);
+    assert.equal(api.siegeTank.state,'destroyed');assert.equal(api.siegeTank.model,null);assert.equal(api.siegeTank.discovered,false);
   }finally{
     if(previous===undefined)storage.delete(saveKey);
     else storage.set(saveKey,previous);

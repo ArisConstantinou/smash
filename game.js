@@ -1,4 +1,4 @@
-import {createMountWorkshop} from './mount-workshop.js?v=20261110-shield';
+import {createMountWorkshop} from './mount-workshop.js?v=20261110-tall-rider';
 import {createSaveStore} from './save-store.js?v=20261108-armory1';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-loot1';
 import {createWeaponModel} from './armory-models.js?v=20261109-trophies1';
@@ -8,8 +8,8 @@ import {resolveArmory,armoryAvailable,armoryStats,blueprint,awardBossWeapon,awar
 import {CAMP_RARE_CHANCE,WAVE_RARE_CHANCE,nextRareWeapon,patrolIntent} from './expedition-enemies.js?v=1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {MountWeapons} from './mount-weapons.js?v=20261110-tank-drive';
-import {SiegeTank,SIEGE_HP,SIEGE_SONIC_RANGE,SIEGE_SONIC_ANGLE} from './siege-tank.js?v=20261110-tank-drive';
-import {MountRide} from './mount-ride.js?v=20261108-workshop1';
+import {SiegeTank,SIEGE_HP,SIEGE_SONIC_RANGE,SIEGE_SONIC_ANGLE} from './siege-tank.js?v=20261110-tank-marker';
+import {MountRide} from './mount-ride.js?v=20261110-tall-rider';
 import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261109-loot1';
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
 import {HydrantEffects} from './hydrant-effects.js?v=20261108-props1';
@@ -27,7 +27,7 @@ import {selectThrowLock,previewThrowChain,punchStats,samplePunchMotion,nearestPi
 import {findGeometryRest,geometryRestValid} from './weapon-rest.js?v=20261107-forge9';
 import {bodyMass,enemyLevel,enemyHealthColor,isVehicle,kickStats,kickVelocity,transferMomentum,wallSlamResponse,firstVehicleContact,sampleKickMotion} from './kick-physics.js?v=20261108-mount1';
 import * as THREE from './vendor/three.module.js';
-import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261110-shield';
+import {makeWarrior,makeEnemy,makeTreasure} from './models.js?v=20261110-shield-carry';
 import {makeCityEnemy,installEnemyHead} from './enemy-models.js?v=20261110-tank-drive';
 import {createWorld} from './world.js?v=20261110-falling-trees';
 import {createJungleRavine,RAVINE_ID} from './jungle-ravine.js?v=falling-trees';
@@ -1089,7 +1089,7 @@ function killEnemy(e,credited=true){
     const reward=e.type==='siegeTransformer'?'w19':e.type==='hollowMarshal'?'w20':null;
     if(reward)dropWeapon(e,reward);
     if(credited&&e.type==='siegeTransformer'&&siegeTank?.dropChip(world,e)){
-      toast('ΕΠΕΣΕ ΤΟ CHIP ΚΙΝΗΤΗΡΑ','Σήκωσέ το και βρες το σπασμένο άρμα στον χάρτη.','#a6ecd7');persistCharacter();
+      toast('ΑΡΜΑ ΣΤΟΝ ΧΑΡΤΗ','Πάρε το πορτοκαλί chip και πήγαινε στο γαλάζιο άρμα. Κοντά του πάτησε C ή το κουμπί επιβίβασης.','#a6ecd7');persistCharacter();
     }
   }
   if(e.rareWeapon)dropWeapon(e,e.rareWeapon);
@@ -2817,7 +2817,7 @@ function updatePlayer(dt){
   updateHammerAura();
 }
 function poseShieldKneel(u,blend,moving){
-  const thighLength=.30,shinLength=.22,hipHeight=u.legRest?.height??.62;
+  const {thighLength,shinLength,height:hipHeight}=u.legRest;
   const hipDrop=.22;
   const phase=player.walk*1.8;
   u.body.position.y-=hipDrop*blend;
@@ -2901,7 +2901,8 @@ function poseHero(dt,moving=false){
     const brace=scream?screamBrace(scream.age)*(.76+.24*scream.profile.power):screamReleaseBrace*smooth(screamRecover/SCREAM_RECOVERY);
     const lean=.31*brace,hipHeight=u.legRest?.height??.62;
     const kneeBend=!moving&&!leap&&dashTime<=0?-.40*Math.max(0,brace):0;
-    const hipsBack=.30*Math.sin(kneeBend),hipsDown=.30*(1-Math.cos(kneeBend));
+    const thighLength=u.legRest.thighLength;
+    const hipsBack=thighLength*Math.sin(kneeBend),hipsDown=thighLength*(1-Math.cos(kneeBend));
     // Pivot at the pelvis. Counter-rotate the shins to keep the soles flat
     // while the thighs flex and the pelvis shifts down and back.
     u.body.rotation.x+=lean;
@@ -2920,7 +2921,7 @@ function poseHero(dt,moving=false){
   u.setStance?.(stance);
   const rest=u.weaponRest||{x:.55,y:0,z:-.72},rp=u.weaponRestPosition||{x:0,y:1.04,z:.38};
   const rig=u.weaponRig,restQuaternion=new THREE.Quaternion().setFromEuler(new THREE.Euler(rest.x,rest.y,rest.z));
-  rig.position.set(rp.x,rp.y,rp.z);rig.quaternion.copy(restQuaternion);
+  rig.position.set(rp.x,rp.y-.12*kneel,rp.z);rig.quaternion.copy(restQuaternion);
   u.setReach?.(Math.max(.65,stats.range+(swing?swing.q*1.4:0)-.55-(u.getHeadForwardExtent?.()||.52*stats.size)-.43));
   if(swing){
     if(swing.blocked){
@@ -3344,13 +3345,33 @@ function drawMinimap(){
   if(encounter?.entry){marker(encounter.entry.location,'mini');minis++;}
   const hasBoss=!!boss&&!boss.dead;
   if(hasBoss)marker(boss.state==='enter'&&boss.entry?.stage!=='roar'?boss.entry.location:boss,'boss');
-  if(siegeTank?.model?.visible&&!siegeTank.active){
-    const position=siegeTank.chip?.position??siegeTank.body,x=clamp(px(position),5,w-5),y=clamp(pz(position),5,h-5);
-    c.fillStyle='#a6ecd7';c.fillRect(x-3,y-3,6,6);c.strokeStyle='#183135';c.lineWidth=1.5;c.strokeRect(x-3,y-3,6,6);
+  const tank=siegeTank?.discovered&&!siegeTank.active?siegeTank:null;
+  const chip=tank?.chip?.position;
+  if(tank){
+    const x=clamp(px(tank.body),10,w-10),y=clamp(pz(tank.body),10,h-10);
+    c.fillStyle='#10242a';c.strokeStyle='#8ff8ff';c.lineWidth=2;
+    c.beginPath();c.arc(x,y,8,0,Math.PI*2);c.fill();c.stroke();
+    c.fillStyle='#8ff8ff';c.fillRect(x-4.5,y-2,9,5);c.fillRect(x-1,y-4,6,2);
+    if(chip){
+      const cx=clamp(px(chip),6,w-6),cy=clamp(pz(chip),6,h-6);
+      const [markerX,markerY]=[[0,0],[0,-15],[15,0],[0,15],[-15,0]]
+        .map(([dx,dy])=>[clamp(cx+dx,6,w-6),clamp(cy+dy,6,h-6)])
+        .find(([mx,my])=>Math.hypot(mx-x,my-y)>13&&Math.hypot(mx-playerX,my-playerY)>11)??[cx,cy];
+      c.strokeStyle='#ffc068';c.lineWidth=1;c.beginPath();c.moveTo(cx,cy);c.lineTo(markerX,markerY);c.stroke();
+      c.fillStyle='#ffc068';c.strokeStyle='#10242a';c.lineWidth=2;c.beginPath();
+      c.moveTo(markerX,markerY-5);c.lineTo(markerX+5,markerY);c.lineTo(markerX,markerY+5);c.lineTo(markerX-5,markerY);c.closePath();c.fill();c.stroke();
+    }
+  }
+  const tankKey=$('tankMapKey');
+  if(tankKey){
+    tankKey.hidden=!tank;
+    const caption=tank?'Άρμα · '+Math.round(Math.hypot(tank.body.x-player.x,tank.body.z-player.z))+' μ.':'';
+    if($('tankMapDistance').textContent!==caption)$('tankMapDistance').textContent=caption;
+    $('chipMapKey').hidden=!chip;
   }
   c.save();c.translate(playerX,playerY);c.rotate(angle-Math.atan2(facing.x,facing.z));
   c.fillStyle='#83f4e7';c.strokeStyle='#071418';c.lineWidth=2;c.beginPath();c.moveTo(0,7);c.lineTo(-5,-4.5);c.lineTo(0,-2);c.lineTo(5,-4.5);c.closePath();c.fill();c.stroke();c.restore();
-  const label='Χάρτης: '+ordinary+' εχθροί, '+minis+' mini-boss, '+(hasBoss?'ο Κολοσσός είναι ενεργός':'ο Κολοσσός δεν έχει εμφανιστεί');
+  const label='Χάρτης: '+ordinary+' εχθροί, '+minis+' mini-boss, '+(hasBoss?'ο Κολοσσός είναι ενεργός':'ο Κολοσσός δεν έχει εμφανιστεί')+(tank?', άρμα πολιορκίας':'')+(chip?', chip κινητήρα':'');
   if(map.getAttribute('aria-label')!==label)map.setAttribute('aria-label',label);
 }
 function screenPoint(x,y,z){tempV.set(x,y,z).project(camera);return {x:(tempV.x*.5+.5)*screenW,y:(-.5*tempV.y+.5)*screenH,inside:tempV.z<1&&tempV.z>-1};}

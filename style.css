@@ -1212,6 +1212,11 @@ body[data-touch-controls="true"] .boss-panel{
 .map-legend .miniboss-dot{background:#f4abff;transform:rotate(45deg);scale:.82}
 .map-legend .boss-dot{position:relative;background:#ffc568;border-radius:50%}
 .map-legend .boss-dot::after{content:'+';position:absolute;inset:0;color:#452919;font:700 9px/8px Arial;text-align:center}
+.tank-map-key:not([hidden]){grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:1px 8px;margin-top:5px;padding-top:3px;border-top:1px solid #46696b;color:#8ff8ff;font:700 12px/16px var(--body)}
+.tank-map-key>span:not([hidden]){display:flex;align-items:center;gap:4px;white-space:nowrap}
+.tank-map-key i{width:9px;height:9px;flex:none;border:2px solid currentColor;border-radius:50%}
+#chipMapKey{color:#ffc068}
+#chipMapKey i{border:0;border-radius:0;background:currentColor;transform:rotate(45deg) scale(.75)}
 body[data-touch-controls="true"] .minimap-panel{width:120px}
 body[data-touch-controls="true"] #minimap{width:94px!important;height:94px!important}
 body[data-touch-controls="true"] .boss-panel{width:calc(100vw - var(--mobile-safe-left) - var(--mobile-safe-right) - 130px)}

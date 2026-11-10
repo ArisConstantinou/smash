@@ -374,3 +374,9 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 - All reachable jungle trees have a damageable trunk. Jungle and city trees now fall as intact meshes, leave a landed collider, and skip building fracture debris.
 - The warrior starts with a wooden shield and one-handed weapon. RMB and touch defense raise the left shield and blend into a guarded crouch. Independently articulated hips, knees and ankles preserve planted feet while taking short guarded steps. The shield adds a separately gated close contact during the existing 360-degree attack.
 - WebGPU captures compare the previous guard with the new stance and show continuous guarded walking. The tree test knocked down a previously invulnerable jungle trunk using actual mouse attacks.
+
+## Siege Tank discovery and one-handed carry
+
+- Defeating the Siege Transformer reveals the cyan wreck marker and its distance. A separate amber diamond tracks the engine chip until pickup. The wreck remains on the map through charging and survives a city checkpoint.
+- The right hand carries the weapon. The left hand holds a brighter-rimmed shield farther from the torso. Both legs are slightly longer and the torso is narrower. Guard and mounted pedal contacts use the updated joint lengths.
+- Desktop and touch-emulated WebGPU checks exercised the first mini-boss reward, both minimap marks, chip pickup, the five-second repair and boarding. Captures are in the registered `tests/tank-shield` folder.

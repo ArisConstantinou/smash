@@ -309,22 +309,22 @@ export function makeWarrior() {
   box(body, P.gold, 0, 1.96, -.025, .06, .12, .29);
   compact(body);
 
-  const legRest = Object.freeze({ spread: .25, height: .62, splay: .055, turnOut: .055 });
+  const legRest = Object.freeze({ spread: .235, height: .71, thighLength: .345, shinLength: .265, splay: .055, turnOut: .055 });
   const leftLeg = restLimb(limb(root, 'leftLeg', -legRest.spread, legRest.height, 0, P.blueDark, P.steel, P.ink), -1, legRest.splay, legRest.turnOut);
   const rightLeg = restLimb(limb(root, 'rightLeg', legRest.spread, legRest.height, 0, P.blueDark, P.steel, P.ink), 1, legRest.splay, legRest.turnOut);
   // Preserve the leg roots used by walking, but give kicks an actual knee.
   for(const leg of [leftLeg,rightLeg]){
     // Existing storm-tier geometry remains the reference for normal walking;
     // replacement equipment is authored into these two independent pieces.
-    const thigh=group(leg,'thigh'),shin=group(leg,'shin',0,-.30,0);
-    const ankle=group(shin,'ankle',0,-.22,0);
+    const thigh=group(leg,'thigh'),shin=group(leg,'shin',0,-legRest.thighLength,0);
+    const ankle=group(shin,'ankle',0,-legRest.shinLength,0);
     leg.userData.thigh=thigh;leg.userData.shin=shin;leg.userData.ankle=ankle;
     leg.userData.foot=group(ankle,'footContact',0,0,.27);
   }
   // Articulated arms connect fixed shoulders to hero-owned gauntlets. A hand
   // can follow a shield handle, a hammer grip or a throwing follow-through.
   function grippingArm(side) {
-    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .51, 1.28, .015);
+    const arm = group(root, side < 0 ? 'leftArm' : 'rightArm', side * .46, 1.37, .015);
     const pauldron = group(arm, 'pauldron');
     box(pauldron, P.steel, side * .025, -.015, 0, .36, .23, .44, 0, 0, side * .13);
     box(pauldron, P.pale, side * .03, .095, .025, .29, .065, .35, 0, 0, side * .13);
@@ -350,7 +350,7 @@ export function makeWarrior() {
     { arm: rightArm, position: rightArm.position.clone() },
   ];
 
-  const cape = group(root, 'cape', 0, 1.32, -.27);
+  const cape = group(root, 'cape', 0, 1.41, -.27);
   box(cape, 0xc86035, 0, -.25, -.06, .6, .59, .07, -.17);
   box(cape, P.hot, -.13, -.62, -.14, .38, .27, .08, -.25, 0, -.06);
   box(cape, 0x923b30, .22, -.58, -.13, .18, .24, .08, -.25, 0, .08);
@@ -447,14 +447,14 @@ export function makeWarrior() {
   function setUnarmedPose(pose) { unarmedPose = pose; }
   function setRidingAnchor(anchor) { ridingAnchor=anchor; }
   let shieldEquipped = true;
-  const shieldFront = new THREE.Vector3(-.72, 1.025, .5);
+  const shieldFront = new THREE.Vector3(-.83, .99, .35);
   const shieldBack = new THREE.Vector3(0, 1.11, -.55);
   const shieldPath = new THREE.CubicBezierCurve3(shieldFront,
     new THREE.Vector3(-1.04, 1.84, .42), new THREE.Vector3(-.91, 1.88, -.74), shieldBack);
   const shieldRaised = new THREE.Vector3(-.27, 1.42, .66);
   const shieldStrike = new THREE.Vector3(-.86, 1.13, .62);
   const shieldLevel = new THREE.Quaternion();
-  const shieldFrontQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.06, -.25, -.13));
+  const shieldFrontQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.25, -.78, -.10));
   const shieldBackQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(.07, Math.PI, .04));
   const leftJoinControl = new THREE.Vector3(-.75, 1.43, .16);
   const emptyRight = new THREE.Vector3(.61, 1.22, .66);
@@ -619,8 +619,7 @@ export function makeWarrior() {
     weaponRest.z = -.24 + (-.72 + .24) * stance;
     weaponRestPosition.set(.53 * (1 - stance), .98 + .06 * stance, .23 + .15 * stance);
     if (equipmentTier < 2) {
-      // Carry the heavy wood forward with bent elbows, rather than balancing
-      // it upright on one wrist. Both anchor points stay on the real handle.
+      // Carry the club on the weapon side with a relaxed elbow.
       weaponRest.x = .30 + .56 * stance;
       weaponRest.z = -.23 - .05 * stance;
       weaponRestPosition.set(.48 - .60 * stance, .93 - .03 * stance, .25 + .05 * stance);
@@ -930,6 +929,12 @@ export function makeWarrior() {
     // brighten the hammer without turning the survivor's skin electric blue.
     const bodyClones = new Map(), weaponClones = new Map(), all = [], weaponMats = [];
     for (const [slot, children] of parts) for (const child of children) {
+      if (child.isMesh && slot === body) {
+        child.position.y += legRest.height - .62;
+        child.scale.x *= .93;
+      }
+      if (child.isMesh && slot.name === 'thigh') child.scale.y *= legRest.thighLength / .30;
+      if (child.isMesh && slot.name === 'shin') child.scale.y *= legRest.shinLength / .22;
       child.traverse(mesh => {
         if (!mesh.isMesh) return;
         mesh.userData.equipmentTier = tier;
@@ -1073,8 +1078,9 @@ export function makeWarrior() {
       box(g, 0x502e2e, .21, -.55, -.13, .17, .20, .08, -.25, 0, .08);
     });
     draw(shield, g => {
-      const radius = tier < 2 ? .40 : tier === 2 ? .43 : .50;
-      cylinder(g, tier < 2 ? 0x564133 : 0x697b7f, 0, -.035, 0, radius, radius, .12, 10, Math.PI / 2);
+      const radius = tier < 3 ? .46 : .50;
+      cylinder(g, tier < 2 ? 0x9aafaa : 0x697b7f, 0, -.035, 0, radius, radius, .12, 12, Math.PI / 2);
+      cylinder(g, tier < 2 ? 0x765137 : 0x4c5654, 0, -.035, -.06, radius - .055, radius - .055, .045, 12, Math.PI / 2);
       cylinder(g, tier < 2 ? 0x98683e : tier === 2 ? 0x6c5944 : 0x3b5966, 0, -.035, .075, radius - .07, radius - .07, .055, 10, Math.PI / 2);
       for (const x of [-.16, .16]) box(g, iron, x, -.035, .115, .05, radius * 1.45, .035);
       for (let rivet = 0; rivet < 8; rivet++) {

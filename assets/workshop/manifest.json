@@ -6,7 +6,7 @@
   "rank": 1,
   "chassisCell": 63,
   "inputs": {
-    "models.js": "781b8c4f213cda2937d1aeba9ad29886452b494502f74065d9825c224fa5fbe8",
+    "models.js": "ed007033e9ea366245f7245be902b6935bc09febf997c690bbb592343ca0299e",
     "mount-models.js": "6c6d90d7de33116979f3129b1c123703fe3d9117efcc2518fc662e7b2bc2c674",
     "player-customization.js": "b7bdb8fc62ff1afc59b4f5ccf1ad6e54993aa7ecd0254684e5157a5493df5170",
     "equipment-shapes.js": "651f26789f7beb1d34439facdab33db3d6a99762fc2cd8a4523050c88d5a532b",
@@ -21,10 +21,10 @@
     "chassis-motorcycle.png": "e1f67fefffbd8ed0e8b86ae6700f6cf15382aab1390e535bad44b45cdf8eca80",
     "scifi.png": "14560bc9e13bbc34e12967312e6b4361c096fbbe8618fcf11bb3f94e3e96dd62",
     "chassis-scifi.png": "18f54df1d045f77ebd31ffa9dce0be806b96cca07e998efd51f2d281c05a9009",
-    "player-0.png": "e3e296ffa3221c66e8670fca14bce4fb826b89b6f14f2d158ffee739a370ef0b",
-    "player-1.png": "0cfc810666419cfd01dc2b2ae1d339b7d7c0b9d28ed96ae44e40aa0326d6f937",
-    "player-2.png": "e8128901557377cecbf67f4b193e98f2abdd64419269ecb9d4531e707ef283c2",
-    "player-3.png": "b65d75f1afb9611bb4590352cfd7f0a6d1c73cd3da6111a45c79bfe4706c71ee",
-    "player-4.png": "e990e90b13e166c08a5babdf6c234b975076c5975c483d0d93f7ecabd1f13cd8"
+    "player-0.png": "b3fbc9d7c8ee67e0dac257ca4ba9645ff491099317b81338776c7f75329dd76a",
+    "player-1.png": "94b585a546f9acd0530adea29d4b176985eb50dd4f8bc5c14b5474a5cc370a4f",
+    "player-2.png": "19cb9e385a270592d6e0872ac92a3ac759526b4c59f8d77477ef3a4fe371e89a",
+    "player-3.png": "0400024e10bad5408a14a7bfe87ab10744794af6b7a0009bb786e6d291818fd4",
+    "player-4.png": "feecbdfa7f9e75f39abf4dc56e8fc6260a07598b4cc2bef59f6ea59ff8266215"
   }
 }

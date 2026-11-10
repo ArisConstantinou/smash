@@ -1,11 +1,11 @@
 import * as THREE from './vendor/three.module.js';
 import {makeWarrior} from './models.js?v=20261110-shield';
-import {createMountModel} from './mount-models.js?v=20261108-workshop1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261108-startup1';
+import {createMountModel} from './mount-models.js?v=20261108-workshop1';import {poseMountedRider,resetMountedRider} from './mount-rider.js?v=20261110-tall-rider';
 import {applyArmoryCustomization} from './armory-customization.js?v=20261109-trophies1';
 import {armoryArt} from './armory-art.js?v=20261109-trophies1';
 import {WEAPON_BLUEPRINTS,SHIELD_BLUEPRINTS,armoryParts,armoryStats,armoryAvailable,equipBlueprint,equipArmoryPart,paintArmoryPart,purchaseArmoryPart,armoryQuote,resolveArmory,blueprint,BOSS_WEAPON_INFO,awardBossWeapon} from './armory-rules.js?v=20261109-loot1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
-import {partArt,toolArt} from './workshop-art.js?v=20261110-shield';
+import {partArt,toolArt} from './workshop-art.js?v=20261110-shield-carry';
 import {equipmentBuilder} from './equipment-shapes.js?v=20261108-workshop1';
 import {armoryPalette} from './armory-geometry.js';
 import {MOUNT_FAMILIES,partDefinitions,partRank,garageParts,upgradeQuote,purchasePart,equipPart,restoreGarage,mountStats,playerCustomStats,familyUnlocked,resolveMount} from './mount-rules.js?v=20261109-loot1';

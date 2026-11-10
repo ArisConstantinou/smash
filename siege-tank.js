@@ -1,5 +1,5 @@
 import * as THREE from './vendor/three.module.js';
-import {MountRide} from './mount-ride.js?v=20261108-workshop1';
+import {MountRide} from './mount-ride.js?v=20261110-tall-rider';
 import {makeSiegeEngineChip,makeSiegeRecoveryTank} from './enemy-models.js?v=20261110-tank-drive';
 import {LevelStorm} from './level-storm.js?v=20261109-recovery';
 import {ScreamWave} from './scream.js?v=20261109-shout-brace';
@@ -57,7 +57,9 @@ export class SiegeTank extends MountRide {
     if(world.river)return;
     this.collision=SHAPES.tank;this.yaw=0;
     const sites=[[-44,22],[-22,44],[-44,0],[44,22],[-66,44],[22,44]];
-    const site=sites.find(([x,z])=>this.clear(world,x,z,0,0));
+    const clearSite=([x,z])=>Math.max(Math.abs(x),Math.abs(z))<world.bounds-5&&this.clear(world,x,z,0,0);
+    const roads=world.layout?.roads??[];
+    const site=sites.find(clearSite)??roads.flatMap(x=>roads.map(z=>[x,z])).find(clearSite);
     if(!site)return;
     this.state='broken';this.hp=0;this.timer=0;this.fold=this.foldTarget=1;
     this.speed=this.vertical=this.walk=this.dashTime=this.dashCooldown=this.jumpCooldown=0;
@@ -102,6 +104,8 @@ export class SiegeTank extends MountRide {
     this.chip=makeSiegeEngineChip();this.chip.position.set(location.x,.65,location.z);
     this.scene.add(this.chip);return true;
   }
+
+  get discovered(){return !!this.model&&(!!this.chip||this.hasChip||this.state==='charging'||this.state==='ready'||this.state==='fuse');}
 
   isNear(player){return this.model&&this.state!=='destroyed'&&Math.hypot(player.x-this.body.x,player.z-this.body.z)<6&&Math.abs(player.y-this.body.y)<2;}
 
