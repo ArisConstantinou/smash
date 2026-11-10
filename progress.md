@@ -380,3 +380,9 @@ Original prompt: Extract and use IRONFALL-Performance14-Full-Project.zip in E:\S
 - Defeating the Siege Transformer reveals the cyan wreck marker and its distance. A separate amber diamond tracks the engine chip until pickup. The wreck remains on the map through charging and survives a city checkpoint.
 - The right hand carries the weapon. The left hand holds a brighter-rimmed shield farther from the torso. Both legs are slightly longer and the torso is narrower. Guard and mounted pedal contacts use the updated joint lengths.
 - Desktop and touch-emulated WebGPU checks exercised the first mini-boss reward, both minimap marks, chip pickup, the five-second repair and boarding. Captures are in the registered `tests/tank-shield` folder.
+
+## Siege Tank contact and defenses
+
+- The chassis separates ground enemies from the tracks. A moving hull pushes enemies and a fast tracked ram can crush them. Small melee enemies can grab the flanks of a slow tracked tank, climb onto the deck and damage it.
+- R or the touch shock button discharges electricity around the hull and throws off climbers. It recharges in eight seconds. Folding from walker onto the tracks triggers one ground impact, with a damage wave, dust and suspension compression.
+- Driving shows vehicle actions only. The walker adds a jump, and the on-foot controls return on exit. WebGPU captures and browser evidence are in the registered `tests/siege-contact` folder.

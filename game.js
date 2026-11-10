@@ -8,7 +8,7 @@ import {resolveArmory,armoryAvailable,armoryStats,blueprint,awardBossWeapon,awar
 import {CAMP_RARE_CHANCE,WAVE_RARE_CHANCE,nextRareWeapon,patrolIntent} from './expedition-enemies.js?v=1';
 import {applyPlayerCustomization} from './player-customization.js?v=20261108-workshop1';
 import {MountWeapons} from './mount-weapons.js?v=20261110-tank-drive';
-import {SiegeTank,SIEGE_HP,SIEGE_SONIC_RANGE,SIEGE_SONIC_ANGLE} from './siege-tank.js?v=20261110-tank-marker';
+import {SiegeTank,SIEGE_HP,SIEGE_SONIC_RANGE,SIEGE_SONIC_ANGLE} from './siege-tank.js?v=20261110-hull';
 import {MountRide} from './mount-ride.js?v=20261110-tall-rider';
 import {restoreGarage,playerCustomStats} from './mount-rules.js?v=20261109-loot1';
 import {VehicleEffects,isExplosiveProp,VEHICLE_BLAST_RADIUS,preloadVehicleExplosion} from './vehicle-effects.js?v=20261108-mount1';
@@ -735,7 +735,7 @@ function syncUpgradePanel(){
   }
 }
 function toggleUpgradePanel(force){
-  if(phase!=='playing')return;
+  if(phase!=='playing'||siegeTank?.active&&force!==false)return;
   const wasOpen=upgradePanelOpen;upgradePanelOpen=typeof force==='boolean'?force:!upgradePanelOpen;
   if(upgradePanelOpen&&!wasOpen)upgradeTab=upgradeQueue.length?'powers':'gear';
   renderUpgradePanel();audio.play('ui');
@@ -1017,6 +1017,7 @@ function hitEnemy(e,damage,dir,strength,lift,contact=null,response={}){
     showHitPoints(e,damage);audio.play('hit',.45,{material:'flesh'});
     return;
   }
+  if(e.siegeClimb){e.siegeClimb=null;e.siegeRepel=elapsed+2.5;}
   if(e.encounterLeader){
     const front=-(dir?.x||0)*Math.sin(e.facingYaw||0)-(dir?.z||0)*Math.cos(e.facingYaw||0);
     if(e.type==='siegeTransformer'&&e.fold>.7&&front>.38)damage=Math.max(1,Math.round(damage*.52));
@@ -1405,6 +1406,29 @@ function siegeSonic(origin,direction){
   }
   shake=Math.max(shake,.18);checkGoal();
 }
+function siegeDischarge(tank){
+  const {body}=tank;
+  for(const enemy of enemies){
+    const {gap,dx,dz}=tank.hullContact(enemy);
+    if(!enemy.siegeClimb&&(gap>2.1||Math.abs(enemy.y-body.y)>2.6||
+      world.hasLineOfSight?.(body.x,body.z,enemy.x,enemy.z,1.1)===false))continue;
+    hitEnemy(enemy,92,{x:dx,z:dz},12,2,null,{weapon:'siege-shock',combo:false,stagger:.85});
+    enemy.siegeRepel=elapsed+2.5;
+  }
+  pulse(body.x,body.z,tank.fold===1?5:6,0x8df5ff,.48).position.y=body.y+.12;
+  audio.play('levelStorm',.72);shake=Math.max(shake,.18);
+}
+function siegeGroundImpact(tank){
+  const {x,y,z}=tank.body;
+  mountProjectileBlast({x,y:y+.16,z},124,5.8,null,'siege');
+  pulse(x,z,6.8,0xdfd4b8,.5).position.y=y+.07;
+  for(const side of [-1,1])for(const end of [-1,1]){
+    const p=tank.worldPoint(side*1.8,end*1.1),dir=normalize(p.x-x,p.z-z);
+    impactClouds?.emit(p.x,y+.16,p.z,dir,1.5,false);
+    fragments.add(p.x,y+.12,p.z,4,[0xe1c7a0,0x9f927c,0x6f7e78],5,.09);
+  }
+  audio.play('break',.8);shake=Math.max(shake,.29);
+}
 function initMountWorkshop(){
   const commitWorkshop=context=>{garage=context.garage;let saved=false;if(context.menu){const stored=read('ironfall.character',null);saved=save('ironfall.character',{...stored,character:context.character,levels:stored?.levels||{},garage});updateSavedCharacter();}else{applyStats();saved=persistCharacter();}return !!saved&&!context.test&&JSON.stringify(read('ironfall.character',null)?.garage)===JSON.stringify(garage);};
   mountWorkshop=createMountWorkshop({document,
@@ -1437,7 +1461,9 @@ function toggleMount(){
   if(phase!=='playing'||leap||swing||spin||throwWindup||throwFlight||kick)return false;
   if(!mountRide.active&&(siegeTank?.active||siegeTank?.isNear(player))){
     endScream();cancelAttack();guardHeld=guarding=false;
-    const changed=siegeTank.interact(player,hero,world);syncMountHud();if(changed)persistCharacter();return changed;
+    const changed=siegeTank.interact(player,hero,world);
+    if(siegeTank.active&&upgradePanelOpen)toggleUpgradePanel(false);
+    syncMountHud();if(changed)persistCharacter();return changed;
   }
   mountRide.sync(garage,level);cancelAttack();guardHeld=guarding=false;
   if(!mountRide.active&&boss&&!boss.dead&&!mountRide.clear(beastCollision,player.x,player.z,player.y,hero.rotation.y)){toast('ΔΕΝ ΥΠΑΡΧΕΙ ΧΩΡΟΣ','Απομακρύνσου από τον Κολοσσό.');return false;}
@@ -1463,7 +1489,9 @@ function syncMountHud(){
 }
 function syncSiegeHud(){
   const tank=siegeTank,active=!!tank?.active;
+  const walker=active&&tank.foldTarget===0;
   document.body.dataset.siege=active?'driving':'foot';
+  document.body.dataset.siegeMode=active?(walker?'walker':'tracked'):'foot';
   const near=phase==='playing'&&!mountRide.active&&tank?.isNear(player);
   const warning=$('siegeWarning');
   if(warning){
@@ -1481,13 +1509,23 @@ function syncSiegeHud(){
   }else button.setAttribute('aria-label',mountRide.active?'Αποβίβαση':'Επιβίβαση');
   const guard=$('guardButton');
   if($('guardName'))$('guardName').textContent=active?(touchLayout?'ΠΥΡ.':'ΠΥΡΑΥΛΟΙ'):'ΑΜΥΝΑ';
-  if($('kickName'))$('kickName').textContent=active?'ΜΕΤΑΜΟΡΦΩΣΗ':'ΚΛΩΤΣΙΑ';
+  if($('kickName'))$('kickName').textContent=active?(walker?(touchLayout?'ΠΤΩΣΗ':'ΣΥΝΤΡΙΒΗ'):'ΠΕΡΙΠΑΤΗΤΗΣ'):'ΚΛΩΤΣΙΑ';
   if($('screamName'))$('screamName').textContent=active?(touchLayout?'SONIC':'SONIC BLAST'):'ΚΡΑΥΓΗ';
   $('guardIcon')?.setAttribute('href',active?'#a-siege-missiles':'#a-guard');
   $('guardTouchIcon')?.setAttribute('href',active?'#t-siege-missiles':'#t-guard');
   $('kickIcon')?.setAttribute('href',active?'#a-siege-transform':'#a-kick');
   $('kickTouchIcon')?.setAttribute('href',active?'#t-siege-transform':'#t-kick');
   $('screamIcon')?.setAttribute('href',active?'#a-siege-sonic':'#upgrade-scream');
+  $('screamTouchIcon')?.setAttribute('href',active?'#t-siege-sonic':'#t-scream');
+  $('throwIcon')?.setAttribute('href',active?'#a-siege-shock':'#a-throw');
+  $('throwTouchIcon')?.setAttribute('href',active?'#t-siege-shock':'#t-throw');
+  $('throwName').textContent=active?(touchLayout?'ΣΟΚ':'ΕΚΚΕΝΩΣΗ'):'ΡΙΨΗ';
+  $('dashIcon')?.setAttribute('href',active?'#a-siege-boost':'#a-dodge');
+  $('dashTouchIcon')?.setAttribute('href',active?'#t-siege-boost':'#t-dodge');
+  $('leapIcon')?.setAttribute('href',active?'#a-siege-transform':'#a-leap');
+  $('leapTouchIcon')?.setAttribute('href',active?'#t-siege-transform':'#t-jump');
+  $('leapDesktopName').textContent=active?'ΑΛΜΑ ΠΕΡΙΠΑΤΗΤΗ':'ΨΗΛΟ ΑΛΜΑ';
+  $('dockActions').setAttribute('aria-label',active?'Ενέργειες άρματος':'Ενέργειες πολεμιστή');
   if(!active){
     for(const b of [guard,$('kickButton'),$('screamButton')]){
       const label=b.dataset[touchLayout?'touchLabel':'desktopLabel'];
@@ -1495,20 +1533,24 @@ function syncSiegeHud(){
     }
     return;
   }
-  const walker=tank.foldTarget===0;
   $('attackName').textContent='ΟΒΙΔΕΣ';$('attackIcon')?.setAttribute('href','#a-siege-shells');
   $('attackTouchIcon')?.setAttribute('href','#t-siege-shells');
   $('attackValue').textContent=tank.shellCooldown>0?tank.shellCooldown.toFixed(1)+'s':'4 ΚΑΝΝΕΣ';
   $('guardValue').textContent=tank.aiming?'ΑΦΗΣΕ ΓΙΑ ΒΟΛΗ':tank.missileCooldown>0?tank.missileCooldown.toFixed(1)+'s':'ΚΡΑΤΑ ΓΙΑ ΣΤΟΧΕΥΣΗ';
-  $('kickValue').textContent=walker?'ΠΕΡΙΠΑΤΗΤΗΣ':'ΑΡΜΑ';
+  $('kickValue').textContent=walker?'ΠΤΩΣΗ ΣΤΙΣ ΕΡΠΥΣΤΡΙΕΣ':'ΜΕΤΑΜΟΡΦΩΣΗ';
+  $('throwValue').textContent=tank.shockCooldown>0?tank.shockCooldown.toFixed(1)+'s':'ΕΤΟΙΜΗ';
+  $('throwButton').dataset.cooldown=tank.shockCooldown>0?tank.shockCooldown.toFixed(1):'';
+  $('throwButton').classList.toggle('cooldown',tank.shockCooldown>0);
   $('screamValue').textContent=tank.sonicCooldown>0?tank.sonicCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   $('screamButton').classList.toggle('cooldown',tank.sonicCooldown>0);
   $('guardButton').classList.toggle('active',tank.aiming);
   $('dashName').textContent=walker?'DASH':'BOOST';$('dashValue').textContent=walker?'ΠΑΤΑ SHIFT':'ΚΡΑΤΑ SHIFT';
-  $('leapValue').textContent=walker?'SPACE':'ΣΕ ΜΟΡΦΗ ΠΕΡΙΠΑΤΗΤΗ';
+  $('dashButton').classList.toggle('cooldown',walker&&tank.dashCooldown>0);
+  $('leapButton').classList.toggle('cooldown',walker&&tank.jumpCooldown>0);
+  $('leapValue').textContent=tank.jumpCooldown>0?tank.jumpCooldown.toFixed(1)+'s':'ΕΤΟΙΜΟ';
   $('stanceValue').textContent=walker?'ΠΕΡΙΠΑΤΗΤΗΣ':'ΑΡΜΑ ΠΟΛΙΟΡΚΙΑΣ';
-  $('chargeText').textContent='ΟΒΙΔΕΣ · ΠΥΡΑΥΛΟΙ · SONIC';
-  for(const [id,label] of [['attackButton','Βολή από τέσσερις κάννες.'],['guardButton','Κράτα, σύρε για στόχευση και άφησε για εκτόξευση.'],['kickButton','Εναλλαγή άρματος και περιπατητή.'],['screamButton','Κατευθυντική ηχητική έκρηξη.'],['dashButton',walker?'Dash προς την κίνηση.':'Κράτα για επιτάχυνση.'],['leapButton','Άλμα στη μορφή περιπατητή.']]){
+  $('chargeText').textContent='ΟΒΙΔΕΣ · ΠΥΡΑΥΛΟΙ · ΕΚΚΕΝΩΣΗ · SONIC';
+  for(const [id,label] of [['attackButton','Βολή από τέσσερις κάννες.'],['guardButton','Κράτα, σύρε για στόχευση και άφησε για εκτόξευση.'],['kickButton',walker?'Πέσε στις ερπύστριες και χτύπα το έδαφος.':'Πέρασε στη μορφή περιπατητή.'],['throwButton','Ηλεκτρική εκκένωση γύρω από το άρμα. Ρίχνει όσους έχουν σκαρφαλώσει.'],['screamButton','Κατευθυντική ηχητική έκρηξη.'],['dashButton',walker?'Dash προς την κίνηση.':'Κράτα για επιτάχυνση.'],['leapButton','Άλμα στη μορφή περιπατητή.']]){
     $(id).setAttribute('aria-label',label);$(id).title=label;
   }
 }
@@ -2055,6 +2097,73 @@ function updateEncounterShell(e,dt){
 function moveEnemy(e,dx,dz,walls){
   return world.inRiver?world.moveBody(e,dx,dz,{radius:e.radius,height:e.height}):moveCircle(e,dx,dz,walls,e.radius);
 }
+function updateSiegeClimber(e,tank,dt){
+  const climb=e.siegeClimb;
+  if(!climb)return false;
+  if(!tank?.active||tank.foldTarget!==1||tank.airborne||Math.abs(tank.speed)>9.5){
+    e.siegeClimb=null;e.siegeRepel=elapsed+2.5;
+    const dir=tank?.hullContact(e);
+    if(dir){e.vx=dir.dx*4;e.vz=dir.dz*4;e.vy=1.5;}
+    return false;
+  }
+  climb.age+=dt;
+  const t=clamp(climb.age/1.05,0,1),rise=smooth(t);
+  const deck=tank.model.userData.body.position.y+1.19;
+  const point=tank.worldPoint(lerp(climb.startX,climb.side*1.36,smooth((t-.38)/.62)),climb.z);
+  Object.assign(e,point,{y:tank.body.y+deck*rise,vx:0,vy:0,vz:0,supportY:tank.body.y+deck*rise});
+  e.facingYaw=tank.yaw-climb.side*Math.PI*.5;e.walk+=dt*(t<1?9:4);
+  if(t===1&&climb.age>=climb.nextHit){
+    climb.nextHit=climb.age+1.25;
+    hurtPlayer(Math.max(8,e.damage*.55),0,0,false);
+  }
+  return true;
+}
+function resolveSiegeHull(e,canClimb){
+  const tank=siegeTank;
+  if(!tank?.active||e.dead||e.siegeClimb||e.y+e.height<tank.body.y+.12||
+    e.y>=tank.body.y+(tank.fold===1?2.2:4.35))return;
+  if(Math.abs(e.x-tank.body.x)>6+e.radius||Math.abs(e.z-tank.body.z)>6+e.radius)return;
+  const contact=tank.hullContact(e);
+  if(contact.gap>.12)return;
+  const {dx,dz}=contact;
+  const forward={x:Math.sin(tank.yaw),z:Math.cos(tank.yaw)};
+  const moving=tank.dashTime>0?tank.dashDirection:forward;
+  const speed=tank.dashTime>0?17:tank.speed;
+  const closing=(moving.x*dx+moving.z*dz)*speed;
+  if(canClimb&&tank.fold===1&&tank.foldTarget===1&&!tank.airborne&&!tank.shockTime&&Math.abs(speed)<2.8&&
+    contact.flank&&e.state==='walk'&&e.stagger<=0&&e.y-tank.body.y<.3&&!e.miniBoss&&e.radius<.75&&e.attackKind!=='ranged'&&
+    elapsed>=(e.siegeRepel||0)&&e.mesh.userData.leftArm&&e.mesh.userData.rightArm){
+    const side=contact.local.x<0?-1:1;
+    const z=clamp(contact.local.z,-1.45,1.05);
+    const others=enemies.filter(n=>n.siegeClimb?.side===side);
+    if(others.length<2&&!others.some(n=>Math.abs(n.siegeClimb.z-z)<1)){
+      e.siegeClimb={side,z,startX:side*(2.20+e.radius),age:0,nextHit:1.72};
+      e.impact=null;
+      return;
+    }
+  }
+  if(contact.gap>=0)return;
+  const push=-contact.gap+.025;
+  const walls=nearbyObjects(e.x,e.z,push+e.radius+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON);
+  moveEnemy(e,dx*push,dz*push,walls);
+  const pinned=tank.hullContact(e).gap<-.08;
+  if(pinned){
+    for(const side of [-1,1]){
+      const x=e.x+dx*push+dz*side*(e.radius+.6),z=e.z+dz*push-dx*side*(e.radius+.6);
+      if(tank.hullContact({x,z,radius:e.radius}).gap<0||!world.clearBody(x,z,e.y,e.radius,e.height))continue;
+      moveEnemy(e,x-e.x,z-e.z,walls);
+      if(tank.hullContact(e).gap>=-.08)break;
+    }
+  }
+  if(closing>3.1&&elapsed>=(e.siegeRamAt||0)){
+    e.siegeRamAt=elapsed+.44;e.siegeRepel=elapsed+1.25;
+    const trapped=tank.hullContact(e).gap<-.24;
+    const crush=tank.fold===1&&(closing>7||trapped);
+    const damage=Math.round((crush?28:10)+closing**2*(crush?2.7:1.45));
+    hitEnemy(e,trapped&&crush&&!e.miniBoss?Math.max(e.hp,damage):damage,{x:dx,z:dz},closing,crush?1.1:.24,null,{weapon:'siege-ram',combo:false});
+    shake=Math.max(shake,crush?.16:.065);
+  }
+}
 function updateEnemies(dt){
   function advanceBody(e){
     const oldY=e.y;
@@ -2101,6 +2210,14 @@ function updateEnemies(dt){
     if(u.leftArm){u.leftArm.rotation.x=e.state==='windup'?-1.3:.1+Math.sin(e.walk)*.23;u.leftArm.rotation.z=u.leftArm.userData.restRoll||0;}
     if(u.rightArm){u.rightArm.rotation.x=e.state==='windup'?-1.3:.1-Math.sin(e.walk)*.23;u.rightArm.rotation.z=u.rightArm.userData.restRoll||0;}
     u.animate?.(e,dt,visualTime);
+    if(e.siegeClimb){
+      const climbing=e.siegeClimb.age<1.05,step=Math.sin(e.walk);
+      if(u.body){u.body.rotation.x=climbing?.30:.23;u.body.rotation.z=step*.04;}
+      u.leftArm.rotation.x=climbing?-2.05+step*.38:-.85-step*.55;
+      u.rightArm.rotation.x=climbing?-2.05-step*.38:-.85+step*.55;
+      if(u.leftLeg)u.leftLeg.rotation.x=climbing?-.40+step*.50:-.25;
+      if(u.rightLeg)u.rightLeg.rotation.x=climbing?-.40-step*.50:.20;
+    }
     if(e.state==='windup'&&e.attackSpecial){
       if(e.type==='siegeTransformer')u.body.rotation.y=-.22;
       else if(u.rightArm){u.rightArm.rotation.x=-1.95;u.rightArm.rotation.z=.2;u.leftArm.rotation.x=-.45;}
@@ -2133,11 +2250,14 @@ function updateEnemies(dt){
     e.facingYaw??=e.mesh.rotation.y;
     e.flash=Math.max(0,e.flash-dt);e.stagger=Math.max(0,e.stagger-dt);e.hurtTimer=Math.max(0,e.hurtTimer-dt);
     applyEnemyFlash(e.materials,e.flash/.16);
+    if(updateSiegeClimber(e,siegeTank,dt)){poseBody(e);continue;}
     const candidate=e.wildlifeRival;
     const rival=candidate&&!candidate.dead&&e.attackKind!=='ranged'&&Math.hypot(candidate.x-e.x,candidate.z-e.z)<9?candidate:null;
     const combatTarget=rival||player;
     const dx=combatTarget.x-e.x,dz=combatTarget.z-e.z,dist=Math.hypot(dx,dz),dir=normalize(dx,dz);
     advanceBody(e);
+    resolveSiegeHull(e,false);
+    if(e.dead)continue;
     e.slowTime=Math.max(0,(e.slowTime||0)-dt);e.stunTime=Math.max(0,(e.stunTime||0)-dt);
     const movementScale=e.slowTime>0?(e.slowFactor??1):1;
     e.timer-=dt*movementScale;
@@ -2179,7 +2299,8 @@ function updateEnemies(dt){
         const faceRoute=!pursuing||tank&&!tankShot,yaw=Math.atan2(faceRoute?mx:dir.x,faceRoute?mz:dir.z);
         if(e.type==='siegeTransformer')e.facingYaw+=clamp(Math.atan2(Math.sin(yaw-e.facingYaw),Math.cos(yaw-e.facingYaw)),-dt*3.2,dt*3.2);
         else e.facingYaw=yaw;
-        const normal=(e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&dist<3.1+e.radius*.25)||(e.attackKind==='slam'&&dist<(e.attackRadius||2.95)+.5);
+        const hullRange=!rival&&siegeTank?.active?Math.max(0,siegeTank.hullContact(e).gap)+e.radius:dist;
+        const normal=(e.attackKind==='ranged'&&clearShot)||(e.attackKind==='lunge'&&hullRange<3.1+e.radius*.25)||(e.attackKind==='slam'&&hullRange<(e.attackRadius||2.95)+.5);
         const profile=MINI_SPECIALS[e.type],special=!tank&&profile&&dist<profile.range&&e.seesPlayer&&(!normal||e.lastMiniAttack==='slam');
         if(pursuing&&e.timer<=0&&!transforming&&(tank?tankShot:normal||special)){
           e.state='windup';e.timer=e.windup;e.attackDir=dir;
@@ -2199,13 +2320,15 @@ function updateEnemies(dt){
           else if(e.attackKind==='ranged'){shoot(e);e.state='walk';e.timer=e.attackRecovery+Math.random()*.6;}
           else if(e.attackKind==='slam'){
             pulse(e.x,e.z,e.attackRadius,0xfc7765,.42);fragments.add(e.x,.1,e.z,e.miniBoss?28:12,[0xc4bb97,0x75897d],e.miniBoss?8:5,.12);
-            if(dist<e.attackRadius&&combatTarget.y<.8){if(rival)hitEnemy(rival,e.damage,dir,2,0);else hurtPlayer(e.damage,dir.x,dir.z,false);}
+            const slamRange=!rival&&siegeTank?.active?Math.max(0,siegeTank.hullContact(e).gap)+e.radius:dist;
+            if(slamRange<e.attackRadius&&combatTarget.y<.8){if(rival)hitEnemy(rival,e.damage,dir,2,0);else hurtPlayer(e.damage,dir.x,dir.z,false);}
             e.state='walk';e.timer=e.attackRecovery;
           }else{e.state='lunge';e.timer=.27;e.vy=3.4;}
         }
       }else if(e.state==='lunge'){
         moveEnemy(e,e.attackDir.x*e.lungeSpeed*movementScale*dt,e.attackDir.z*e.lungeSpeed*movementScale*dt,nearbyObjects(e.x,e.z,e.radius+e.lungeSpeed*dt+.2).filter(o=>o.h>e.y+SUPPORT_EPSILON));
-        if(dist<e.radius+combatTarget.radius+.2){
+        const hullHit=!rival&&siegeTank?.active&&siegeTank.hullContact(e).gap<.2;
+        if(hullHit||dist<e.radius+combatTarget.radius+.2){
           if(rival){if(e.wildlifeStrike!==rival){e.wildlifeStrike=rival;hitEnemy(rival,e.damage,dir,2,0);}}
           else hurtPlayer(e.damage,e.attackDir.x,e.attackDir.z,true,{attacker:e,from:{x:e.x,y:player.y+1,z:e.z}});
         }
@@ -2214,7 +2337,8 @@ function updateEnemies(dt){
     }
     // Damage belongs to the telegraphed lunge, slam or projectile; merely
     // touching a walking enemy must not drain health between its attacks.
-    poseBody(e);
+    resolveSiegeHull(e,true);
+    if(!e.dead)poseBody(e);
   }
   for(let n=enemyFalls.length-1;n>=0;n--){
     const e=enemyFalls[n];e.deathTime+=dt;
@@ -3461,8 +3585,25 @@ function drawFX(){
   drawAim();
   if(siegeTank?.model?.visible){
     const t=siegeTank,body=t.body;
+    if(t.shockTime>0){
+      c.save();c.globalAlpha=Math.min(1,t.shockTime*3.2);c.lineJoin='round';
+      c.beginPath();
+      const size=t.fold===1?1:1.35;
+      for(let i=0;i<12;i++){
+        const a=i*Math.PI/6+Math.floor(visualTime*24)*.51;
+        const dx=Math.sin(a),dz=Math.cos(a);
+        for(let j=0;j<=4;j++){
+          const radius=size*(1.25+j*.72),noise=j===0?0:Math.sin(i*13+j*8+visualTime*95)*.42;
+          const p=screenPoint(body.x+dx*radius+dz*noise,body.y+Math.max(.14,1.75-j*.34+noise),body.z+dz*radius-dx*noise);
+          if(j===0)c.moveTo(p.x,p.y);else c.lineTo(p.x,p.y);
+        }
+      }
+      c.strokeStyle='#45a7ff';c.lineWidth=5;c.stroke();
+      c.strokeStyle='#d5fbff';c.lineWidth=2;c.stroke();c.restore();
+    }
     const label=t.state==='charging'?'ΦΟΡΤΙΣΗ · '+Math.ceil(t.timer)+'s':t.state==='fuse'?'ΑΥΤΟΚΑΤΑΣΤΡΟΦΗ · '+Math.ceil(t.timer)+'s':t.active?(t.boot>0?'ΕΚΚΙΝΗΣΗ · '+t.boot.toFixed(1)+'s':'ΠΟΛΙΟΡΚΗΤΗΣ'):t.state==='ready'?'C · ΕΠΙΒΙΒΑΣΗ':t.hasChip?'C · ΒΑΛΕ ΤΟ CHIP':'ΣΠΑΣΜΕΝΟ ΑΡΜΑ';
-    if(t.state==='ready')drawHP(body.x,body.y+(t.fold<.5?7:4.2),body.z,t.hp,SIEGE_HP,'#97dac8',1,label);
+    const crowdOnDeck=t.active&&(t.shockTime>0||enemies.some(e=>e.siegeClimb));
+    if(t.state==='ready')drawHP(body.x,body.y+(t.fold<.5?7:crowdOnDeck?5.9:4.2),body.z,t.hp,SIEGE_HP,'#97dac8',1,label);
     else drawSiegeLabel(body.x,body.y+4.2,body.z,label,t.state==='fuse'?'#ffc091':'#b2e8d9');
   }
   if(siegeTank?.chip?.visible){
@@ -3485,7 +3626,7 @@ function drawFX(){
     const label=blueprint(d.weapon).name;c.strokeText(label,p.x,p.y);c.fillText(label,p.x,p.y);
   }
   for(const e of enemies)if(Math.hypot(e.x-player.x,e.z-player.z)<27){
-    const rare=e.rareWeapon||e.rareSupplies,branded=armoryEffects.branded.has(e),label='LV '+e.level+(rare?' · ΣΠΑΝΙΟΣ':'')+(branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
+    const rare=e.rareWeapon||e.rareSupplies,branded=armoryEffects.branded.has(e),label='LV '+e.level+(rare?' · ΣΠΑΝΙΟΣ':'')+(e.siegeClimb?' · ΣΤΟ ΑΡΜΑ':branded?' · ΣΦΡΑΓΙΔΑ':(e.openUntil||0)>elapsed?' · ΑΝΟΙΓΜΑ':e.stunTime>0?' · ΖΑΛΙΣΜΕΝΟΣ':e.slowTime>0?' · ΑΡΓΟΣ':e.miniBoss?' · '+e.name:'');
     if(rubbleHiddenEnemies.has(e)&&!e.dead)drawRubbleCue(e.x,e.y+e.height*.58,e.z,'#ff8d83');
     drawHP(e.x,e.y+e.height+.4,e.z,e.hp,e.maxHp,branded?'#d393ff':rare?'#ffd480':enemyHealthColor(e.level),1,label);
   }
@@ -3662,7 +3803,7 @@ function updateSiegeAim(){
   siegeTank.aimAt(point||{x:body.x+Math.sin(turretYaw)*16,z:body.z+Math.cos(turretYaw)*16},world);
 }
 function beginTouchThrow(e){
-  if(siegeTank?.active)return;
+  if(siegeTank?.active)return siegeTank.discharge();
   if(phase!=='playing'||leap||Math.abs(stance-stanceTarget)>.005)return;
   const pointerId=e?.pointerId??'keyboard',touchInput=isTouchPointer(e);
   // A confirmation is a second complete press, with no double-click timer.
@@ -3791,7 +3932,7 @@ function initInput(){
     const nativeActivation=['BUTTON','A'].includes(focused?.tagName)&&['Space','Enter'].includes(e.code);
     if(phase==='playing'&&handled.includes(e.code)&&!editable&&!nativeActivation)e.preventDefault();
     if(e.code==='Escape'&&!e.repeat){if(phase==='menu'&&forgeMenu?.closePanels())return;if(phase==='playing'&&siegeTank?.aiming){cancelGuard();return;}if(phase==='playing'&&(touchThrowAim||touchThrowQueued)){cancelTouchThrow();audio.play('targetCancel');updateHUD();}else if(phase==='playing'&&upgradePanelOpen)toggleUpgradePanel(false);else if(phase==='settings'){setPhase(previousPhase);}else pauseGame();return;}
-    if(e.code==='KeyI'&&!e.repeat&&!editable&&gameReady&&['menu','playing','paused'].includes(phase)){e.preventDefault();mountWorkshop.open();return;}
+    if(e.code==='KeyI'&&!e.repeat&&!editable&&gameReady&&!siegeTank?.active&&['menu','playing','paused'].includes(phase)){e.preventDefault();mountWorkshop.open();return;}
     if(phase==='menu'&&e.code==='Enter'&&!e.repeat&&!$('startButton').disabled&&!forgeMenu?.panelOpen&&!editable&&!nativeActivation){startGame();return;}
     if(phase==='playing'&&upgradePanelOpen&&upgradeTab==='powers'&&['Digit1','Digit2','Digit3'].includes(e.code)){if(!e.repeat)$('upgradeChoices').children[Number(e.code.slice(-1))-1]?.click();return;}
     if(phase!=='playing'||editable||nativeActivation)return;
@@ -4000,7 +4141,7 @@ async function init(){
   const warmGarage=restoreGarage(null);armoryWarmModel=createWeaponModel('w08',warmGarage.armory);scene.add(armoryWarmModel);
   mountRide=new MountRide(scene,{notice:toast,onBreak:()=>toast('ΟΧΗΜΑ ΕΚΤΟΣ','Επισκεύασέ το στο εργαστήριο.')});
   mountWeapons=new MountWeapons(scene,{hit:mountProjectileHit,blast:mountProjectileBlast,launch:()=>audio.play('missileLaunch',.56)});player.materials=hero.userData.getEquipmentMaterials?.()||prepareMaterials(hero);
-  siegeTank=new SiegeTank(scene,{weapons:mountWeapons,notice:toast,change:persistCharacter,play:(...args)=>audio.play(...args),sonic:siegeSonic,cannon:tankCannonFeedback});
+  siegeTank=new SiegeTank(scene,{weapons:mountWeapons,notice:toast,change:persistCharacter,play:(...args)=>audio.play(...args),sonic:siegeSonic,cannon:tankCannonFeedback,shock:siegeDischarge,slam:siegeGroundImpact});
   beastRig=makeBeastMech();beastRig.userData.materials=prepareMaterials(beastRig);beastRig.visible=false;scene.add(beastRig);
   beastPortal=new BeastPortal(scene);renderer.localClippingEnabled=true;
   beastRig.userData.reveal=installBeastReveal(beastRig,renderer.userData?.backend==='WebGPU');beastRig.userData.materials=beastRig.userData.reveal.materials;
@@ -4054,7 +4195,7 @@ window.render_game_to_text=()=>JSON.stringify({
     x:encounter.entry?.location.x??encounter.leader.x,z:encounter.entry?.location.z??encounter.leader.z,
     hp:encounter.leader.hp,escorts:encounter.escorts.size,pending:encounter.gate.escort.length-encounter.sent}:null,
   boss:boss&&!boss.dead?{x:boss.x,y:boss.y,z:boss.z,hp:boss.hp,maxHp:boss.maxHp,height:boss.h,armor:beastDamageScale(boss.state),entrance:boss.state==='enter'?boss.entry?.stage:null,state:boss.state,warning:beastCombat?.attack?{kind:beastCombat.attack.kind,remaining:Math.max(0,beastCombat.attack.windup-beastCombat.attack.time)}:null}:null,
-  enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp,patrol:e.patrol?(e.patrol.alert?'alert':'guarding'):undefined,rareWeapon:e.rareWeapon||undefined})),
+  enemies:enemies.filter(e=>!e.dead&&Math.hypot(e.x-player.x,e.z-player.z)<30).slice(0,30).map(e=>({type:e.type,x:e.x,y:e.y,z:e.z,hp:e.hp,tankClimb:e.siegeClimb?(e.siegeClimb.age<1.05?'climbing':'on-deck'):undefined,patrol:e.patrol?(e.patrol.alert?'alert':'guarding'):undefined,rareWeapon:e.rareWeapon||undefined})),
   weapons:drops.filter(d=>d.kind==='weapon').map(d=>({id:d.weapon,x:d.x,z:d.z})),
   projectiles:beastCombat?.projectiles.map(p=>({kind:p.kind,x:p.position.x,y:p.position.y,z:p.position.z,target:{x:p.to.x,z:p.to.z}}))||[],
 });

@@ -4618,6 +4618,60 @@ test('recovered siege tank saves its charge, earns pilot XP and ejects before de
   }
 });
 
+test('siege hull separates enemies, rams, takes damage from climbers and clears them with a discharge',()=>{
+  arena(1);
+  const tank=api.siegeTank;
+  Object.assign(tank.body,{x:0,y:0,z:0});
+  tank.state='ready';tank.hp=820;tank.poseTank();
+  Object.assign(api.player,{x:0,y:0,z:4.6});
+  key('KeyC',true);key('KeyC',false);assert.ok(tank.active);
+  tank.boot=0;
+  const embedded=stationaryEnemy('zombie',0,.35),embeddedHp=embedded.hp;
+  api.updateGame(1/120);
+  assert.ok(tank.hullContact(embedded).gap>=0);
+  assert.equal(embedded.hp,embeddedHp);
+  const victim=stationaryEnemy('zombie',0,2.4);
+  tank.speed=8.3;
+  api.updateGame(1/120);
+  assert.equal(victim.dead,true);
+  tank.speed=0;
+  const climber=stationaryEnemy('zombie',tank.body.x-4.05,tank.body.z-.6);
+  climber.hp=climber.maxHp=200;climber.state='walk';climber.speed=2.6;
+  for(let i=0;i<300;i++)api.updateGame(1/120);
+  assert.ok(climber.siegeClimb&&climber.y>2);
+  assert.ok(tank.hp<820);
+  key('KeyR',true);key('KeyR',false);
+  assert.ok(tank.shockCooldown>7&&tank.shockTime>0);
+  assert.equal(climber.siegeClimb,null);
+  assert.ok(climber.hp<200&&climber.stagger>.7);
+  const health=climber.hp;
+  key('KeyR',true);key('KeyR',false);
+  assert.equal(climber.hp,health);
+});
+
+test('folding the siege walker drops onto its tracks and deals one ground impact',()=>{
+  arena(1);
+  const tank=api.siegeTank;
+  Object.assign(tank.body,{x:0,y:0,z:0});
+  tank.state='ready';tank.hp=820;tank.poseTank();
+  Object.assign(api.player,{x:0,y:0,z:4.6});
+  key('KeyC',true);key('KeyC',false);tank.boot=0;
+  key('KeyE',true);key('KeyE',false);
+  for(let i=0;i<90;i++)api.updateGame(1/120);
+  assert.equal(tank.fold,0);
+  const near=stationaryEnemy('zombie',0,3.8),far=stationaryEnemy('zombie',0,8);
+  near.hp=near.maxHp=300;
+  key('KeyE',true);key('KeyE',false);
+  api.updateGame(1/120);assert.equal(near.hp,300);
+  for(let i=0;i<90;i++)api.updateGame(1/120);
+  assert.equal(tank.fold,1);assert.ok(tank.foldImpact>0);
+  assert.ok(near.hp<300&&near.hp>0);
+  assert.equal(far.hp,far.maxHp);assert.equal(tank.hp,820);
+  const health=near.hp;
+  for(let i=0;i<90;i++)api.updateGame(1/120);
+  assert.equal(near.hp,health);
+});
+
 test('siege tracks build speed, brake before reverse, and pivot without driving sideways',()=>{
   arena(5);
   const tank=api.siegeTank,player=api.player,world=api.world;

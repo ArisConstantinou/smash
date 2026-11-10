@@ -118,10 +118,22 @@ body[data-touch-controls="true"] #combatDock #attackButton { grid-column:3/5; gr
 body[data-touch-controls="true"] #combatDock #screamButton:is(.active,.cooldown) .action-icon { display:none; }
 body[data-touch-controls="true"] #combatDock #screamButton:is(.active,.cooldown) #screamValue { display:block!important; }
 
-body[data-siege="driving"] #combatDock #throwButton { display:none; }
-body[data-siege="driving"][data-touch-controls="false"] #combatDock .dock-actions { grid-template-columns:repeat(4,minmax(0,1fr)); }
-body[data-siege="driving"][data-touch-controls="true"] #combatDock #kickButton { grid-column:1/3; }
-body[data-siege="driving"][data-touch-controls="true"] #combatDock #guardButton .action-name { font-size:10px; }
+body[data-siege="driving"] #upgradesToggle,
+body[data-siege="driving"] #mountControls :is(#upgradesToggle,#mountWorkshopButton),
+body[data-siege="driving"] :is(#chargeWrap,.dock-stance svg),
+body[data-siege-mode="tracked"] #combatDock #leapButton { display:none; }
+body[data-siege="driving"] #mountToggle { grid-column:1/-1; }
+body[data-siege="driving"][data-touch-controls="true"] #mountControls { grid-template-columns:minmax(0,1fr); }
+body[data-siege="driving"][data-touch-controls="true"] #combatDock #attackButton::after { content:"4 ΚΑΝΝΕΣ"; }
+@media (orientation:landscape) {
+  body[data-siege="driving"][data-touch-controls="true"] #mountControls { grid-template-rows:var(--mobile-tile-height) auto; }
+  body[data-siege="driving"][data-touch-controls="true"] #mountControls #mountReadout { grid-column:1; }
+}
+body[data-siege-mode="tracked"][data-touch-controls="false"] #combatDock .dock-actions { grid-template-columns:repeat(4,minmax(0,1fr)); }
+body[data-siege-mode="tracked"][data-touch-controls="true"] #combatDock #throwButton { grid-column:2;grid-row:1; }
+body[data-siege-mode="tracked"][data-touch-controls="true"] #combatDock #kickButton { grid-column:1/3; }
+body[data-siege="driving"][data-touch-controls="true"] #combatDock #throwButton.cooldown .action-icon { display:none; }
+body[data-siege="driving"][data-touch-controls="true"] #combatDock #throwButton.cooldown #throwValue { display:block!important; }
 #mountControls .siege-mount-icon { display:none; }
 #mountControls.siege-controls #mountHudImage { display:none; }
 #mountControls.siege-controls .siege-mount-icon { display:block;width:100%;height:100%; }

@@ -8,9 +8,11 @@ export const SIEGE_CHARGE_SECONDS=5,SIEGE_FUSE_SECONDS=10,SIEGE_HP=820;
 const BOOT_SECONDS=1.4;
 export const SIEGE_SONIC_RANGE=20,SIEGE_SONIC_ANGLE=.52;
 const SHELL_RANGE=28,SHELL_ANGLE=.20,MISSILE_RANGE=35,MISSILE_RADIUS=4.1;
+export const SIEGE_SHOCK_SECONDS=8;
 const SHAPES={tank:{radius:2.65,height:3.8,offsets:[-1.2,0,2.0]},walker:{radius:3.9,height:7.1,offsets:[-.7,0,1.35]}};
 const angleDelta=(from,to)=>Math.atan2(Math.sin(to-from),Math.cos(to-from));
 const approach=(value,target,step)=>value+THREE.MathUtils.clamp(target-value,-step,step);
+const clampAxis=(value,extent)=>THREE.MathUtils.clamp(value,-extent,extent);
 const crankPulse=(time,at,width)=>Math.max(0,1-Math.abs(time-at)/width)**2;
 const disposeModel=root=>{root.removeFromParent();root.traverse(node=>{if(node.isMesh)node.geometry.dispose();});};
 
@@ -26,9 +28,10 @@ function guide(scene,color,radius,angle=Math.PI){
 }
 
 export class SiegeTank extends MountRide {
-  constructor(scene,{weapons,notice,change,play,sonic,cannon}){
+  constructor(scene,{weapons,notice,change,play,sonic,cannon,shock,slam}){
     super(scene,{notice});
     this.weapons=weapons;this.change=change;this.play=play;this.sonic=sonic;this.cannon=cannon;
+    this.shock=shock;this.slam=slam;this.shockTime=this.shockCooldown=this.foldImpact=0;this.foldImpactPending=false;
     this.stats={hover:false};this.collision=SHAPES.tank;
     this.lightning=new LevelStorm(scene);
     this.wave=new ScreamWave(scene);
@@ -45,6 +48,7 @@ export class SiegeTank extends MountRide {
     if(this.model)disposeModel(this.model);
     if(this.chip)disposeModel(this.chip);
     this.model=this.chip=null;this.active=false;this.state='absent';this.hasChip=false;
+    this.shockTime=this.shockCooldown=this.foldImpact=0;this.foldImpactPending=false;
     this.lightning.reset();this.hideEffects();this.cancelAim();
   }
 
@@ -107,6 +111,40 @@ export class SiegeTank extends MountRide {
 
   get discovered(){return !!this.model&&(!!this.chip||this.hasChip||this.state==='charging'||this.state==='ready'||this.state==='fuse');}
 
+  localPoint(x,z){
+    const dx=x-this.body.x,dz=z-this.body.z,c=Math.cos(this.yaw),s=Math.sin(this.yaw);
+    return {x:dx*c-dz*s,z:dx*s+dz*c};
+  }
+
+  worldPoint(x,z){
+    const c=Math.cos(this.yaw),s=Math.sin(this.yaw);
+    return {x:this.body.x+x*c+z*s,z:this.body.z-x*s+z*c};
+  }
+
+  // Chassis contact follows the visible tracks, while the larger clearance
+  // envelope still keeps the turret and legs out of city geometry.
+  hullContact(actor){
+    const local=this.localPoint(actor.x,actor.z);
+    const width=3.45-1.25*this.fold,length=2.80-.55*this.fold;
+    const x=clampAxis(local.x,width),z=clampAxis(local.z,length);
+    let dx=local.x-x,dz=local.z-z,depth=Math.hypot(dx,dz);
+    if(depth>.0001){dx/=depth;dz/=depth;}
+    else if(width-Math.abs(x)<length-Math.abs(z)){
+      dx=x<0?-1:1;dz=0;depth=Math.abs(x)-width;
+    }else{
+      dx=0;dz=z<0?-1:1;depth=Math.abs(z)-length;
+    }
+    const c=Math.cos(this.yaw),s=Math.sin(this.yaw);
+    return {gap:depth-actor.radius,dx:dx*c+dz*s,dz:-dx*s+dz*c,flank:Math.abs(dx)>.8&&Math.abs(local.z)<length-.2,local};
+  }
+
+  discharge(){
+    if(!this.active||this.boot>0||this.shockCooldown>0)return false;
+    this.shockCooldown=SIEGE_SHOCK_SECONDS;this.shockTime=.55;
+    this.shock?.(this);
+    return true;
+  }
+
   isNear(player){return this.model&&this.state!=='destroyed'&&Math.hypot(player.x-this.body.x,player.z-this.body.z)<6&&Math.abs(player.y-this.body.y)<2;}
 
   interact(player,hero,world){
@@ -135,7 +173,7 @@ export class SiegeTank extends MountRide {
       if(world.clearBody(x,z,0,player.radius,1.9))point={x,z};
     }
     if(!point&&!forced){this.notice('ΕΞΟΔΟΣ ΜΠΛΟΚΑΡΙΣΜΕΝΗ','Μετακίνησε το άρμα σε ανοικτό σημείο.');return false;}
-    this.active=false;this.speed=this.dashTime=this.boot=this.acceleration=0;this.held=false;this.cancelAim();hero.visible=true;
+    this.active=false;this.speed=this.dashTime=this.boot=this.acceleration=this.shockTime=0;this.held=false;this.cancelAim();hero.visible=true;
     Object.assign(player,point||{x:this.body.x,z:this.body.z},{y:0,vx:0,vy:0,vz:0,invincible:Math.max(player.invincible||0,1)});
     return true;
   }
@@ -157,7 +195,7 @@ export class SiegeTank extends MountRide {
       this.collision=old;this.notice('ΧΡΕΙΑΖΕΤΑΙ ΧΩΡΟΣ','Μεταμορφώσου σε ανοικτό δρόμο.');return false;
     }
     if(target===1)this.collision=old;
-    this.foldTarget=target;this.play('carTear',.5);return true;
+    this.foldTarget=target;this.foldImpactPending=target===1;this.play('carTear',.5);return true;
   }
   jump(){
     if(!this.active||this.boot>0||this.fold!==0||this.airborne||this.jumpCooldown>0)return false;
@@ -230,6 +268,10 @@ export class SiegeTank extends MountRide {
     this.fold=THREE.MathUtils.damp(this.fold,this.foldTarget,7,dt);
     if(Math.abs(this.fold-this.foldTarget)<.012)this.fold=this.foldTarget;
     if(this.fold===1)this.collision=SHAPES.tank;
+    if(this.foldImpactPending&&this.fold===1&&result.grounded){
+      this.foldImpactPending=false;this.foldImpact=.22;
+      this.slam?.(this);
+    }
     this.place(player);this.poseTank();
   }
 
@@ -242,6 +284,8 @@ export class SiegeTank extends MountRide {
     model.rotation.set(Math.cos(crank*36)*.032*shudder,this.yaw,Math.sin(crank*46)*.044*shudder,'YXZ');
     u.animate({fold:this.fold,walk:this.walk,state:'walk',gait:this.active?Math.abs(this.speed):0,cannonRecoil:0});
     const kick=Math.max(0,(this.shellCooldown-1)/.2);
+    const compression=Math.sin(Math.PI*this.foldImpact/.22)*.14;
+    u.body.position.y-=compression;
     u.body.rotation.x=-.075*kick*kick+THREE.MathUtils.clamp(-this.acceleration*.004,-.028,.028)*this.fold;
     r.turret.rotation.y=angleDelta(this.yaw,this.turretYaw);
     r.live.visible=live||this.state==='charging'&&Math.sin(this.timer*25)>.45;r.wreck.visible=!live;
@@ -316,7 +360,7 @@ export class SiegeTank extends MountRide {
       if(this.boot<1e-7){this.boot=0;this.play('tankReady',1);}
       this.poseTank();
     }
-    for(const key of ['shellCooldown','missileCooldown','sonicCooldown','dashTime','dashCooldown','jumpCooldown'])this[key]=Math.max(0,this[key]-dt);
+    for(const key of ['shellCooldown','missileCooldown','sonicCooldown','dashTime','dashCooldown','jumpCooldown','shockTime','shockCooldown','foldImpact'])this[key]=Math.max(0,this[key]-dt);
     if(this.active&&this.held)this.fireShells();
     const {body}=this;
     if(this.state==='charging'||this.state==='fuse'){
@@ -362,6 +406,6 @@ export class SiegeTank extends MountRide {
     return {state:this.state,chip:this.hasChip,drop:this.chip?{x:this.chip.position.x,z:this.chip.position.z}:null,
       x:this.body.x,z:this.body.z,y:this.body.y,yaw:this.yaw,turretYaw:this.turretYaw,mode:this.foldTarget===1?'tank':'walker',
       hp:this.hp,maxHp:SIEGE_HP,active:this.active,timer:this.timer,boot:this.boot,aim:this.target,
-      airborne:this.airborne,speed:this.speed,yawRate:this.yawRate,sonicCooldown:this.sonicCooldown,missileCooldown:this.missileCooldown};
+      airborne:this.airborne,speed:this.speed,yawRate:this.yawRate,sonicCooldown:this.sonicCooldown,missileCooldown:this.missileCooldown,shockCooldown:this.shockCooldown};
   }
 }

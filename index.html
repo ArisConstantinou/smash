@@ -28,7 +28,7 @@
   <title>IRONFALL — Hammer the Horde</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css?v=20261110-tank-marker">
-  <link rel="stylesheet" href="./controls.css?v=20261109-recovery">
+  <link rel="stylesheet" href="./controls.css?v=20261110-siege-dock">
   <link rel="stylesheet" href="./menu.css?v=20261109-zoom-lock">
   <link rel="stylesheet" href="./level-picker.css?v=20261109-jungle-select">
   <link rel="stylesheet" href="./performance.css?v=20261108-hud1">
@@ -124,6 +124,19 @@
       </symbol>
       <symbol id="t-siege-transform" viewBox="0 0 24 24">
         <path d="m5 6 3-3h8l3 3-2 5H7zM8 10l-4 4 1 4m11-8 4 4-1 4M2 19h6m8 0h6M9 15h6m-2-2 2 2-2 2"/>
+      </symbol>
+      <symbol id="t-siege-shock" viewBox="0 0 24 24"><path d="m14 2-9 12h6l-1 8 9-12h-6zM2 6l3 2m14 8 3 2"/></symbol>
+      <symbol id="t-siege-sonic" viewBox="0 0 24 24"><path d="M2 8h6v8H2zm10 1q3 3 0 6m4-8q5 5 0 10m4-13q7 8 0 16"/></symbol>
+      <symbol id="t-siege-boost" viewBox="0 0 24 24"><path d="M2 16h20v4H2zm6-2 5-7h8l-5 7zM2 8h5m-4 4h3"/></symbol>
+      <symbol id="a-siege-shock" viewBox="0 0 96 80">
+        <path d="M19 60h58l-4 9H23z" fill="#304c5c" stroke="#91bac8" stroke-width="3"/>
+        <path d="m54 5-24 33h17l-8 24 28-35H49z" fill="#bffaff" stroke="#519cc7" stroke-width="3"/>
+        <path d="M16 20l8 6-7 7 8 6m49-21-7 8 9 7-6 9" fill="none" stroke="#83d8ff" stroke-width="3"/>
+      </symbol>
+      <symbol id="a-siege-boost" viewBox="0 0 96 80">
+        <path d="M25 49h62l-5 17H30zM39 45l11-16h25l-7 16z" fill="#7e9a9b" stroke="#213940" stroke-width="4"/>
+        <path d="M12 28h25M6 39h25m-17 34h57" fill="none" stroke="#a2e8df" stroke-width="3"/>
+        <path d="m62 15 14 0-6-6m6 6-6 6" fill="none" stroke="#efcb82" stroke-width="3"/>
       </symbol>
       <symbol id="a-siege-shells" viewBox="0 0 96 80">
         <path d="m12 61 17-14h38l17 14-12 12H24z" fill="#344d53" stroke="#95b4b0" stroke-width="3"/>
@@ -417,26 +430,26 @@
           <span class="movement-caption">ΚΙΝΗΣΗ</span>
           <svg class="movement-directions" viewBox="0 0 60 14" aria-hidden="true"><path d="M4 7H56M4 7l5-4M4 7l5 4M56 7l-5-4M56 7l-5 4M30 1v12m0-12-4 4m4-4 4 4m-4 8-4-4m4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
         </div>
-        <div class="dock-actions" role="group" aria-label="Ενέργειες πολεμιστή">
+        <div id="dockActions" class="dock-actions" role="group" aria-label="Ενέργειες πολεμιστή">
           <button id="kickButton" class="action-tile" data-key="KeyE" type="button" aria-label="E: κλωτσιά προς τα εμπρός. Η μάζα καθορίζει την ώθηση." title="E: κλωτσιά. Με δύο αναβαθμίσεις μετακινεί αυτοκίνητα." data-desktop-label="E: κλωτσιά προς τα εμπρός. Με δύο αναβαθμίσεις μετακινεί αυτοκίνητα." data-touch-label="Κλωτσιά προς τα εμπρός. Με δύο αναβαθμίσεις μετακινεί αυτοκίνητα.">
             <kbd class="action-key">E</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="kickIcon" href="#a-kick"/></svg>
             <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="kickTouchIcon" href="#t-kick"/></svg><span id="kickName" class="action-name">ΚΛΩΤΣΙΑ</span><small id="kickValue" class="action-status">ΒΑΘΜΙΔΑ 1</small>
           </button>
           <button id="leapButton" class="action-tile" data-key="Space" type="button" aria-label="Space: άλμα. LMB στον αέρα: μικρό smash. Shift: εναέριο dash." title="Space: άλμα. LMB στον αέρα: μικρό smash. Shift: εναέριο dash." data-desktop-label="Space: άλμα. LMB στον αέρα: μικρό smash. Shift: εναέριο dash." data-touch-label="Άλμα. Πάτα επίθεση στον αέρα για μικρό smash ή αποφυγή για εναέριο dash.">
-            <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-leap"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-jump"/></svg><span class="action-name"><span id="leapDesktopName" class="desktop-only">ΨΗΛΟ ΑΛΜΑ</span><span id="leapTouchName" class="touch-only">ΑΛΜΑ</span></span><small id="leapValue" class="action-status">ΕΤΟΙΜΟ</small>
+            <kbd class="action-key">SPACE</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="leapIcon" href="#a-leap"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="leapTouchIcon" href="#t-jump"/></svg><span class="action-name"><span id="leapDesktopName" class="desktop-only">ΨΗΛΟ ΑΛΜΑ</span><span id="leapTouchName" class="touch-only">ΑΛΜΑ</span></span><small id="leapValue" class="action-status">ΕΤΟΙΜΟ</small>
           </button>
           <button id="throwButton" class="action-tile" data-key="KeyR" type="button" aria-label="Ρίξε το σφυρί προς το ποντίκι. Αναπηδά σε έως πέντε εχθρούς και επιστρέφει." title="Ρίξε το σφυρί προς το ποντίκι. Αναπηδά σε έως πέντε εχθρούς και επιστρέφει." data-desktop-label="Ρίξε το σφυρί προς το ποντίκι. Αναπηδά σε έως πέντε εχθρούς και επιστρέφει." data-touch-label="Κράτα για κατακόρυφη περιστροφή, σύρε για στόχευση και άφησε. Το σφυρί αναπηδά σε κοντινούς εχθρούς και επιστρέφει.">
-            <kbd class="action-key">R</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-throw"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-throw"/></svg><span class="action-name">ΡΙΨΗ</span><small id="throwValue" class="action-status">ΣΤΟΧΕΥΣΕ</small>
+            <kbd class="action-key">R</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="throwIcon" href="#a-throw"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="throwTouchIcon" href="#t-throw"/></svg><span id="throwName" class="action-name">ΡΙΨΗ</span><small id="throwValue" class="action-status">ΣΤΟΧΕΥΣΕ</small>
           </button>
           <button id="screamButton" class="action-tile" data-key="KeyZ" type="button" aria-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής." title="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής." data-desktop-label="Z: Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής." data-touch-label="Κράτα για κραυγή έως 10 δευτερόλεπτα. Επαναφόρτιση 2–30 δευτερόλεπτα, ανάλογα με τη δύναμη της κραυγής.">
             <kbd class="action-key">Z</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="screamIcon" href="#upgrade-scream"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-scream"/></svg><span id="screamName" class="action-name">ΚΡΑΥΓΗ</span><small id="screamValue" class="action-status">ΕΤΟΙΜΗ</small>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="screamTouchIcon" href="#t-scream"/></svg><span id="screamName" class="action-name">ΚΡΑΥΓΗ</span><small id="screamValue" class="action-status">ΕΤΟΙΜΗ</small>
           </button>
           <button id="dashButton" class="action-tile" data-key="ShiftLeft" type="button" aria-label="Γρήγορη αποφυγή προς την κατεύθυνση κίνησης." title="Γρήγορη αποφυγή προς την κατεύθυνση κίνησης." data-desktop-label="Γρήγορη αποφυγή προς την κατεύθυνση κίνησης." data-touch-label="Πάτησε για γρήγορη αποφυγή προς την κατεύθυνση κίνησης.">
-            <kbd class="action-key">SHIFT</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use href="#a-dodge"/></svg>
-            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#t-dodge"/></svg><span id="dashName" class="action-name">ΑΠΟΦΥΓΗ</span><small id="dashValue" class="action-status">ΕΤΟΙΜΟ</small>
+            <kbd class="action-key">SHIFT</kbd><svg class="action-picture" viewBox="0 0 96 80" aria-hidden="true"><use id="dashIcon" href="#a-dodge"/></svg>
+            <svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><use id="dashTouchIcon" href="#t-dodge"/></svg><span id="dashName" class="action-name">ΑΠΟΦΥΓΗ</span><small id="dashValue" class="action-status">ΕΤΟΙΜΟ</small>
           </button>
           <div class="mouse-actions" role="group" aria-label="Χειριστήρια ποντικιού">
           <button id="attackButton" class="action-tile" type="button" aria-label="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." title="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." data-desktop-label="Αριστερό κλικ: γρήγορη σφυριά προς την κατεύθυνση που κοιτάς." data-touch-label="Πάτησε για χτύπημα. Κράτα για συνεχή περιστροφή. Πάτησε στον αέρα για κατέβασμα.">
@@ -583,6 +596,6 @@
       "./armory-geometry.js":"./armory-geometry.js?v=20261109.9"
     }}
   </script>
-  <script type="module" src="./game.js?v=20261110-tank-shield"></script>
+  <script type="module" src="./game.js?v=20261110-siege-contact"></script>
 </body>
 </html>
